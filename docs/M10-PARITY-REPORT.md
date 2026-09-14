@@ -24,11 +24,16 @@ deferred below.
 | Episodic memory | `packages/coding-agent/src/core/episodic-store.ts:85-` | eight live records (`cli`, `telegram`, `dashboard`) in shared SQLite store; restart read-back | partial; historical migration open |
 | Operations | deployed TypeScript systemd units | Go systemd units, health, journald, verified backup, rollback and restore | partial; fresh-host installer deferred |
 
-## Accepted differences before any future cutover review
+## Accepted and deferred differences
 
-- Compare normalized live traces against the pinned TypeScript traces.
-- Decide whether accepted differences around dashboard rendering, auth,
-  migration, and unported tools are acceptable.
+- Full normalized live-trace equivalence is not claimed beyond the recorded
+  golden/local traces and live acceptance results.
+- Dashboard rendering/auth, historical memory migration, the full provider
+  matrix, and unported tools remain deferred by scope.
+- A fresh-host installer remains deferred; the side-by-side systemd layout,
+  backup, health, journald, and rollback procedure are verified on the pilot
+  VPS.
 
-Until those gates are closed, the TypeScript runtime remains the operational
-fallback and no decommission or irreversible cutover is authorized.
+This is a no-cutover parity decision, not a claim of total feature parity.
+The TypeScript runtime remains operational, Go remains a reversible pilot, and
+no decommission or irreversible cutover is authorized.
