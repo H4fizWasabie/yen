@@ -15,9 +15,15 @@ CLI -p prompt
   -> final CLI text
 ```
 
-No deployment, cutover, or TypeScript modification has happened. Local
-Telegram/dashboard adapter code and acceptance fixtures exist; TypeScript
-remains the operational fallback.
+No cutover or TypeScript modification has happened. Local Telegram/dashboard
+adapter code and acceptance fixtures exist; TypeScript remains the operational
+fallback.
+
+A side-by-side VPS readiness attempt was made after the isolated OpenRouter
+smoke succeeded. The dedicated Go Telegram unit was installed without
+touching the existing TypeScript units, but Telegram returned `401
+Unauthorized` for the supplied pilot token. The Go pilot is stopped and its
+secret file removed. See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md).
 
 Canonical rewrite repository: `https://github.com/H4fizWasabie/yen`.
 
@@ -119,8 +125,9 @@ queue slices are now implemented and locally verified. Work in this order:
 4. Validate adapter reconnect/read-back behavior under concurrent processes;
    the queue and registry now use cross-process file locking, expiring
    per-turn leases, durable cancellation, and a subprocess claim test.
-5. Deployment and rollback validation come last; do not deploy from this
-   handoff.
+5. Retry the Telegram pilot only with a valid replacement token; then verify
+   visible delivery, restart/resume, shared memory, and rollback before any
+   cutover decision.
 
 ## Important deferred product change
 
