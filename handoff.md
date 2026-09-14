@@ -21,8 +21,9 @@ fallback.
 
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
-has produced a live reply, and a Go CLI turn has appended to the same
-canonical conversation/session. See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md).
+has produced a live reply, a Go CLI turn has appended to the same canonical
+conversation/session, and the shared-memory binary has restarted cleanly.
+See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md).
 
 Canonical rewrite repository: `https://github.com/H4fizWasabie/yen`.
 
