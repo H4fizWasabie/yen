@@ -27,7 +27,9 @@ Date: 2026-09-14
   episodic database contained four records after the acceptance request.
 - Live memory acceptance completed through the dashboard path: the existing
   favorite-color fact and the pilot marker were retrieved as conversation-
-  scoped semantic nodes; the episodic store contained six records afterward.
+  scoped semantic nodes; the episodic store contained eight records afterward,
+  with `cli`, `telegram`, and `dashboard` channel records sharing the same
+  conversation ID.
 - The Telegram unit was rolled back to `1901f93` and restored to `2a64583`
   from a verified `/var/backups/yen-theoses-go-20260914T145936Z.tgz` archive;
   both Go units stayed active and the dashboard health check remained green.
