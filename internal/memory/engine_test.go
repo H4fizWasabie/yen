@@ -67,3 +67,19 @@ func TestEngineAppliesConsolidationFactsEdgesAndEpisodeIdempotently(t *testing.T
 		t.Fatalf("checkpoint=%q", got)
 	}
 }
+
+func TestSharedConversationConsolidationIsVisibleAcrossWorkspaces(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	engine.ConversationScoped = true
+	if err := engine.ApplyConsolidation("turn-shared", "conv-shared", "telegram-cwd", "telegram", []ConsolidatedFact{{ID: "f1", Subject: "Shared pilot fact", Body: "Visible across adapters."}}, nil, ConsolidatedEpisode{Summary: "shared"}); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := engine.Remember("shared pilot fact", Context{WorkspaceID: "dashboard-cwd", ConversationID: "conv-shared", ConversationScoped: true})
+	if err != nil || len(hits) != 1 || hits[0].Scope != ScopeConversation {
+		t.Fatalf("hits=%#v err=%v", hits, err)
+	}
+}
