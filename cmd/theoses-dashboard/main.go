@@ -57,7 +57,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	handler := adapters.DashboardHTTP{Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner}, Workspace: workspace}}
+	handler := adapters.DashboardHTTP{Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")}, Workspace: workspace}}
 	log.Printf("theoses dashboard listening on %s", *addr)
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		log.Fatal(err)

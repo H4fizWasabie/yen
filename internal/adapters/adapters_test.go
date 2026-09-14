@@ -48,6 +48,53 @@ func TestTelegramAndDashboardUseOneCanonicalConversationWhenLinked(t *testing.T)
 	}
 }
 
+func TestConfiguredCanonicalConversationIsSharedByAdaptersAndMemory(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, provider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	runner.Memory, err = memory.OpenEngine(filepath.Join(dir, "memory"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Memory.Close()
+	service := Service{Registry: registry, Runner: runner, CanonicalConversationID: "conv-owner"}
+	telegram := Telegram{Service: service, Workspace: dir}
+	if _, err := telegram.HandleMessage(context.Background(), "chat-1", "first"); err != nil {
+		t.Fatal(err)
+	}
+	dashboard := Dashboard{Service: service, Workspace: dir}
+	link, err := dashboard.NewSession()
+	if err != nil || link.ConversationID != "conv-owner" {
+		t.Fatalf("dashboard link=%#v err=%v", link, err)
+	}
+	if _, err := dashboard.Send(context.Background(), link.ConversationID, "second"); err != nil {
+		t.Fatal(err)
+	}
+	cli, err := registry.ResolveShared("cli", dir, dir, "conv-owner")
+	if err != nil || cli.ConversationID != "conv-owner" {
+		t.Fatalf("cli link=%#v err=%v", cli, err)
+	}
+	stored, err := session.Open(filepath.Join(dir, "conv-owner.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Messages()) != 4 {
+		t.Fatalf("shared session messages=%d, want 4", len(stored.Messages()))
+	}
+	episodes, err := runner.Memory.Episodic.Recent("conv-owner", 8)
+	if err != nil || len(episodes) != 2 {
+		t.Fatalf("shared episodes=%#v err=%v", episodes, err)
+	}
+}
+
 func linkOK(link conversation.Link, adapter string) bool {
 	return link.ConversationID != "" && link.Adapter == adapter
 }

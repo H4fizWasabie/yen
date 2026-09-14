@@ -32,6 +32,35 @@ func TestRegistryResolvesAndExplicitlyLinksAdapterIdentities(t *testing.T) {
 	}
 }
 
+func TestRegistryResolvesSharedConversationAcrossAdapters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "links.jsonl")
+	registry, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	telegram, err := registry.ResolveShared("telegram", "chat:42", "work-a", "conv-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, identity := range [][2]string{{"cli", "cwd"}, {"dashboard", "tab:1"}} {
+		link, err := registry.ResolveShared(identity[0], identity[1], "work-a", "conv-owner")
+		if err != nil || link.ConversationID != telegram.ConversationID {
+			t.Fatalf("shared %s link = %#v err=%v", identity[0], link, err)
+		}
+	}
+
+	reopened, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, identity := range [][2]string{{"telegram", "chat:42"}, {"cli", "cwd"}, {"dashboard", "tab:1"}} {
+		link, ok := reopened.Get(identity[0], identity[1])
+		if !ok || link.ConversationID != "conv-owner" {
+			t.Fatalf("reopened %s link = %#v ok=%v", identity[0], link, ok)
+		}
+	}
+}
+
 func TestRegistryReloadsAcrossProcessesBeforeResolving(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "links.jsonl")
 	first, err := OpenRegistry(path)

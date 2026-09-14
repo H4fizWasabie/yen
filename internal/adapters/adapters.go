@@ -12,15 +12,22 @@ import (
 )
 
 type Service struct {
-	Registry *conversation.Registry
-	Runner   *runtime.Runner
+	Registry                *conversation.Registry
+	Runner                  *runtime.Runner
+	CanonicalConversationID string
 }
 
 func (s Service) Send(ctx context.Context, adapter, adapterKey, workspace, text string) (conversation.Turn, agent.Result, error) {
 	if s.Registry == nil || s.Runner == nil {
 		return conversation.Turn{}, agent.Result{}, errors.New("adapter service is not configured")
 	}
-	link, err := s.Registry.Resolve(adapter, adapterKey, workspace)
+	var link conversation.Link
+	var err error
+	if s.CanonicalConversationID != "" {
+		link, err = s.Registry.ResolveShared(adapter, adapterKey, workspace, s.CanonicalConversationID)
+	} else {
+		link, err = s.Registry.Resolve(adapter, adapterKey, workspace)
+	}
 	if err != nil {
 		return conversation.Turn{}, agent.Result{}, err
 	}
@@ -55,6 +62,9 @@ func (a Dashboard) NewSession() (conversation.Link, error) {
 	key, err := randomKey("tab")
 	if err != nil {
 		return conversation.Link{}, err
+	}
+	if a.Service.CanonicalConversationID != "" {
+		return a.Service.Registry.ResolveShared("dashboard", key, a.Workspace, a.Service.CanonicalConversationID)
 	}
 	return a.Service.Registry.Resolve("dashboard", key, a.Workspace)
 }

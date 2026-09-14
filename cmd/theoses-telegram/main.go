@@ -50,7 +50,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner}, Workspace: workspace}, Token: os.Getenv("THEOSES_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("THEOSES_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("THEOSES_TELEGRAM_API_BASE")}
+	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")}, Workspace: workspace}, Token: os.Getenv("THEOSES_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("THEOSES_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("THEOSES_TELEGRAM_API_BASE")}
 	if err := bot.Run(context.Background()); err != nil {
 		log.Fatal(err)
 	}

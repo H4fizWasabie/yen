@@ -75,6 +75,33 @@ func (r *Registry) Resolve(adapter, adapterKey, workspaceID string) (Link, error
 	return result, err
 }
 
+// ResolveShared binds an adapter identity to one durable conversation.
+// The latest link wins, so an earlier adapter-local link is migrated additively.
+func (r *Registry) ResolveShared(adapter, adapterKey, workspaceID, conversationID string) (Link, error) {
+	if adapter == "" || adapterKey == "" || conversationID == "" {
+		return Link{}, errors.New("adapter, adapter key, and conversation ID are required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var result Link
+	err := r.withFileLock(func() error {
+		if err := r.reload(); err != nil {
+			return err
+		}
+		if link, ok := r.links[linkKey(adapter, adapterKey)]; ok && link.ConversationID == conversationID {
+			result = link
+			return nil
+		}
+		result = Link{Adapter: adapter, AdapterKey: adapterKey, ConversationID: conversationID, WorkspaceID: workspaceID, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+		if err := r.append(result); err != nil {
+			return err
+		}
+		r.links[linkKey(adapter, adapterKey)] = result
+		return nil
+	})
+	return result, err
+}
+
 func (r *Registry) Link(adapter, adapterKey, conversationID, workspaceID string) (Link, error) {
 	if adapter == "" || adapterKey == "" || conversationID == "" {
 		return Link{}, errors.New("adapter, adapter key, and conversation ID are required")

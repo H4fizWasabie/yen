@@ -55,7 +55,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	link, err := registry.Resolve("cli", cwd, cwd)
+	canonicalConversationID := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
+	var link conversation.Link
+	if canonicalConversationID != "" {
+		link, err = registry.ResolveShared("cli", cwd, cwd, canonicalConversationID)
+	} else {
+		link, err = registry.Resolve("cli", cwd, cwd)
+	}
 	if err != nil {
 		return reportError(stderr, err)
 	}
