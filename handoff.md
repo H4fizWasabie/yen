@@ -19,11 +19,10 @@ No cutover or TypeScript modification has happened. Local Telegram/dashboard
 adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
-A side-by-side VPS readiness attempt was made after the isolated OpenRouter
-smoke succeeded. The dedicated Go Telegram unit was installed without
-touching the existing TypeScript units, but Telegram returned `401
-Unauthorized` for the supplied pilot token. The Go pilot is stopped and its
-secret file removed. See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md).
+A side-by-side VPS pilot is now active without touching the existing
+TypeScript units. The replacement Telegram token authenticates, the Go bot
+has produced a live reply, and a Go CLI turn has appended to the same
+canonical conversation/session. See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md).
 
 Canonical rewrite repository: `https://github.com/H4fizWasabie/yen`.
 
