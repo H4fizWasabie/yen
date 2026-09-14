@@ -25,10 +25,16 @@ Date: 2026-09-14
 - The Go dashboard pilot on `127.0.0.1:30146` resolved a new dashboard tab to
   the same canonical conversation and completed a live request. The shared
   episodic database contained four records after the acceptance request.
+- Live memory acceptance completed through the dashboard path: the existing
+  favorite-color fact and the pilot marker were retrieved as conversation-
+  scoped semantic nodes; the episodic store contained six records afterward.
+- The Telegram unit was rolled back to `1901f93` and restored to `2a64583`
+  from a verified `/var/backups/yen-theoses-go-20260914T145936Z.tgz` archive;
+  both Go units stayed active and the dashboard health check remained green.
 
 ## Gate status
 
 M7 is partially accepted for Telegram authentication, visible reply,
-cross-adapter session routing, dashboard routing, and restart persistence.
-`/stop`, queued turns, live semantic-memory recall, and rollback acceptance
-remain open. Keep the existing TypeScript bot untouched.
+cross-adapter session routing, dashboard routing, restart persistence, live
+semantic-memory recall, and release rollback. `/stop` and queued-turn live
+traces remain open. Keep the existing TypeScript bot untouched.
