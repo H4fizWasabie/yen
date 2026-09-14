@@ -96,8 +96,10 @@ func TestRunEndToEndToolTurnUsesSharedRunnerAndMemory(t *testing.T) {
 		fmt.Fprintln(w, "data: [DONE]")
 	}))
 	defer server.Close()
-	path := filepath.Join(dir, "session.jsonl")
+	dataDir := filepath.Join(dir, "data")
+	path := filepath.Join(dataDir, "sessions", "session.jsonl")
 	t.Setenv("THEOSES_SESSION_FILE", path)
+	t.Setenv("THEOSES_DATA_DIR", dataDir)
 	t.Setenv("THEOSES_OPENAI_BASE_URL", server.URL)
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"-p", "read README"}, &stdout, &stderr); code != 0 {
@@ -113,7 +115,10 @@ func TestRunEndToEndToolTurnUsesSharedRunnerAndMemory(t *testing.T) {
 	if len(stored.Messages()) != 4 {
 		t.Fatalf("messages=%#v", stored.Messages())
 	}
-	if data, err := os.ReadFile(filepath.Join(dir, "consolidation-checkpoints.json")); err != nil || !strings.Contains(string(data), "conv-") {
+	if data, err := os.ReadFile(filepath.Join(dataDir, "consolidation-checkpoints.json")); err != nil || !strings.Contains(string(data), "conv-") {
 		t.Fatalf("checkpoint err=%v data=%s", err, data)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "conversation-queue.jsonl")); err != nil {
+		t.Fatalf("shared queue missing: %v", err)
 	}
 }

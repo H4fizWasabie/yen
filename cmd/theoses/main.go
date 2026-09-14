@@ -51,7 +51,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if sessionPath == "" {
 		sessionPath = filepath.Join(cwd, ".theoses-go", "session.jsonl")
 	}
-	registry, err := conversation.OpenRegistry(filepath.Join(filepath.Dir(sessionPath), "conversations.jsonl"))
+	dataDir := os.Getenv("THEOSES_DATA_DIR")
+	if dataDir == "" {
+		dataDir = filepath.Dir(sessionPath)
+	}
+	registry, err := conversation.OpenRegistry(filepath.Join(dataDir, "conversations.jsonl"))
 	if err != nil {
 		return reportError(stderr, err)
 	}
@@ -74,17 +78,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		model = "gpt-4o-mini"
 	}
 	client := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
-	queue, err := conversation.OpenQueue(filepath.Join(filepath.Dir(sessionPath), "conversation-queue.jsonl"))
+	queue, err := conversation.OpenQueue(filepath.Join(dataDir, "conversation-queue.jsonl"))
 	if err != nil {
 		return reportError(stderr, err)
 	}
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
 	runner.SharedMemory = canonicalConversationID != ""
-	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(filepath.Dir(sessionPath), "consolidation-checkpoints.json"))
+	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(dataDir, "consolidation-checkpoints.json"))
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	runner.Memory, err = memory.OpenEngine(filepath.Join(filepath.Dir(sessionPath), "memory"))
+	runner.Memory, err = memory.OpenEngine(filepath.Join(dataDir, "memory"))
 	if err != nil {
 		return reportError(stderr, err)
 	}
