@@ -31,3 +31,23 @@ func TestMemoryToolsUseCanonicalScope(t *testing.T) {
 		t.Fatalf("cross-scope result=%q err=%v", other, err)
 	}
 }
+
+func TestSharedConversationMemoryIgnoresChannelWorkspace(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	ctx := Context{WorkspaceID: "telegram-cwd", ConversationID: "conv-owner", ConversationScoped: true}
+	if _, err := engine.SaveNote("user prefers concise replies", ctx); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := engine.Remember("concise replies", Context{WorkspaceID: "cli-cwd", ConversationID: "conv-owner", ConversationScoped: true})
+	if err != nil || len(hits) != 1 || hits[0].Scope != ScopeConversation {
+		t.Fatalf("shared hits=%#v err=%v", hits, err)
+	}
+	other, err := engine.Remember("concise replies", Context{WorkspaceID: "cli-cwd", ConversationID: "other", ConversationScoped: true})
+	if err != nil || len(other) != 0 {
+		t.Fatalf("cross-conversation hits=%#v err=%v", other, err)
+	}
+}

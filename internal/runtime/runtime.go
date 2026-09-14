@@ -16,12 +16,13 @@ import (
 )
 
 type Runner struct {
-	Queue       *conversation.Queue
-	Provider    agent.Provider
-	ToolFactory func(workspace string) []agent.Tool
-	SessionPath func(turn conversation.Turn) string
-	Checkpoints *memory.Checkpoints
-	Memory      *memory.Engine
+	Queue        *conversation.Queue
+	Provider     agent.Provider
+	ToolFactory  func(workspace string) []agent.Tool
+	SessionPath  func(turn conversation.Turn) string
+	Checkpoints  *memory.Checkpoints
+	Memory       *memory.Engine
+	SharedMemory bool
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -167,7 +168,8 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, onUpdate f
 		tools = r.ToolFactory(turn.WorkspaceID)
 	}
 	if r.Memory != nil {
-		ctx := memory.Context{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID}
+		r.Memory.ConversationScoped = r.SharedMemory
+		ctx := memory.Context{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, ConversationScoped: r.SharedMemory}
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})

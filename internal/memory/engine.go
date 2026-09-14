@@ -13,11 +13,12 @@ import (
 )
 
 type Engine struct {
-	Semantic    *Store
-	Episodic    *EpisodicStore
-	Checkpoints *Checkpoints
-	mu          sync.Mutex
-	active      map[string]bool
+	Semantic           *Store
+	Episodic           *EpisodicStore
+	Checkpoints        *Checkpoints
+	ConversationScoped bool
+	mu                 sync.Mutex
+	active             map[string]bool
 }
 
 type ConsolidatedFact struct {
@@ -64,6 +65,8 @@ func (e *Engine) SaveNote(text string, ctx Context) (Node, error) {
 	node := NewNode(text)
 	node.OwnerID, node.WorkspaceID, node.ConversationID = ctx.OwnerID, ctx.WorkspaceID, ctx.ConversationID
 	switch {
+	case ctx.ConversationScoped && ctx.ConversationID != "":
+		node.Scope = ScopeConversation
 	case ctx.OwnerID != "":
 		node.Scope = ScopeOwner
 	case ctx.WorkspaceID != "":
@@ -127,7 +130,9 @@ func (e *Engine) applyConsolidation(turnID, conversationID, workspaceID, adapter
 		localID := fact.ID
 		digest := sha256.Sum256([]byte(conversationID + "\x00" + turnID + "\x00" + localID + "\x00" + fact.Subject))
 		node := Node{ID: "fact-" + hex.EncodeToString(digest[:8]), Type: "semantic", Subject: strings.TrimSpace(fact.Subject), Body: fact.Body, At: fact.At, Scope: ScopeWorkspace, WorkspaceID: workspaceID, ConversationID: conversationID, Channel: adapter, TurnID: turnID}
-		if workspaceID == "" {
+		if e.ConversationScoped && conversationID != "" {
+			node.Scope = ScopeConversation
+		} else if workspaceID == "" {
 			node.Scope = ScopeEngine
 		}
 		if node.At == "" {

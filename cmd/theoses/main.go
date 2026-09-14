@@ -79,6 +79,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return reportError(stderr, err)
 	}
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
+	runner.SharedMemory = canonicalConversationID != ""
 	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(filepath.Dir(sessionPath), "consolidation-checkpoints.json"))
 	if err != nil {
 		return reportError(stderr, err)

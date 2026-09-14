@@ -43,9 +43,10 @@ type Node struct {
 }
 
 type Context struct {
-	OwnerID        string
-	WorkspaceID    string
-	ConversationID string
+	OwnerID            string
+	WorkspaceID        string
+	ConversationID     string
+	ConversationScoped bool
 }
 
 type Store struct{ dir string }
