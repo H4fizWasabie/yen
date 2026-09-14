@@ -22,10 +22,13 @@ Date: 2026-09-14
 - Commit `1901f93` was restarted in the live pilot with canonical conversation
   memory enabled; the service stayed active and retained the same session
   file.
+- The Go dashboard pilot on `127.0.0.1:30146` resolved a new dashboard tab to
+  the same canonical conversation and completed a live request. The shared
+  episodic database contained four records after the acceptance request.
 
 ## Gate status
 
 M7 is partially accepted for Telegram authentication, visible reply,
-cross-adapter session routing, and restart persistence. `/stop`, queued turns,
-live memory recall, and rollback acceptance remain open. Keep the existing
-TypeScript bot untouched.
+cross-adapter session routing, dashboard routing, and restart persistence.
+`/stop`, queued turns, live semantic-memory recall, and rollback acceptance
+remain open. Keep the existing TypeScript bot untouched.
