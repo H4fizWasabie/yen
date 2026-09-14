@@ -46,5 +46,6 @@ the failure is data-related; release rollback alone preserves current data.
 ## Current gate
 
 The pilot has passed live health, systemd restart, OpenRouter smoke, dashboard
-routing, verified backup creation, and a rollback/restore cycle. Fresh live
-`/stop` and queued-turn traces remain required before M10 cutover discussion.
+routing, verified backup creation, rollback/restore, cancellation, and FIFO
+queue acceptance. A reproducible fresh-host installer remains deferred; the
+documented unit/data/secret layout is the current operational contract.

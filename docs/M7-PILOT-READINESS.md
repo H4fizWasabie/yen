@@ -31,10 +31,15 @@ Date: 2026-09-14
 - The Telegram unit was rolled back to `1901f93` and restored to `2a64583`
   from a verified `/var/backups/yen-theoses-go-20260914T145936Z.tgz` archive;
   both Go units stayed active and the dashboard health check remained green.
+- Live dashboard acceptance canceled a blocked turn with `/stop`, recorded a
+  durable `canceled` queue event, and then settled a second queued turn with
+  the response `queued-two`. The Telegram adapter has the same cancellation
+  contract in its focused test.
 
 ## Gate status
 
-M7 is partially accepted for Telegram authentication, visible reply,
-cross-adapter session routing, dashboard routing, restart persistence, live
-semantic-memory recall, and release rollback. `/stop` and queued-turn live
-traces remain open. Keep the existing TypeScript bot untouched.
+M7 is accepted for the selected side-by-side pilot path: Telegram
+authentication/reply, cross-adapter routing, dashboard routing, restart
+persistence, live semantic-memory recall, release rollback, cancellation, and
+FIFO queued-turn settlement are evidenced. Full Telegram UI/rendering parity
+remains outside this pilot. Keep the existing TypeScript bot untouched.
