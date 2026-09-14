@@ -36,3 +36,9 @@ The tool trace used tool ID `calc-1`; the first turn ended with
 
 This is TypeScript evidence only. A Go parity claim requires the same
 normalized trace from a Go test and matching persisted session read-back.
+
+The Go loop now has a normalized-trace test covering success, tool, provider
+error, and abort outcomes. Its tool boundary emits
+`message_end:assistant:toolUse` and preserves the pinned event ordering;
+the session implementation now uses TypeScript-compatible short random entry
+IDs and has a persisted tool-turn read-back fixture.

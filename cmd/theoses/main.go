@@ -2,46 +2,63 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/H4fizWasabie/theoses2-go/internal/agent"
-	"github.com/H4fizWasabie/theoses2-go/internal/provider"
-	"github.com/H4fizWasabie/theoses2-go/internal/session"
-	"github.com/H4fizWasabie/theoses2-go/internal/tools"
+	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/memory"
+	"github.com/H4fizWasabie/yen/internal/provider"
+	"github.com/H4fizWasabie/yen/internal/runtime"
+	"github.com/H4fizWasabie/yen/internal/tools"
 )
 
 func main() {
-	prompt := flag.String("p", "", "run one non-interactive prompt")
-	flag.Parse()
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("theoses", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	prompt := flags.String("p", "", "run one non-interactive prompt")
+	semanticSource := flags.String("migrate-semantic", "", "copy semantic Markdown or legacy JSONL from this path")
+	episodicSource := flags.String("migrate-episodes", "", "copy episodes from this SQLite database")
+	memoryDir := flags.String("memory-dir", "", "target semantic memory directory")
+	episodesDB := flags.String("episodes-db", "", "target episodic SQLite database")
+	scope := flags.String("scope", "", "migration scope: engine, owner, workspace, or conversation")
+	ownerID := flags.String("owner", "", "owner scope for migration")
+	workspaceID := flags.String("workspace", "", "workspace scope for migration")
+	conversationID := flags.String("conversation", "", "canonical conversation for migration")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *semanticSource != "" || *episodicSource != "" {
+		return runMigration(stdout, stderr, *semanticSource, *episodicSource, *memoryDir, *episodesDB, *scope, *ownerID, *workspaceID, *conversationID)
+	}
 	if *prompt == "" {
-		fmt.Fprintln(os.Stderr, "usage: theoses -p PROMPT")
-		os.Exit(2)
+		fmt.Fprintln(stderr, "usage: theoses -p PROMPT")
+		return 2
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		fail(err)
+		return reportError(stderr, err)
 	}
 	sessionPath := os.Getenv("THEOSES_SESSION_FILE")
 	if sessionPath == "" {
 		sessionPath = filepath.Join(cwd, ".theoses-go", "session.jsonl")
 	}
-	var current *session.Session
-	if _, err := os.Stat(sessionPath); err == nil {
-		current, err = session.Open(sessionPath)
-	} else if os.IsNotExist(err) {
-		current = session.New(sessionPath, session.Header{ID: "cli-session", CWD: cwd, Channel: "cli", ChannelSessionID: cwd})
-	} else {
-		fail(err)
-	}
+	registry, err := conversation.OpenRegistry(filepath.Join(filepath.Dir(sessionPath), "conversations.jsonl"))
 	if err != nil {
-		fail(err)
+		return reportError(stderr, err)
 	}
-
+	link, err := registry.Resolve("cli", cwd, cwd)
+	if err != nil {
+		return reportError(stderr, err)
+	}
 	baseURL := os.Getenv("THEOSES_OPENAI_BASE_URL")
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
@@ -51,71 +68,66 @@ func main() {
 		model = "gpt-4o-mini"
 	}
 	client := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
-	history := toAgentMessages(current.Messages())
-	result, err := agent.RunFrom(context.Background(), client, []agent.Tool{tools.NewReadTool(cwd)}, history, *prompt)
+	queue, err := conversation.OpenQueue(filepath.Join(filepath.Dir(sessionPath), "conversation-queue.jsonl"))
 	if err != nil {
-		fail(err)
+		return reportError(stderr, err)
 	}
-	for _, message := range result.Messages[len(history):] {
-		if _, err := current.Append(toSessionMessage(message)); err != nil {
-			fail(err)
-		}
+	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
+	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(filepath.Dir(sessionPath), "consolidation-checkpoints.json"))
+	if err != nil {
+		return reportError(stderr, err)
 	}
-	fmt.Println(result.FinalText)
+	runner.Memory, err = memory.OpenEngine(filepath.Join(filepath.Dir(sessionPath), "memory"))
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	defer runner.Memory.Close()
+	runner.SessionPath = func(conversation.Turn) string { return sessionPath }
+	turn, err := runner.Submit(link, *prompt)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	if _, result, err := runner.RunSubmitted(context.Background(), turn); err != nil {
+		return reportError(stderr, err)
+	} else {
+		fmt.Fprintln(stdout, result.FinalText)
+	}
+	return 0
 }
 
-func toAgentMessages(messages []session.Message) []agent.Message {
-	result := make([]agent.Message, 0, len(messages))
-	for _, message := range messages {
-		converted := agent.Message{Role: message.Role, ToolCallID: message.ToolCallID}
-		if message.Role == "toolResult" {
-			converted.Role = "tool"
+func runMigration(stdout, stderr io.Writer, semanticSource, episodicSource, memoryDir, episodesDB, scope, ownerID, workspaceID, conversationID string) int {
+	if semanticSource != "" {
+		if memoryDir == "" || scope == "" {
+			fmt.Fprintln(stderr, "semantic migration requires -memory-dir and -scope")
+			return 2
 		}
-		if text, ok := message.Content.(string); ok {
-			converted.Content = text
-			result = append(result, converted)
-			continue
-		}
-		data, err := json.Marshal(message.Content)
+		store := memory.NewStore(memoryDir)
+		count, err := memory.MigrateSemantic(semanticSource, store, memory.Scope(scope), memory.Context{OwnerID: ownerID, WorkspaceID: workspaceID, ConversationID: conversationID})
 		if err != nil {
-			continue
+			return reportError(stderr, err)
 		}
-		var parts []session.ContentPart
-		if json.Unmarshal(data, &parts) != nil {
-			continue
-		}
-		for _, part := range parts {
-			if part.Type == "text" {
-				converted.Content += part.Text
-			}
-			if part.Type == "toolCall" {
-				args, _ := part.Arguments.(map[string]any)
-				converted.ToolCalls = append(converted.ToolCalls, agent.ToolCall{ID: part.ID, Name: part.Name, Args: args})
-			}
-		}
-		result = append(result, converted)
+		fmt.Fprintf(stdout, "migrated %d semantic nodes\n", count)
 	}
-	return result
+	if episodicSource != "" {
+		if episodesDB == "" || conversationID == "" {
+			fmt.Fprintln(stderr, "episode migration requires -episodes-db and -conversation")
+			return 2
+		}
+		store, err := memory.OpenEpisodicStore(episodesDB)
+		if err != nil {
+			return reportError(stderr, err)
+		}
+		defer store.Close()
+		count, err := memory.MigrateEpisodes(episodicSource, store, conversationID, workspaceID)
+		if err != nil {
+			return reportError(stderr, err)
+		}
+		fmt.Fprintf(stdout, "migrated %d episodes\n", count)
+	}
+	return 0
 }
 
-func toSessionMessage(message agent.Message) session.Message {
-	if message.Role == "tool" {
-		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}}
-	}
-	if len(message.ToolCalls) > 0 {
-		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+1)
-		if message.Content != "" {
-			parts = append(parts, session.ContentPart{Type: "text", Text: message.Content})
-		}
-		for _, call := range message.ToolCalls {
-			parts = append(parts, session.ContentPart{Type: "toolCall", ID: call.ID, Name: call.Name, Arguments: call.Args})
-		}
-		return session.Message{Role: message.Role, Content: parts}
-	}
-	return session.Message{Role: message.Role, Content: message.Content}
-}
-
-func fail(err error) {
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
+func reportError(stderr io.Writer, err error) int {
+	fmt.Fprintln(stderr, err)
+	return 1
 }

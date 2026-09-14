@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -81,7 +82,7 @@ func TestOpenSessionContinuesParentChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if nextID != "entry-3" {
+	if nextID == "" || nextID == userID {
 		t.Fatalf("next id = %q", nextID)
 	}
 
@@ -91,5 +92,81 @@ func TestOpenSessionContinuesParentChain(t *testing.T) {
 	}
 	if string(data) == "" || userID == "" {
 		t.Fatal("session was not persisted")
+	}
+}
+
+func TestOpenSkipsMalformedLinesWithoutLosingSessionEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	s := New(path, Header{ID: "session-1", CWD: "/workspace", Channel: "cli", ChannelSessionID: "/workspace"})
+	if _, err := s.Append(Message{Role: "user", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(Message{Role: "assistant", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, []byte("not-json\n")...)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.Messages()) != 2 {
+		t.Fatalf("messages = %#v", reopened.Messages())
+	}
+	if _, err := reopened.Append(Message{Role: "user", Content: "again"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionReadbackPreservesToolTurnBoundary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	s := New(path, Header{ID: "session-1", CWD: "/workspace", Channel: "cli", ChannelSessionID: "/workspace"})
+	for _, message := range []Message{
+		{Role: "user", Content: "read README"},
+		{Role: "assistant", Content: []ContentPart{{Type: "toolCall", ID: "calc-1", Name: "read", Arguments: map[string]any{"path": "README.md"}}}, StopReason: "toolUse"},
+		{Role: "toolResult", ToolCallID: "calc-1", Content: []ContentPart{{Type: "text", Text: "README contents"}}},
+		{Role: "assistant", Content: "done", StopReason: "stop"},
+	} {
+		if _, err := s.Append(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []map[string]any
+	for _, raw := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		var line map[string]any
+		if err := json.Unmarshal(raw, &line); err != nil {
+			t.Fatal(err)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) != 5 {
+		t.Fatalf("persisted lines = %d", len(lines))
+	}
+	toolCall := lines[2]["message"].(map[string]any)
+	if toolCall["role"] != "assistant" || toolCall["stopReason"] != "toolUse" {
+		t.Fatalf("tool call = %#v", toolCall)
+	}
+	toolResult := lines[3]["message"].(map[string]any)
+	if toolResult["role"] != "toolResult" || toolResult["toolCallId"] != "calc-1" {
+		t.Fatalf("tool result = %#v", toolResult)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.Messages()) != 4 {
+		t.Fatalf("readback messages = %#v", reopened.Messages())
 	}
 }

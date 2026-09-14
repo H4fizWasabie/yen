@@ -1,6 +1,8 @@
 # M1 contract extraction
 
-Status: draft contract set; no production Go code. Baseline evidence is in
+Status: approved for the shared identity, queue, and memory seams; the local
+Go seams are implemented and tested, but no deployment or migration cutover is
+authorized. Baseline evidence is in
 [M1-BASELINE.md](M1-BASELINE.md), with the event trace in
 [M1-GOLDEN-TRACE.md](M1-GOLDEN-TRACE.md).
 
@@ -23,9 +25,10 @@ channel adapter -> canonical conversation lease -> session state/log
                          semantic + episodic memory
 ```
 
-The first implementation slice stops after the CLI adapter, session state,
-agent loop, one provider, and `read`. The memory boxes are an explicit later
-seam, not a reason to port every current memory feature now.
+The original first implementation slice stopped after the CLI adapter, session
+state, agent loop, one provider, and `read`. The approved local extension now
+implements the shared identity, queue, scoped memory, and adapter seams without
+claiming the full TypeScript memory/consolidation surface.
 
 ## 2. Canonical conversation identity
 
@@ -48,6 +51,8 @@ cross-channel compatible.
 
 ### Later shared-session target
 
+Approved decision: use a channel-independent canonical conversation ID. The
+
 The desired change needs a channel-independent canonical conversation ID. The
 adapter identity must become metadata on an input/event, not the durable
 session identity. At minimum, the reviewed contract must answer:
@@ -60,9 +65,9 @@ session identity. At minimum, the reviewed contract must answer:
 5. Which channel owns presentation-only settings such as Telegram formatting?
 6. How are cross-channel replies, attachments, and tool progress represented?
 
-Until those answers are approved, Go must keep `channel` and
-`channelSessionId` as compatibility metadata and must not merge files by cwd
-alone.
+Adapter identities link explicitly to the canonical ID. Go must keep `channel`
+and `channelSessionId` as compatibility metadata and must not merge files by
+cwd alone.
 
 ## 3. Session state and persistence contract
 
@@ -173,6 +178,8 @@ abort before completion.
 
 ## 7. Shared session queue contract for the later multi-channel change
 
+The following queue contract is approved for implementation:
+
 The desired architecture requires serialization at the canonical conversation,
 not independently inside each adapter:
 
@@ -190,10 +197,12 @@ Current TypeScript queues are adapter/session-specific: Telegram keeps maps by
 chat (`packages/telegram/src/index.ts:406-414`), dashboard keeps a queue per
 dashboard session (`packages/dashboard/src/index.ts:282-297`), and
 `Agent.prompt` rejects a second active prompt
-(`packages/agent/src/agent.ts:347-388`). These are evidence, not the final
-shared-channel design.
+(`packages/agent/src/agent.ts:347-388`). These are baseline evidence; the Go
+queue is the canonical owner after an adapter resolves its link.
 
 ## 8. Shared semantic and episodic memory contract for the later change
+
+The following memory contract is approved for implementation:
 
 The baseline already stores semantic nodes under a global memories directory
 and episodic records in one SQLite database:
@@ -221,7 +230,8 @@ The later shared-memory contract must therefore define:
 - how memory reads and writes behave across process restart and deployment
   rollback.
 
-No Go memory schema should be invented before this contract is approved.
+Go memory uses engine, owner, workspace, and conversation namespaces. No
+channel-specific memory store may be introduced.
 
 ## 9. Capacity and deployment measurements
 

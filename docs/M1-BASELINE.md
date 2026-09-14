@@ -1,6 +1,7 @@
 # M1 TypeScript baseline evidence
 
-Status: partial; no Go implementation or deployment has started.
+Status: partial baseline capture; no Go implementation or deployment had
+started when these measurements were recorded.
 
 ## Reproduction boundary
 

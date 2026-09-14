@@ -1,7 +1,7 @@
 # M0 investigation: Theoses2 Go rewrite
 
-Status: M0 approved for contract extraction; production Go implementation is
-still not started.
+Status: M0 approved for contract extraction; the scoped Go implementation is
+under active parity and adapter validation, with deployment still deferred.
 
 ## Baseline and authority
 
@@ -84,8 +84,11 @@ session, prints assistant text, maps assistant errors to exit code 1, and
 disposes the runtime. `packages/coding-agent/src/main.ts:725-821` constructs
 the services/session and `:834-840` constructs the runtime used by that mode.
 
-Telegram is deferred. Its source adds owner credentials, channel-keyed session
-lookup, per-chat queues, stop state, status-message mutation, reply context,
+The Go workspace now has a local Telegram Bot API adapter with owner guard,
+canonical registry/queue use, and stop handling; live credentials and the
+baseline's status-message, reply-context, image, artifact, and rendering
+behavior remain deferred. Its source adds owner credentials, channel-keyed
+session lookup, per-chat queues, stop state, status-message mutation, reply context,
 images, artifacts, tool-call rendering, and Telegram delivery
 (`packages/telegram/src/index.ts:340-385`, `:393-415`, `:630-700`). It is a
 second adapter contract, not a cheap first channel.
@@ -108,9 +111,12 @@ second adapter contract, not a cheap first channel.
 
 ### Memory
 
-The first slice does not implement semantic graph memory, episodic SQLite
+The initial CLI slice did not implement semantic graph memory, episodic SQLite
 memory, `remember`, `save_note`, `recall_turns`, Working Note, consolidation, or
-compaction. Existing memory data must not be rewritten or silently imported.
+compaction. The approved local extension now provides scoped semantic/episodic
+stores, checkpoints, explicit additive migration, and canonical-turn recording.
+Legacy stores are never imported automatically; full consolidation remains
+outside this slice.
 
 The later approved product direction is that CLI, Telegram, dashboard, and
 future channels share one canonical conversation/session and the same semantic
@@ -189,18 +195,20 @@ look broader.
   select only after the exact live model is chosen.
 
 These tests are source evidence and characterization targets, not Go parity
-results. No Go tests or golden traces exist yet.
+results by themselves. The current Go tests and normalized trace evidence are
+recorded in `docs/M1-GOLDEN-TRACE.md` and `docs/M2-FIRST-SLICE.md`.
 
 ## 6. Explicit non-goals and deferred features
 
 - Full TypeScript-to-Go rewrite.
 - All providers, model catalog generation, OAuth, and provider-specific
   extensions.
-- Telegram, dashboard, browser UI, RPC, CBOR, client/server, Unix transport,
-  and protocol compatibility.
+- Browser UI, RPC, CBOR, client/server, Unix transport, and protocol
+  compatibility. Local dashboard HTTP and Telegram adapter seams are in scope;
+  live delivery, authentication, and UI are not.
 - Bash, write, edit, find, grep, web search, image generation, document
   conversion, sidecars, MCP, and extension tools.
-- Semantic/episodic memory, Working Note, compaction, consolidation, artifacts,
+- Full semantic/episodic consolidation, Working Note, compaction, artifacts,
   branches, forks, labels, and session migrations.
 - Multi-user ownership, authentication, deployment, systemd, VPS rollout,
   cutover, or decommissioning.
@@ -216,14 +224,14 @@ understood enough to test, but Go evidence does not exist.
 |---|---|---|---|---|---|---|
 | P-001 | CLI session create/resume keyed by cwd | `session-manager.ts:1022-1049`, `:1815-1900` | TS session tests; Go session tests; two-process local CLI acceptance | partial | default path/ID discovery and historical session migration are not ported | partial |
 | P-002 | v3 header, parent links, append-only JSONL, lazy flush | `session-manager.ts:48-71`, `:1279-1329` | TS session tests; Go JSONL test; acceptance read-back | partial | current Go entry model is limited and not migration-compatible | partial |
-| P-003 | Prompt lifecycle and event ordering | `agent.ts:250-388`, `agent-loop.ts:95-275` | TS golden trace; Go event-order test; local acceptance | partial | Go currently aggregates provider text and lacks partial update events | partial |
-| P-004 | Assistant tool call -> `read` -> tool result -> next assistant turn | `agent-loop.ts:202-224`, `read.ts:209-245` | TS trace; Go loop/provider/read tests; local SSE acceptance | partial | read path recovery and full truncation details remain incomplete | partial |
-| P-005 | One `openai-completions` streamed response and provider error | `models.ts:690-703`, `openai-completions.ts:699-717` | TS provider tests; Go SSE/tool-delta tests; local SSE acceptance | partial | no live provider, retry policy, usage, or malformed-stream parity | partial |
-| P-006 | CLI final text and error exit status | `print-mode.ts:139-161` | TS print tests; Go build; local CLI success acceptance | partial | CLI error acceptance and output formatting are incomplete | partial |
-| P-007 | Read-tool path, truncation, and abort safety | `read.ts:21-25`, `:209-245` | TS path tests; Go read test; local tool acceptance | partial | scope deliberately narrower than full read tool | partial |
-| P-008 | Telegram delivery and channel-keyed session behavior | `telegram/src/index.ts:340-385`, `:630-700` | Telegram integration/live acceptance | not started | outside first slice | deferred |
-| P-009 | Future shared canonical conversation across CLI, Telegram, dashboard, and other channels | Current channel-keyed source above; desired change requires a new reviewed contract | Cross-channel session identity, ordering, and replay trace | not started | intentional product change, not baseline parity | deferred |
-| P-010 | Future shared semantic and episodic memory across channels | `memory-store.ts:200+`, `episodic-store.ts:53-163`, `memory-consolidation.ts:535-578` | Cross-channel consolidation and recall fixture with restart | not started | current checkpoints are channel-session keyed | deferred |
+| P-003 | Prompt lifecycle and event ordering | `agent.ts:250-388`, `agent-loop.ts:95-275` | TS golden trace; Go event-order/update/error tests; local acceptance | partial | normalized update payloads and full event metadata are not persisted | partial |
+| P-004 | Assistant tool call -> `read` -> tool result -> next assistant turn | `agent-loop.ts:202-224`, `read.ts:209-245` | TS trace; Go loop/provider/read tests; local SSE acceptance | partial | full path recovery remains incomplete | partial |
+| P-005 | One `openai-completions` streamed response and provider error | `models.ts:690-703`, `openai-completions.ts:699-717` | TS provider evidence; Go SSE/error/retry/usage/update tests; local SSE acceptance | partial | live credentials and complete provider compatibility matrix remain unverified | partial |
+| P-006 | CLI final text and error exit status | `print-mode.ts:139-161` | TS print authority; Go CLI success/error tests; local acceptance | partial | output formatting is narrower than print mode | partial |
+| P-007 | Read-tool path, truncation, and abort safety | `read.ts:21-25`, `:209-245` | TS path authority; Go read tests; local tool acceptance | partial | image handling remains deferred | partial |
+| P-008 | Telegram delivery and channel-keyed session behavior | `telegram/src/index.ts:340-385`, `:630-700` | Go Bot API poller, owner guard, and fake-API tests; live acceptance pending | partial | Go intentionally uses approved canonical identity instead of baseline channel-only sessions; live credentials/delivery remain | approved product extension |
+| P-009 | Future shared canonical conversation across CLI, Telegram, dashboard, and other channels | Current channel-keyed source above; desired change requires a new reviewed contract | Registry, queue, runner, and local Telegram/dashboard cross-channel tests | partial | live adapters, replay streaming, and process-concurrent acceptance remain | approved product extension |
+| P-010 | Future shared semantic and episodic memory across channels | `memory-store.ts:200+`, `episodic-store.ts:53-163`, `memory-consolidation.ts:535-578` | Scoped stores, graph/search/time tests, migration, checkpoint and runner ordering tests | partial | consolidation and live cross-channel restart acceptance remain | approved product extension |
 
 No row is accepted as parity until it has TypeScript source evidence, a Go
 test, and a normalized golden trace or live acceptance result where relevant.
@@ -269,7 +277,7 @@ After approval, stop the slice if any of these occur:
 
 ## M0 decision
 
-M0 is approved for contract extraction. Production Go remains gated on the M1
+M0 is approved for contract extraction. Production use remains gated on the M1
 contract, baseline-measurement, and acceptance-threshold exit gate. This
-workspace contains no production Go code, no copied Bible, and no deployment;
-the TypeScript oracle remains unchanged.
+workspace contains the scoped Go implementation, no copied Bible, and no
+deployment; the TypeScript oracle remains unchanged.

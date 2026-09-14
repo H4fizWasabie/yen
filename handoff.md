@@ -15,8 +15,11 @@ CLI -p prompt
   -> final CLI text
 ```
 
-No deployment, cutover, Telegram/dashboard work, or TypeScript modification
-has happened. TypeScript remains the operational fallback.
+No deployment, cutover, or TypeScript modification has happened. Local
+Telegram/dashboard adapter code and acceptance fixtures exist; TypeScript
+remains the operational fallback.
+
+Canonical rewrite repository: `https://github.com/H4fizWasabie/yen`.
 
 ## Oracle
 
@@ -38,6 +41,17 @@ not use the newer checkout as an unqualified oracle.
 - `internal/tools`: read-only local file tool with offset/limit, basic
   truncation, and cancellation checks.
 - `cmd/theoses`: local `-p` CLI adapter.
+- `internal/runtime`: canonical queue runner with session persistence and
+  post-persistence checkpoint ordering; submitted turns wait for FIFO
+  availability instead of being rejected while a same-conversation turn runs.
+  Active leases renew during long turns, and durable cancellation is observed
+  across runner processes.
+- `internal/adapters`: deterministic Telegram message and dashboard HTTP
+  adapter seams sharing the canonical registry, runner, and memory engine.
+- `cmd/theoses-dashboard`: local dashboard process with `/healthz`; a local
+  start/readiness check has passed on `127.0.0.1:18789`.
+- `cmd/theoses-telegram`: standard-library Bot API polling process with an
+  owner-chat guard; live credentials are intentionally not used here.
 - `docs/M0-INVESTIGATION.md`: approved M0 problem/scope/ledger.
 - `docs/M1-CONTRACTS.md`: contracts, later shared-session/memory seam, and
   working acceptance thresholds.
@@ -55,35 +69,57 @@ go vet ./...
 go build -o /tmp/theoses-go ./cmd/theoses
 ```
 
+The fixed workload test also passes: 32 independent conversations, ten 4 KiB
+turns, peak process RSS 65,656 KiB under the 160 MiB working threshold.
+
+The accepted shared identity decision is now recorded in `CONTEXT.md`,
+`docs/adr/0001-canonical-conversation-and-memory.md`, and
+`docs/M1-CONTRACTS.md`. `internal/conversation` provides the durable adapter
+registry and FIFO turn queue; new CLI sessions resolve a canonical conversation
+ID and workspace metadata.
+
+`internal/memory` provides scoped semantic Markdown nodes with YAML front
+matter, episodic SQLite records, durable checkpoints, an engine that records
+canonical turns, explicit additive migration helpers, and agent-facing
+`remember`/`save_note` tools plus bounded session-scoped `recall_turns`.
+The engine also applies extracted fact/edge/episode batches idempotently before
+advancing a checkpoint, and exposes an explicit one-provider-call
+`Consolidate` path for structured JSON extraction.
+Migration accepts semantic Markdown or the legacy JSONL memory file explicitly;
+it is never automatic and leaves source stores intact.
+
 Local SSE acceptance also passed: a CLI process received a tool call, read a
 fixture README, printed the final response, persisted four session entries,
 then a second process reopened the same file and appended another turn.
+
+The same acceptance is now a repository test through the shared runner; it also
+checks the episodic turn record and consolidation checkpoint after persistence.
+
+The local parity hardening pass also covers Unicode/path recovery, read
+truncation metadata, the pinned memory query matcher, provider read-tool
+schema, cross-handle checkpoint merging, and remote active-turn cancellation.
 
 This is not parity signoff. The implementation still differs from the
 TypeScript oracle in the areas listed in `docs/M2-FIRST-SLICE.md`.
 
 ## Pick up next
 
-Work in this order:
+The provider, read, CLI error-boundary, fixed-capacity, canonical identity, and
+queue slices are now implemented and locally verified. Work in this order:
 
-1. Add Go tests for provider error, abort, malformed SSE, retry, usage, and
-   partial update events; then implement only the behavior required by those
-   tests.
-2. Harden `read` against the pinned TypeScript cases: path recovery,
-   symlink/traversal behavior, exact 500-line/12 KiB truncation, Unicode names,
-   missing files, and abort-before-completion.
-3. Add CLI error/exit-status acceptance and verify persisted interrupted-turn
-   boundaries.
-4. Compare Go and TypeScript normalized traces and session read-backs. Update
+1. Compare Go and TypeScript normalized traces and session read-backs. Update
    the parity ledger only with TypeScript source evidence, Go tests, and a
    golden/local acceptance result.
-5. Re-run the fixed capacity workload: 32 independent conversations, ten
-   turns, 4 KiB payloads. Working threshold is peak RSS <=160 MiB, with zero
-   cross-talk and no late results.
-6. Only after the first slice is stable, design the shared canonical
-   conversation lease/queue for CLI, Telegram, and dashboard.
-7. Then define shared semantic and episodic memory scope/checkpoint migration.
-8. Deployment and rollback validation come last; do not deploy from this
+2. Compare the new memory stores against more TypeScript edge/search cases and
+   record any accepted parity differences. The semantic edge walk and episodic
+   search/point-in-time paths now have Go coverage.
+3. Add adapter-facing migration/read-back integration around the existing
+   deterministic seams; keep startup import disabled. The explicit migration
+   command, persisted tool-turn fixture, and dashboard SSE path now exist.
+4. Validate adapter reconnect/read-back behavior under concurrent processes;
+   the queue and registry now use cross-process file locking, expiring
+   per-turn leases, durable cancellation, and a subprocess claim test.
+5. Deployment and rollback validation come last; do not deploy from this
    handoff.
 
 ## Important deferred product change
