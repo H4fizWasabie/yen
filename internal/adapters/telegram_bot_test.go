@@ -118,3 +118,51 @@ func TestTelegramBotPollsUpdatesAdvancesOffsetAndStops(t *testing.T) {
 		t.Fatalf("offset=%d, want 8", bot.Offset)
 	}
 }
+
+func TestTelegramBotStopConfirmsCancellation(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, provider{}, nil)
+	link, err := registry.Resolve("telegram", "42", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := runner.Submit(link, "long request")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := queue.Claim(link.ConversationID); err != nil || !ok {
+		t.Fatalf("claim turn=%#v ok=%v err=%v", turn, ok, err)
+	}
+	var response string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/sendMessage" {
+			var payload map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			response = payload["text"]
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	update := telegramUpdate{Message: &telegramMessage{Text: "/stop"}}
+	update.Message.Chat.ID = 42
+	if err := bot.HandleUpdate(context.Background(), update); err != nil {
+		t.Fatal(err)
+	}
+	if response != "Stopped." {
+		t.Fatalf("stop response=%q", response)
+	}
+	if active := queue.Active(link.ConversationID); len(active) != 0 {
+		t.Fatalf("active after stop=%#v", active)
+	}
+}

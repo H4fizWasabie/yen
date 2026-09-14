@@ -79,7 +79,10 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	if text == "/stop" || text == "/abort" {
 		if link, linked := b.Adapter.Service.Registry.Get("telegram", chatID); linked {
 			if turn, ok := b.Adapter.Service.Runner.Active(link.ConversationID); ok {
-				return b.Adapter.Service.Runner.Cancel(turn.ID)
+				if err := b.Adapter.Service.Runner.Cancel(turn.ID); err != nil {
+					return b.sendMessage(ctx, chatID, "Error: "+err.Error())
+				}
+				return b.sendMessage(ctx, chatID, "Stopped.")
 			}
 		}
 		return b.sendMessage(ctx, chatID, "No active turn.")
