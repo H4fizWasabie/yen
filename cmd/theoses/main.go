@@ -208,6 +208,17 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		runner.Provider = configured
 		_, err = fmt.Fprintf(stdout, "Model set: %s\n", model)
 		return true, err
+	case text == "/scoped-models":
+		models, err := provider.AvailableModels(context.Background(), runner.Provider)
+		if err != nil {
+			return true, err
+		}
+		data, err := json.Marshal(models)
+		if err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintf(stdout, "%s\n", data)
+		return true, err
 	case text == "/thinking" || strings.HasPrefix(text, "/thinking "):
 		level := strings.TrimSpace(strings.TrimPrefix(text, "/thinking"))
 		if level == "" {

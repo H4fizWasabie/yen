@@ -318,6 +318,26 @@ func TestInteractiveProviderAndTrustCommands(t *testing.T) {
 	}
 }
 
+func TestInteractiveScopedModelsCommandListsProviderCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/models" {
+			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-b"}]}`))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1"})
+	runner := &runtime.Runner{Provider: provider.NewOpenAICompletions(server.URL, "key", "model-a")}
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/scoped-models", current, runner, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), `"model-b"`) {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+}
+
 func TestInteractiveSettingsAndReloadCommands(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})
