@@ -21,6 +21,15 @@ func (provider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Re
 	return agent.Response{Text: "done", StopReason: "stop"}, nil
 }
 
+type contextCaptureProvider struct {
+	messages []agent.Message
+}
+
+func (p *contextCaptureProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.messages = append([]agent.Message(nil), messages...)
+	return agent.Response{Text: "continued", StopReason: "stop"}, nil
+}
+
 type slowProvider struct {
 	mu      sync.Mutex
 	seen    []string
@@ -154,6 +163,46 @@ func TestRunnerUsesCanonicalQueueAndResumesSession(t *testing.T) {
 	}
 	if len(stored.Messages()) != 4 {
 		t.Fatalf("resumed messages=%#v", stored.Messages())
+	}
+}
+
+func TestRunnerUsesCompactionAwareContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-compact.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-compact", ConversationID: "conv-compact", CWD: dir, Channel: "cli", ChannelSessionID: dir})
+	if _, err := saved.Append(session.Message{Role: "user", Content: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.Append(session.Message{Role: "assistant", Content: "old reply"}); err != nil {
+		t.Fatal(err)
+	}
+	keptID, err := saved.Append(session.Message{Role: "user", Content: "keep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.Append(session.Message{Role: "assistant", Content: "keep reply"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.AppendCompaction("old summary", keptID, 42, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &contextCaptureProvider{}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-compact", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "new prompt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.messages) != 4 || provider.messages[0].Content == "old" || provider.messages[1].Content != "keep" || provider.messages[3].Content != "new prompt" {
+		t.Fatalf("provider context=%#v", provider.messages)
 	}
 }
 
