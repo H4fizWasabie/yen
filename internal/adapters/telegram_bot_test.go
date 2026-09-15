@@ -401,6 +401,19 @@ func TestTelegramBotRecognizesStopAliases(t *testing.T) {
 	}
 }
 
+func TestTelegramToolDetailToggleAndPreview(t *testing.T) {
+	if enabled, ok := telegramToolDetailToggle("/ON TOOL CALLS"); !ok || !enabled {
+		t.Fatal("tool detail on was not recognized")
+	}
+	if enabled, ok := telegramToolDetailToggle("/off tool call"); !ok || enabled {
+		t.Fatal("tool detail off was not recognized")
+	}
+	status := telegramToolStatus(agent.Event{Type: "tool_call", Name: "bash", Args: map[string]any{"command": "  echo   hello  "}})
+	if status != "Running bash: echo hello" {
+		t.Fatalf("status=%q", status)
+	}
+}
+
 func TestTelegramBotPollsUpdatesAdvancesOffsetAndStops(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -25,6 +26,8 @@ type TelegramBot struct {
 	APIBase     string
 	Client      *http.Client
 	Offset      int64
+	toolMu      sync.Mutex
+	toolDetail  bool
 }
 
 const telegramMessageLimit = 4000
@@ -114,6 +117,16 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		}
 		return b.sendMessage(ctx, chatID, "No active turn.", messageReplyID(update.Message.MessageID))
 	}
+	if enabled, ok := telegramToolDetailToggle(text); ok {
+		b.toolMu.Lock()
+		b.toolDetail = enabled
+		b.toolMu.Unlock()
+		state := "off"
+		if enabled {
+			state = "on"
+		}
+		return b.sendMessage(ctx, chatID, "Tool call detail: "+state+".", messageReplyID(update.Message.MessageID))
+	}
 	replyContext := ""
 	if update.Message.ReplyToMessage != nil {
 		replyContext = telegramMessageText(update.Message.ReplyToMessage)
@@ -122,7 +135,14 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	stopTyping := b.startTyping(ctx, chatID)
 	result, err := b.Adapter.HandleMessageWithReplyEvents(ctx, chatID, text, replyContext, func(event agent.Event) {
 		if event.Type == "tool_call" && event.Name != "" {
-			statusMessageID, _ = b.sendMessageWithID(ctx, chatID, "Running "+event.Name+"...", messageReplyID(update.Message.MessageID))
+			b.toolMu.Lock()
+			detail := b.toolDetail
+			b.toolMu.Unlock()
+			status := "Running " + event.Name + "..."
+			if detail {
+				status = telegramToolStatus(event)
+			}
+			statusMessageID, _ = b.sendMessageWithID(ctx, chatID, status, messageReplyID(update.Message.MessageID))
 		}
 	})
 	stopTyping()
@@ -135,6 +155,35 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		}
 	}
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
+}
+
+func telegramToolDetailToggle(text string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "/on tool call", "/on tool calls":
+		return true, true
+	case "/off tool call", "/off tool calls":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func telegramToolStatus(event agent.Event) string {
+	preview := ""
+	for _, key := range []string{"command", "path", "query", "note"} {
+		if value, ok := event.Args[key].(string); ok {
+			preview = strings.Join(strings.Fields(value), " ")
+			break
+		}
+	}
+	if preview == "" {
+		preview = "tool call"
+	}
+	runes := []rune(preview)
+	if len(runes) > 140 {
+		preview = string(runes[:137]) + "..."
+	}
+	return "Running " + event.Name + ": " + preview
 }
 
 func isTelegramStopCommand(text string) bool {
