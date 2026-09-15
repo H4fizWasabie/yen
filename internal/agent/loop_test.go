@@ -246,3 +246,31 @@ func TestRunWithQueuesProcessesSteeringAndFollowUp(t *testing.T) {
 		t.Fatalf("provider messages=%#v", provider.seen)
 	}
 }
+
+type prioritizedQueuesProvider struct {
+	queues *MessageQueues
+	calls  int
+	seen   [][]Message
+}
+
+func (p *prioritizedQueuesProvider) Next(_ context.Context, messages []Message, _ []string) (Response, error) {
+	p.seen = append(p.seen, append([]Message(nil), messages...))
+	p.calls++
+	if p.calls == 1 {
+		p.queues.Steer(Message{Role: "user", Content: "steer first"})
+		p.queues.FollowUp(Message{Role: "user", Content: "follow second"})
+	}
+	return Response{Text: "reply", StopReason: "stop"}, nil
+}
+
+func TestRunWithQueuesPrioritizesSteeringOverFollowUp(t *testing.T) {
+	queues := &MessageQueues{}
+	provider := &prioritizedQueuesProvider{queues: queues}
+	result, err := RunFromWithQueues(context.Background(), provider, nil, nil, "start", queues, nil)
+	if err != nil || result.FinalText != "reply" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(provider.seen) != 3 || provider.seen[1][2].Content != "steer first" || provider.seen[2][4].Content != "follow second" {
+		t.Fatalf("provider messages=%#v", provider.seen)
+	}
+}
