@@ -189,6 +189,21 @@ func TestMistralParsesThinkingChunksAndNormalizesToolIDs(t *testing.T) {
 	}
 }
 
+func TestMistralUsesFallbackIDAndObjectToolArguments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read","arguments":{"path":"x"}}}]},"finish_reason":"tool_calls"}]}`)
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompletions(server.URL, "", "mistral-model")
+	client.ProviderName = "mistral"
+	result, err := client.Next(context.Background(), nil, nil)
+	if err != nil || result.StopReason != "toolUse" || len(result.ToolCalls) != 1 || result.ToolCalls[0].ID != "toolcall0" || result.ToolCalls[0].Args["path"] != "x" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestOpenAICompletionsReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provider failed", http.StatusBadGateway)

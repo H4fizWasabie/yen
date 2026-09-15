@@ -254,8 +254,8 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function struct {
-							Name      string `json:"name"`
-							Arguments string `json:"arguments"`
+							Name      string          `json:"name"`
+							Arguments json.RawMessage `json:"arguments"`
 						} `json:"function"`
 					} `json:"tool_calls"`
 				} `json:"delta"`
@@ -384,15 +384,16 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 				if delta.Function.Name != "" {
 					toolCalls[delta.Index].Name = delta.Function.Name
 				}
-				arguments[fmt.Sprint(delta.Index)] += delta.Function.Arguments
+				argsDelta := openAIToolArguments(delta.Function.Arguments)
+				arguments[fmt.Sprint(delta.Index)] += argsDelta
 				partial.ToolCalls = append([]agent.ToolCall(nil), toolCalls...)
 				if emit != nil {
 					if !startedTools[delta.Index] {
 						startedTools[delta.Index] = true
 						emit(agent.StreamEvent{Type: "toolcall_start", ContentIndex: delta.Index, Partial: partial})
 					}
-					if delta.Function.Arguments != "" {
-						emit(agent.StreamEvent{Type: "toolcall_delta", ContentIndex: delta.Index, Delta: delta.Function.Arguments, Partial: partial})
+					if argsDelta != "" {
+						emit(agent.StreamEvent{Type: "toolcall_delta", ContentIndex: delta.Index, Delta: argsDelta, Partial: partial})
 					}
 				}
 			}
@@ -405,6 +406,9 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		return agent.Response{}, fmt.Errorf("openai completions stream ended without finish_reason")
 	}
 	for index := range toolCalls {
+		if p.ProviderName == "mistral" && toolCalls[index].ID == "" {
+			toolCalls[index].ID = normalizeMistralToolID("toolcall:" + fmt.Sprint(index))
+		}
 		var args map[string]any
 		if raw := arguments[fmt.Sprint(index)]; raw != "" {
 			if err := json.Unmarshal([]byte(raw), &args); err != nil {
@@ -431,6 +435,17 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		result.StopReason = "toolUse"
 	}
 	return result, nil
+}
+
+func openAIToolArguments(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var value string
+	if json.Unmarshal(raw, &value) == nil {
+		return value
+	}
+	return string(raw)
 }
 
 func copilotInitiator(messages []agent.Message) string {
