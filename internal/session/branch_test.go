@@ -30,6 +30,14 @@ func TestBranchMovesActiveContextWithoutDeletingHistory(t *testing.T) {
 	if len(s.Messages()) != 3 {
 		t.Fatalf("history=%#v", s.Messages())
 	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedContext := reopened.ContextMessages()
+	if len(reopenedContext) != 2 || reopenedContext[1].Content != "new reply" {
+		t.Fatalf("reopened context=%#v", reopenedContext)
+	}
 }
 
 func TestForkCopiesActivePrefixAndRecordsParent(t *testing.T) {

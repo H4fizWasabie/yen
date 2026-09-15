@@ -95,6 +95,14 @@ type TimedMessage struct {
 	Timestamp string
 }
 
+type TreeEntry struct {
+	ID        string   `json:"id"`
+	ParentID  *string  `json:"parentId,omitempty"`
+	Type      string   `json:"type"`
+	Timestamp string   `json:"timestamp"`
+	Message   *Message `json:"message,omitempty"`
+}
+
 type sessionEntry struct {
 	Type                string      `json:"type"`
 	Version             int         `json:"version,omitempty"`
@@ -346,8 +354,14 @@ func (s *Session) Branch(entryID string) error {
 	}
 	for _, entry := range s.entries {
 		if entry.ID == entryID {
-			s.leafID = entryID
-			return nil
+			parentID := entryID
+			branch := sessionEntry{Type: "branch", ID: newEntryID(s.entries), Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: &parentID}
+			s.entries = append(s.entries, branch)
+			s.leafID = branch.ID
+			if !s.flushed {
+				return s.publish()
+			}
+			return s.appendFile(branch)
 		}
 	}
 	return fmt.Errorf("entry %q not found", entryID)
@@ -571,6 +585,16 @@ func (s *Session) Messages() []Message {
 	}
 	return messages
 }
+
+func (s *Session) Tree() []TreeEntry {
+	result := make([]TreeEntry, 0, len(s.entries))
+	for _, entry := range s.entries {
+		result = append(result, TreeEntry{ID: entry.ID, ParentID: entry.ParentID, Type: entry.Type, Timestamp: entry.Timestamp, Message: entry.Message})
+	}
+	return result
+}
+
+func (s *Session) LeafID() string { return s.leafID }
 
 func (s *Session) TimedMessages() []TimedMessage {
 	entries := s.activeEntries()
