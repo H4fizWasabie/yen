@@ -79,6 +79,12 @@ propagation, session persistence, and replay. TypeScript authority:
 `internal/provider/theoses_messages.go`, `internal/runtime/runtime.go`, and
 `TestTheosesMessagesPreservesTextSignature`.
 
+Radius responses now preserve the served model metadata on the normalized
+response, matching the adapter's assistant model field. TypeScript authority:
+`packages/ai/src/api/theoses-messages.ts:134-144`; Go evidence:
+`internal/provider/theoses_messages.go` and
+`TestTheosesMessagesStreamsTextToolCallAndUsage`.
+
 Bedrock Converse usage now preserves cache-read and cache-write token
 breakdowns and falls back to the component sum when the service omits total
 tokens. TypeScript authority:
