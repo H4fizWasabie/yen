@@ -323,6 +323,14 @@ The installer acceptance was rerun after the consolidation wrapper change:
 temporary root/fake systemctl, both binaries and wrappers, service units,
 mode-600 channel env, and no service start all passed.
 
+## Latest pickup: RPC bash persistence
+
+On 2026-09-15, direct JSONL RPC `bash` now persists a TypeScript-compatible
+`bashExecution` session message containing the command, output, and
+`excludeFromContext` flag, in addition to the existing automatic Working Note
+entry. `internal/rpc/server_test.go` covers the durable record. The change is
+ready to commit and push with the open GitHub PR before selecting the next gap.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future

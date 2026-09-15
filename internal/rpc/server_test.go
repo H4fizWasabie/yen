@@ -366,8 +366,12 @@ func TestBashCommandReturnsOutputAndLogsWorkingNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	messages := opened.Messages()
 	if !strings.Contains(output.String(), `"output":"hello"`) || !strings.Contains(opened.WorkingNote(), "ran: printf hello") {
 		t.Fatalf("output=%s note=%q", output.String(), opened.WorkingNote())
+	}
+	if len(messages) != 1 || messages[0].Role != "bashExecution" || messages[0].Command != "printf hello" || messages[0].Output != "hello" {
+		t.Fatalf("messages=%#v", messages)
 	}
 }
 

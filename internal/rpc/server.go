@@ -174,6 +174,12 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		for _, tool := range codingagent.NewToolsForSession(workspace, current) {
 			if tool.Name() == "bash" {
 				result, err := tool.Execute(ctx, map[string]any{"command": request.Command, "excludeFromContext": request.ExcludeFromContext})
+				// The direct bash RPC is a session operation, not an agent tool turn.
+				// Keep its durable execution record separate from the working-note safety log.
+				_, _ = current.Append(sessionpkg.Message{
+					Role: "bashExecution", Command: request.Command, Output: result,
+					ExcludeFromContext: request.ExcludeFromContext,
+				})
 				if err != nil {
 					return err
 				}
