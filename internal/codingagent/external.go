@@ -1,6 +1,7 @@
 package codingagent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +44,9 @@ func loadExternalTools() []agent.Tool {
 	}
 	if url := strings.TrimSpace(os.Getenv("YEN_MCP_HTTP_URL")); url != "" {
 		result = append(result, loadMCPHTTP(url)...)
+	}
+	if command := strings.TrimSpace(os.Getenv("YEN_MCP_STDIO_COMMAND")); command != "" {
+		result = append(result, loadMCPStdio(command, strings.Fields(os.Getenv("YEN_MCP_STDIO_ARGS")))...)
 	}
 	return result
 }
@@ -182,6 +187,128 @@ func loadMCPHTTP(endpoint string) []agent.Tool {
 		}})
 	}
 	return result
+}
+
+type mcpStdioClient struct {
+	command string
+	args    []string
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	scanner *bufio.Scanner
+	mu      sync.Mutex
+	nextID  int64
+}
+
+func loadMCPStdio(command string, args []string) []agent.Tool {
+	client := &mcpStdioClient{command: command, args: args}
+	if _, err := client.request(context.Background(), "initialize", map[string]any{
+		"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
+		"clientInfo": map[string]string{"name": "yen", "version": "0.1"},
+	}); err != nil {
+		return nil
+	}
+	if err := client.notify("notifications/initialized", map[string]any{}); err != nil {
+		return nil
+	}
+	value, err := client.request(context.Background(), "tools/list", map[string]any{})
+	if err != nil {
+		return nil
+	}
+	result := make([]agent.Tool, 0)
+	for _, entry := range parseExternalCatalog(value) {
+		if entry.Name == "" {
+			continue
+		}
+		name := entry.Name
+		result = append(result, externalTool{name: name, description: entry.Description, schema: externalSchema(entry), execute: func(ctx context.Context, args map[string]any) (string, error) {
+			value, err := client.request(ctx, "tools/call", map[string]any{"name": name, "arguments": args})
+			if err != nil {
+				return "", err
+			}
+			encoded, _ := json.Marshal(value)
+			return "[UNTRUSTED EXTERNAL CONTENT]\n" + string(encoded), nil
+		}})
+	}
+	return result
+}
+
+func (c *mcpStdioClient) start() error {
+	if c.cmd != nil {
+		return nil
+	}
+	c.cmd = exec.Command(c.command, c.args...)
+	c.cmd.Stderr = io.Discard
+	stdin, err := c.cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	stdout, err := c.cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := c.cmd.Start(); err != nil {
+		return err
+	}
+	c.stdin = stdin
+	c.scanner = bufio.NewScanner(stdout)
+	c.scanner.Buffer(make([]byte, 4096), 4<<20)
+	return nil
+}
+
+func (c *mcpStdioClient) request(ctx context.Context, method string, params map[string]any) (any, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.start(); err != nil {
+		return nil, err
+	}
+	c.nextID++
+	id := c.nextID
+	payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := fmt.Fprintf(c.stdin, "%s\n", payload); err != nil {
+		return nil, err
+	}
+	for c.scanner.Scan() {
+		var message struct {
+			ID     float64 `json:"id"`
+			Result any     `json:"result"`
+			Error  *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(c.scanner.Bytes(), &message) != nil || int64(message.ID) != id {
+			continue
+		}
+		if message.Error != nil {
+			return nil, fmt.Errorf("MCP stdio: %s", message.Error.Message)
+		}
+		return message.Result, nil
+	}
+	if err := c.scanner.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return nil, errors.New("MCP stdio process closed")
+	}
+}
+
+func (c *mcpStdioClient) notify(method string, params map[string]any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.start(); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(c.stdin, "%s\n", payload)
+	return err
 }
 
 func (c *mcpClient) request(ctx context.Context, method string, params map[string]any) (any, error) {
