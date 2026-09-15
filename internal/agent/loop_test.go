@@ -212,6 +212,29 @@ func TestRunToolHooksCanBlockAndRewriteResults(t *testing.T) {
 	}
 }
 
+func TestRunToolHooksCoverParallelCalls(t *testing.T) {
+	seen := make(chan string, 2)
+	result, err := RunFromWithQueuesAndEventsAndImagesAndHooks(context.Background(), &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-1", Name: "read"}, {ID: "read-2", Name: "read"}}, StopReason: "toolUse"},
+		{Text: "done", StopReason: "stop"},
+	}}, []Tool{readTool{}}, nil, "read twice", nil, nil, nil, nil, &ToolHooks{
+		Before: func(_ context.Context, _ Message, call ToolCall) (bool, string, error) {
+			seen <- call.ID
+			return false, "", nil
+		},
+		After: func(_ context.Context, _ Message, call ToolCall, result ToolResult, _ bool) (ToolResult, bool, error) {
+			result.Text = call.ID
+			return result, false, nil
+		},
+	})
+	if err != nil || result.FinalText != "done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(seen) != 2 || result.Messages[2].Content != "read-1" || result.Messages[3].Content != "read-2" {
+		t.Fatalf("seen=%#v messages=%#v", []string{<-seen, <-seen}, result.Messages)
+	}
+}
+
 func TestRunDoesNotExecuteToolCallsFromLengthLimitedResponse(t *testing.T) {
 	calls := 0
 	var events []Event
