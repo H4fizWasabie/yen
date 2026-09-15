@@ -743,12 +743,12 @@ func (s *Session) ContextMessages() []Message {
 	result := []Message{{Role: "user", Content: "The conversation history before this point was compacted into the following summary:\n\n<summary>\n" + compaction.Summary + "\n</summary>"}}
 	for i := firstKept; i < compactionIndex; i++ {
 		if entries[i].Message != nil {
-			result = append(result, *entries[i].Message)
+			result = append(result, contextMessage(*entries[i].Message))
 		}
 	}
 	for i := compactionIndex + 1; i < len(entries); i++ {
 		if entries[i].Message != nil {
-			result = append(result, *entries[i].Message)
+			result = append(result, contextMessage(*entries[i].Message))
 		}
 	}
 	return result
@@ -798,10 +798,17 @@ func messagesFromEntries(entries []sessionEntry) []Message {
 	messages := make([]Message, 0, len(entries))
 	for _, entry := range entries {
 		if entry.Message != nil {
-			messages = append(messages, *entry.Message)
+			messages = append(messages, contextMessage(*entry.Message))
 		}
 	}
 	return messages
+}
+
+func contextMessage(message Message) Message {
+	if message.Content == nil && (message.Role == "user" || message.Role == "assistant" || message.Role == "toolResult") {
+		message.Content = []ContentPart{}
+	}
+	return message
 }
 
 func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error) {
