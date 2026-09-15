@@ -1,6 +1,6 @@
 # Theoses2 Go rewrite handoff
 
-Date: 2026-09-14
+Date: 2026-09-15
 
 ## Current state
 
@@ -45,6 +45,10 @@ not use the newer checkout as an unqualified oracle.
 
 - `internal/session`: v3 JSONL creation, deferred first publication, parent
   links, open, append, and restart continuation.
+  Opening a pinned TypeScript v1/v2 JSONL session now migrates it in place to
+  v3: IDs and parent links are assigned, `hookMessage` becomes `custom`, and
+  TypeScript flat compaction entries are read. Unknown/custom entry retention
+  and branch semantics remain open.
   Assistant provider usage now round-trips through the session log.
   Compaction entries, active-context projection, and provider-backed
   `Runner.Compact` are supported. Set `THEOSES_AUTO_COMPACT_TURNS` to enable
@@ -136,8 +140,9 @@ queue slices are now implemented and locally verified. Work in this order:
    record any accepted parity differences. The semantic edge walk and episodic
    search/point-in-time paths now have Go coverage.
 3. Add adapter-facing migration/read-back integration around the existing
-   deterministic seams; keep startup import disabled. The explicit migration
-   command, persisted tool-turn fixture, and dashboard SSE path now exist.
+   deterministic seams; keep startup memory import disabled. Session v1/v2
+   read-back migration now exists; the explicit semantic/episodic migration
+   command remains additive and source-preserving.
 4. Validate adapter reconnect/read-back behavior under concurrent processes;
    the queue and registry now use cross-process file locking, expiring
    per-turn leases, durable cancellation, and a subprocess claim test.

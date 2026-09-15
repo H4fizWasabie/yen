@@ -21,14 +21,16 @@ deferred below.
 | Telegram | `packages/telegram/src/index.ts:140-150`, `:183-285`, `:340-385`, `:630-700` | dedicated unit, Unicode chunking and reply-context/target tests, valid token, live reply, owner guard, `/stop` unit test | partial; rich rendering, images, and live long-reply/reply acceptance deferred |
 | Dashboard | `packages/dashboard/src/index.ts:66-115`, `:530-550` | Go auth unit tests plus isolated local acceptance: health 200, unauthenticated API 401, login 200, cookie 200, Bearer 200; live request routed to canonical conversation | partial; VPS/UI acceptance open |
 | Semantic memory | `packages/coding-agent/src/core/tools/memory.ts:18-59` | conversation-scoped `save_note`/`remember`; live favorite-color and probe read-back | partial; consolidation matrix open |
-| Episodic memory | `packages/coding-agent/src/core/episodic-store.ts:85-` | eight live records (`cli`, `telegram`, `dashboard`) in shared SQLite store; restart read-back | partial; historical migration open |
+| Session read-back/migration | `packages/coding-agent/src/core/session-manager.ts:31-104`, `:284-355`, `:986-1022` | Go fixture migrates v1/v2 JSONL to v3, assigns IDs/parent links, converts `hookMessage`, and reads flat v3 compaction entries; 93 Go tests | partial; unknown/custom entry preservation and full branch semantics open |
+| Episodic memory | `packages/coding-agent/src/core/episodic-store.ts:85-` | eight live records (`cli`, `telegram`, `dashboard`) in shared SQLite store; restart read-back | partial; historical episodic migration remains explicit-only |
 | Operations | deployed TypeScript systemd units | Go systemd units, health, journald, verified backup, rollback/restore, and isolated installer acceptance with temporary root/fake systemctl | partial; real-host rollout remains separate |
 
 ## Accepted and deferred differences
 
 - Full normalized live-trace equivalence is not claimed beyond the recorded
   golden/local traces and live acceptance results.
-- Dashboard rendering, historical memory migration, the full provider matrix,
+- Dashboard rendering, unknown session-entry preservation, historical episodic
+  migration, the full provider matrix,
   and unported tools remain deferred by scope. Dashboard API authentication is
   implemented behind `THEOSES_DASHBOARD_TOKEN`, but authenticated live
   acceptance remains open.

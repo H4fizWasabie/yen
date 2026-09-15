@@ -67,16 +67,21 @@ type Message struct {
 }
 
 type sessionEntry struct {
-	Type             string      `json:"type"`
-	Version          int         `json:"version,omitempty"`
-	ID               string      `json:"id,omitempty"`
-	Timestamp        string      `json:"timestamp"`
-	CWD              string      `json:"cwd,omitempty"`
-	Channel          string      `json:"channel,omitempty"`
-	ChannelSessionID string      `json:"channelSessionId,omitempty"`
-	ParentID         *string     `json:"parentId"`
-	Message          *Message    `json:"message,omitempty"`
-	Compaction       *Compaction `json:"compaction,omitempty"`
+	Type                string      `json:"type"`
+	Version             int         `json:"version,omitempty"`
+	ID                  string      `json:"id,omitempty"`
+	Timestamp           string      `json:"timestamp"`
+	CWD                 string      `json:"cwd,omitempty"`
+	Channel             string      `json:"channel,omitempty"`
+	ChannelSessionID    string      `json:"channelSessionId,omitempty"`
+	ParentID            *string     `json:"parentId"`
+	Message             *Message    `json:"message,omitempty"`
+	Compaction          *Compaction `json:"compaction,omitempty"`
+	Summary             string      `json:"summary,omitempty"`
+	FirstKeptEntryID    string      `json:"firstKeptEntryId,omitempty"`
+	FirstKeptEntryIndex *int        `json:"firstKeptEntryIndex,omitempty"`
+	TokensBefore        int         `json:"tokensBefore,omitempty"`
+	Usage               *Usage      `json:"usage,omitempty"`
 }
 
 type sessionHeader struct {
@@ -151,7 +156,66 @@ func Open(path string) (*Session, error) {
 	if line == 0 {
 		return nil, fmt.Errorf("empty session")
 	}
+	if migrateSession(s) {
+		if err := s.rewrite(); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
+}
+
+func migrateSession(s *Session) bool {
+	version := s.header.Version
+	if version == 0 {
+		version = 1
+	}
+	changed := version < 3
+	if version >= 3 {
+		for i := range s.entries {
+			s.normalizeCompaction(&s.entries[i])
+		}
+		return false
+	}
+	ids := make(map[string]struct{}, len(s.entries))
+	var parent *string
+	for i := range s.entries {
+		entry := &s.entries[i]
+		if entry.ID == "" {
+			entry.ID = newEntryID(s.entries)
+		}
+		ids[entry.ID] = struct{}{}
+		entry.ParentID = parent
+		current := entry.ID
+		parent = &current
+		if entry.Message != nil && entry.Message.Role == "hookMessage" {
+			entry.Message.Role = "custom"
+		}
+		s.normalizeCompaction(entry)
+		if entry.Compaction != nil && entry.FirstKeptEntryIndex != nil {
+			index := *entry.FirstKeptEntryIndex
+			// TypeScript counts the header in the JSONL entry array; Go stores it separately.
+			index--
+			if index >= 0 && index < len(s.entries) {
+				entry.Compaction.FirstKeptEntryID = s.entries[index].ID
+			}
+			entry.FirstKeptEntryIndex = nil
+		}
+		if entry.Compaction != nil {
+			entry.Summary, entry.FirstKeptEntryID, entry.TokensBefore, entry.Usage = "", "", 0, nil
+		}
+	}
+	s.header.Version = 3
+	return changed
+}
+
+func (s *Session) normalizeCompaction(entry *sessionEntry) {
+	if entry.Type != "compaction" || entry.Compaction != nil {
+		return
+	}
+	entry.Compaction = &Compaction{
+		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID,
+		TokensBefore: entry.TokensBefore, Usage: entry.Usage,
+	}
 }
 
 func (s *Session) Append(message Message) (string, error) {
@@ -350,6 +414,33 @@ func (s *Session) publish() error {
 	}
 	s.flushed = true
 	return nil
+}
+
+func (s *Session) rewrite() error {
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".session-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := writeJSONLine(tmp, s.header); err != nil {
+		tmp.Close()
+		return err
+	}
+	for _, entry := range s.entries {
+		if err := writeJSONLine(tmp, entry); err != nil {
+			tmp.Close()
+			return err
+		}
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, s.path)
 }
 
 func (s *Session) appendFile(entry sessionEntry) error {

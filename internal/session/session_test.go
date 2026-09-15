@@ -127,6 +127,43 @@ func TestOpenSkipsMalformedLinesWithoutLosingSessionEntries(t *testing.T) {
 	}
 }
 
+func TestOpenMigratesLegacyTypeScriptSessionToV3(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.jsonl")
+	raw := strings.Join([]string{
+		`{"type":"session","id":"legacy","timestamp":"2026-01-01T00:00:00Z","cwd":"/workspace"}`,
+		`{"type":"message","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"old"}}`,
+		`{"type":"message","timestamp":"2026-01-01T00:00:02Z","message":{"role":"hookMessage","content":"note"}}`,
+		`{"type":"compaction","timestamp":"2026-01-01T00:00:03Z","firstKeptEntryIndex":1,"summary":"older history","tokensBefore":9}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opened.Messages()) != 2 || opened.Messages()[1].Role != "custom" {
+		t.Fatalf("messages=%#v", opened.Messages())
+	}
+	context := opened.ContextMessages()
+	if len(context) != 3 || !strings.Contains(context[0].Content.(string), "older history") || context[1].Content != "old" {
+		t.Fatalf("context=%#v", context)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"version":3`) || !strings.Contains(string(data), `"firstKeptEntryId"`) {
+		t.Fatalf("session was not rewritten as v3: %s", data)
+	}
+	if strings.Contains(string(data), "firstKeptEntryIndex") || strings.Contains(string(data), "hookMessage") {
+		t.Fatalf("legacy fields remain: %s", data)
+	}
+}
+
 func TestSessionReadbackPreservesToolTurnBoundary(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	s := New(path, Header{ID: "session-1", CWD: "/workspace", Channel: "cli", ChannelSessionID: "/workspace"})
