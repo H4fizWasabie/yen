@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,49 +86,144 @@ func (t generateImageTool) generate(ctx context.Context, prompt string) ([]byte,
 	if client == nil {
 		client = http.DefaultClient
 	}
-	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
-		endpoint := os.Getenv("THEOSES_OPENROUTER_IMAGE_ENDPOINT")
-		if endpoint == "" {
-			endpoint = "https://openrouter.ai/api/v1/images"
-		}
-		model := os.Getenv("THEOSES_OPENROUTER_IMAGE_MODEL")
-		if model == "" {
-			model = "meta/muse-image"
-		}
-		body, _ := json.Marshal(map[string]string{"model": model, "prompt": prompt})
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-		if err != nil {
-			return nil, "", "", err
-		}
-		request.Header.Set("Authorization", "Bearer "+key)
-		request.Header.Set("Content-Type", "application/json")
-		response, err := client.Do(request)
-		if err != nil {
-			return nil, "", "", err
-		}
-		defer response.Body.Close()
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-			return nil, "", "", fmt.Errorf("OpenRouter %s: %s", response.Status, strings.TrimSpace(string(message)))
-		}
-		var result struct {
-			Data []struct {
-				Base64 string `json:"b64_json"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&result); err != nil {
-			return nil, "", "", err
-		}
-		if len(result.Data) == 0 || result.Data[0].Base64 == "" {
-			return nil, "", "", fmt.Errorf("OpenRouter: no image in response")
-		}
-		data, err := base64.StdEncoding.DecodeString(result.Data[0].Base64)
-		if err != nil {
-			return nil, "", "", err
-		}
-		return data, sniffImageMIME(data), "OpenRouter (" + model + ")", nil
+	generators := []func(context.Context, *http.Client, string) ([]byte, string, string, error){
+		generateOpenRouter,
+		generateCloudflare,
+		generatePollinations,
 	}
-	return nil, "", "", fmt.Errorf("image generation requires OPENROUTER_API_KEY")
+	var lastErr error
+	for _, generate := range generators {
+		data, mimeType, provider, err := generate(ctx, client, prompt)
+		if err == nil {
+			return data, mimeType, provider, nil
+		}
+		lastErr = err
+	}
+	return nil, "", "", fmt.Errorf("image generation failed: %w", lastErr)
+}
+
+func generateOpenRouter(ctx context.Context, client *http.Client, prompt string) ([]byte, string, string, error) {
+	key := os.Getenv("OPENROUTER_API_KEY")
+	if key == "" {
+		return nil, "", "", fmt.Errorf("OPENROUTER_API_KEY not set")
+	}
+	endpoint := os.Getenv("THEOSES_OPENROUTER_IMAGE_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "https://openrouter.ai/api/v1/images"
+	}
+	model := os.Getenv("THEOSES_OPENROUTER_IMAGE_MODEL")
+	if model == "" {
+		model = "meta/muse-image"
+	}
+	body, _ := json.Marshal(map[string]string{"model": model, "prompt": prompt})
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, "", "", err
+	}
+	request.Header.Set("Authorization", "Bearer "+key)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+		return nil, "", "", fmt.Errorf("OpenRouter %s: %s", response.Status, strings.TrimSpace(string(message)))
+	}
+	var result struct {
+		Data []struct {
+			Base64 string `json:"b64_json"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&result); err != nil {
+		return nil, "", "", err
+	}
+	if len(result.Data) == 0 || result.Data[0].Base64 == "" {
+		return nil, "", "", fmt.Errorf("OpenRouter: no image in response")
+	}
+	data, err := base64.StdEncoding.DecodeString(result.Data[0].Base64)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return data, sniffImageMIME(data), "OpenRouter (" + model + ")", nil
+}
+
+func generateCloudflare(ctx context.Context, client *http.Client, prompt string) ([]byte, string, string, error) {
+	accountID, token := os.Getenv("CLOUDFLARE_ACCOUNT_ID"), os.Getenv("CLOUDFLARE_API_TOKEN")
+	if accountID == "" || token == "" {
+		return nil, "", "", fmt.Errorf("CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN not set")
+	}
+	model := os.Getenv("THEOSES_IMAGE_MODEL")
+	if model == "" {
+		model = "@cf/black-forest-labs/flux-1-schnell"
+	}
+	body, _ := json.Marshal(map[string]string{"prompt": prompt})
+	endpoint := "https://api.cloudflare.com/client/v4/accounts/" + url.PathEscape(accountID) + "/ai/run/" + url.PathEscape(model)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, "", "", err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+		return nil, "", "", fmt.Errorf("Cloudflare Workers AI %s: %s", response.Status, strings.TrimSpace(string(message)))
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, 16<<20))
+	if err != nil {
+		return nil, "", "", err
+	}
+	if strings.HasPrefix(response.Header.Get("Content-Type"), "image/") {
+		return data, sniffImageMIME(data), "Cloudflare Workers AI (" + model + ")", nil
+	}
+	var envelope struct {
+		Result struct {
+			Image  string   `json:"image"`
+			Images []string `json:"images"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, "", "", err
+	}
+	encoded := envelope.Result.Image
+	if encoded == "" && len(envelope.Result.Images) > 0 {
+		encoded = envelope.Result.Images[0]
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(decoded) == 0 {
+		return nil, "", "", fmt.Errorf("Cloudflare Workers AI: no image in response")
+	}
+	return decoded, sniffImageMIME(decoded), "Cloudflare Workers AI (" + model + ")", nil
+}
+
+func generatePollinations(ctx context.Context, client *http.Client, prompt string) ([]byte, string, string, error) {
+	endpoint := "https://image.pollinations.ai/prompt/" + url.PathEscape(prompt) + "?width=1024&height=1024&nologo=true&model=flux-realism"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, "", "", err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, "", "", fmt.Errorf("Pollinations.ai %s", response.Status)
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, 16<<20))
+	if err != nil {
+		return nil, "", "", err
+	}
+	if len(data) < 100 {
+		return nil, "", "", fmt.Errorf("Pollinations.ai: response too small to be an image")
+	}
+	return data, sniffImageMIME(data), "Pollinations.ai", nil
 }
 
 func sniffImageMIME(data []byte) string {
