@@ -68,6 +68,28 @@ func TestGoogleVertexUsesProjectEndpointAndYenAPIKey(t *testing.T) {
 	}
 }
 
+func TestGoogleVertexUsesYenBearerTokenWithoutAPIKeyQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("key") != "" || r.Header.Get("Authorization") != "Bearer access-token" {
+			t.Fatalf("query=%q authorization=%q", r.URL.Query().Get("key"), r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n"))
+	}))
+	defer server.Close()
+	t.Setenv("YEN_GOOGLE_VERTEX_BASE_URL", server.URL)
+	t.Setenv("YEN_GOOGLE_VERTEX_ACCESS_TOKEN", "access-token")
+	configured, err := NewConfigured("google-vertex", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := configured.(GoogleGenerativeAI)
+	client.Client = server.Client()
+	if _, err := client.Next(context.Background(), []agent.Message{{Role: "user", Content: "hello"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNewFromEnvPrefersYenProviderCredentials(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "openrouter")
 	t.Setenv("YEN_MODEL", "z-ai/glm-5.3-flash")

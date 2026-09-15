@@ -95,6 +95,10 @@ func googleVertexConfigured(model string) GoogleGenerativeAI {
 	}
 	client := NewGoogleGenerativeAI(baseURL, key, model)
 	client.ProviderName = "google-vertex"
+	client.BearerToken = os.Getenv("YEN_GOOGLE_VERTEX_ACCESS_TOKEN")
+	if client.BearerToken != "" {
+		client.APIKey = ""
+	}
 	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 	return client
 }

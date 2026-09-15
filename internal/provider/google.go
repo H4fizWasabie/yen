@@ -22,6 +22,7 @@ import (
 type GoogleGenerativeAI struct {
 	BaseURL       string
 	APIKey        string
+	BearerToken   string
 	Model         string
 	ProviderName  string
 	ThinkingLevel string
@@ -46,10 +47,16 @@ func (p GoogleGenerativeAI) NextWithEvents(ctx context.Context, messages []agent
 }
 
 func (p GoogleGenerativeAI) ListModels(ctx context.Context) ([]ModelInfo, error) {
-	endpoint := p.BaseURL + "/models?key=" + url.QueryEscape(p.APIKey)
+	endpoint := p.BaseURL + "/models"
+	if p.BearerToken == "" {
+		endpoint += "?key=" + url.QueryEscape(p.APIKey)
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
+	}
+	if p.BearerToken != "" {
+		request.Header.Set("Authorization", "Bearer "+p.BearerToken)
 	}
 	client := p.Client
 	if client == nil {
@@ -134,8 +141,8 @@ func (p GoogleGenerativeAI) next(ctx context.Context, messages []agent.Message, 
 }
 
 func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
-	if p.APIKey == "" {
-		return agent.Response{}, fmt.Errorf("no API key for provider: google")
+	if p.APIKey == "" && p.BearerToken == "" {
+		return agent.Response{}, fmt.Errorf("no Google credential configured")
 	}
 	payload := map[string]any{"contents": googleContents(messages)}
 	if system := googleSystemInstruction(messages); system != "" {
@@ -155,7 +162,10 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 	if err != nil {
 		return agent.Response{}, err
 	}
-	endpoint := p.BaseURL + "/models/" + url.PathEscape(p.Model) + ":streamGenerateContent?alt=sse&key=" + url.QueryEscape(p.APIKey)
+	endpoint := p.BaseURL + "/models/" + url.PathEscape(p.Model) + ":streamGenerateContent?alt=sse"
+	if p.BearerToken == "" {
+		endpoint += "&key=" + url.QueryEscape(p.APIKey)
+	}
 	client := p.Client
 	if client == nil {
 		client = http.DefaultClient
@@ -167,6 +177,9 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 			return agent.Response{}, requestErr
 		}
 		request.Header.Set("Content-Type", "application/json")
+		if p.BearerToken != "" {
+			request.Header.Set("Authorization", "Bearer "+p.BearerToken)
+		}
 		response, err = client.Do(request)
 		if err != nil {
 			return agent.Response{}, err
