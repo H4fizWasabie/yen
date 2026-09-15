@@ -233,6 +233,8 @@ TypeScript consolidation summary.
 The dashboard now serves a minimal same-origin HTML shell at `/` for login,
 session navigation, history, new sessions, messages, and stop; it intentionally
 does not claim full TypeScript dashboard UI parity.
+Its composer now consumes the existing SSE endpoint for incremental text and
+tool progress before refreshing the persisted session.
 When the configured provider supports it, consolidation also requests the
 OpenAI-compatible `response_format: {type: "json_object"}` wire mode; generic
 test providers retain the prompt-only fallback.
