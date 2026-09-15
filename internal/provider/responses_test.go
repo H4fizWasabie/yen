@@ -79,6 +79,25 @@ func TestOpenAIResponsesReturnsResponseFailure(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesBackfillsReasoningSignatureFromTerminalOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs-1\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs-1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}]}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\",\"output\":[{\"type\":\"reasoning\",\"id\":\"rs-1\",\"encrypted_content\":\"sig-terminal\"}]}}\n\n"))
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "responses-key", "gpt-5")
+	result, err := provider.Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.ThinkingSignature, "sig-terminal") {
+		t.Fatalf("signature=%q", result.ThinkingSignature)
+	}
+}
+
 func TestOpenAIResponsesUsesYenConfiguration(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "openai-responses")
 	t.Setenv("YEN_MODEL", "responses-model")
