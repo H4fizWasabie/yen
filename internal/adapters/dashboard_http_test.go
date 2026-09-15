@@ -148,6 +148,23 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusOK || len(readback["messages"].([]any)) != 2 || len(readback["history"].([]any)) != 2 {
 		t.Fatalf("readback=%#v status=%d", readback, response.StatusCode)
 	}
+	response, err = http.Get(server.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		Sessions []struct {
+			MessageCount int `json:"messageCount"`
+		} `json:"sessions"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(listed.Sessions) != 1 || listed.Sessions[0].MessageCount != 2 {
+		t.Fatalf("session list=%#v status=%d", listed, response.StatusCode)
+	}
 	if _, ok := readback["runtime"].(map[string]any); !ok {
 		t.Fatalf("runtime readback=%#v", readback["runtime"])
 	}

@@ -352,6 +352,13 @@ func (s *Session) TimedMessages() []TimedMessage {
 	return messages
 }
 
+func (s *Session) LastTimestamp() string {
+	if len(s.entries) > 0 && s.entries[len(s.entries)-1].Timestamp != "" {
+		return s.entries[len(s.entries)-1].Timestamp
+	}
+	return s.header.Timestamp
+}
+
 // ContextMessages projects the active leaf context after the latest
 // compaction boundary. Messages() remains the complete durable read-back.
 func (s *Session) ContextMessages() []Message {

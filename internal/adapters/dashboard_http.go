@@ -11,6 +11,7 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
 )
 
@@ -39,7 +40,7 @@ func (h DashboardHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.URL.Path == "/api/sessions" && r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, map[string]any{"sessions": dashboardSessions(h.Dashboard.Service.Registry)})
+		writeJSON(w, http.StatusOK, map[string]any{"sessions": dashboardSessions(h.Dashboard.Service.Registry, h.Dashboard.Service.Runner)})
 		return
 	}
 	if r.URL.Path == "/api/sessions" && r.Method == http.MethodPost {
@@ -53,7 +54,7 @@ func (h DashboardHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 }
 
-func dashboardSessions(registry *conversation.Registry) []map[string]any {
+func dashboardSessions(registry *conversation.Registry, runner *runtime.Runner) []map[string]any {
 	if registry == nil {
 		return []map[string]any{}
 	}
@@ -64,9 +65,16 @@ func dashboardSessions(registry *conversation.Registry) []map[string]any {
 			continue
 		}
 		seen[link.ConversationID] = true
+		modified, messageCount := link.CreatedAt, 0
+		if runner != nil {
+			if opened, err := runner.OpenSession(link); err == nil {
+				modified = opened.LastTimestamp()
+				messageCount = len(opened.Messages())
+			}
+		}
 		sessions = append(sessions, map[string]any{
 			"id": link.ConversationID, "channel": link.Adapter, "title": link.ConversationID,
-			"modified": link.CreatedAt, "messageCount": 0, "path": "",
+			"modified": modified, "messageCount": messageCount, "path": "",
 		})
 	}
 	return sessions
