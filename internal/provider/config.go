@@ -100,6 +100,17 @@ func NewFromEnv() OpenAICompletions {
 
 func ConfiguredFromEnv() agent.Provider {
 	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
+	if providerID == "google" {
+		baseURL := os.Getenv("YEN_GOOGLE_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://generativelanguage.googleapis.com/v1beta"
+		}
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gemini-2.5-flash"
+		}
+		return NewGoogleGenerativeAI(baseURL, os.Getenv("YEN_GOOGLE_API_KEY"), model)
+	}
 	if providerID != "anthropic" {
 		return NewFromEnv()
 	}
@@ -118,6 +129,16 @@ func ConfiguredFromEnv() agent.Provider {
 func NewConfigured(providerID, model string) (agent.Provider, error) {
 	providerID = strings.ToLower(strings.TrimSpace(providerID))
 	model = strings.TrimSpace(model)
+	if providerID == "google" {
+		if model == "" {
+			model = "gemini-2.5-flash"
+		}
+		baseURL := os.Getenv("YEN_GOOGLE_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://generativelanguage.googleapis.com/v1beta"
+		}
+		return NewGoogleGenerativeAI(baseURL, os.Getenv("YEN_GOOGLE_API_KEY"), model), nil
+	}
 	if providerID == "anthropic" {
 		if model == "" {
 			model = "claude-sonnet-4-20250514"
@@ -154,6 +175,8 @@ func Describe(p agent.Provider) (string, string) {
 		return client.ProviderName, client.Model
 	case AnthropicMessages:
 		return "anthropic", client.Model
+	case GoogleGenerativeAI:
+		return "google", client.Model
 	default:
 		return "", ""
 	}
@@ -178,6 +201,9 @@ func SetModel(p agent.Provider, model string) (agent.Provider, error) {
 		client.Model = model
 		return client, nil
 	case AnthropicMessages:
+		client.Model = model
+		return client, nil
+	case GoogleGenerativeAI:
 		client.Model = model
 		return client, nil
 	default:
@@ -220,6 +246,9 @@ func SetThinkingLevel(p agent.Provider, level string) (agent.Provider, error) {
 	case AnthropicMessages:
 		client.ThinkingLevel = level
 		return client, nil
+	case GoogleGenerativeAI:
+		client.ThinkingLevel = level
+		return client, nil
 	default:
 		return nil, errors.New("provider does not support thinking levels")
 	}
@@ -233,6 +262,11 @@ func ThinkingLevel(p agent.Provider) string {
 		}
 		return client.ReasoningEffort
 	case AnthropicMessages:
+		if client.ThinkingLevel == "" {
+			return "off"
+		}
+		return client.ThinkingLevel
+	case GoogleGenerativeAI:
 		if client.ThinkingLevel == "" {
 			return "off"
 		}
@@ -261,6 +295,14 @@ func SetRetryEnabled(p agent.Provider, enabled bool) (agent.Provider, error) {
 			client.MaxRetries = 0
 		}
 		return client, nil
+	case GoogleGenerativeAI:
+		if enabled && client.MaxRetries == 0 {
+			client.MaxRetries = defaultRetries
+		}
+		if !enabled {
+			client.MaxRetries = 0
+		}
+		return client, nil
 	default:
 		return nil, errors.New("provider does not support retry control")
 	}
@@ -271,6 +313,8 @@ func RetryEnabled(p agent.Provider) bool {
 	case OpenAICompletions:
 		return client.MaxRetries > 0
 	case AnthropicMessages:
+		return client.MaxRetries > 0
+	case GoogleGenerativeAI:
 		return client.MaxRetries > 0
 	default:
 		return false

@@ -339,6 +339,13 @@ configuration tests. This is configuration/API-shape coverage only; providers
 with distinct protocols, OAuth, or provider-specific model catalogs remain
 open.
 
+The next provider increment adds native Google Gemini REST streaming in
+`internal/provider/google.go`: text, thinking parts, function calls, usage,
+stop reasons, data-URI images, retries, and `YEN_GOOGLE_API_KEY` configuration.
+`internal/provider/google_test.go` covers the wire shape and event/result
+mapping. The full gate is now 233 tests plus race/vet/diff; commit and push this
+work before moving to the next provider or channel gap.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future
