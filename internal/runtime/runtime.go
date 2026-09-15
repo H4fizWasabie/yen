@@ -38,6 +38,8 @@ type Runner struct {
 	AutoCompactDisabled            bool
 	AutoCompactOnOverflow          bool
 	AutoConsolidate                bool
+	SteeringMode                   string
+	FollowUpMode                   string
 
 	mu      sync.Mutex
 	active  map[string]context.CancelFunc
@@ -47,7 +49,16 @@ type Runner struct {
 }
 
 func New(queue *conversation.Queue, provider agent.Provider, tools func(string) []agent.Tool) *Runner {
-	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues), paths: make(map[string]string)}
+	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, SteeringMode: "one-at-a-time", FollowUpMode: "one-at-a-time", active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues), paths: make(map[string]string)}
+}
+
+func (r *Runner) SetQueueModes(steering, followUp string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.SteeringMode, r.FollowUpMode = steering, followUp
+	for _, queues := range r.queues {
+		queues.SetModes(steering, followUp)
+	}
 }
 
 func AutoCompactTurnsFromEnv() int {
@@ -176,6 +187,7 @@ func (r *Runner) runNext(ctx context.Context, conversationID string, onUpdate fu
 func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	turnCtx, cancel := context.WithCancel(ctx)
 	queues := &agent.MessageQueues{}
+	queues.SetModes(r.SteeringMode, r.FollowUpMode)
 	r.mu.Lock()
 	r.active[turn.ID] = cancel
 	r.queues[turn.ID] = queues

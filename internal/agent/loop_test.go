@@ -24,6 +24,22 @@ type updatingProvider struct{}
 
 type eventStreamingProvider struct{}
 
+func TestMessageQueueModesDrainAllOrOne(t *testing.T) {
+	queue := &MessageQueues{}
+	queue.SetModes("one-at-a-time", "one-at-a-time")
+	queue.Steer(Message{Role: "user", Content: "a"})
+	queue.Steer(Message{Role: "user", Content: "b"})
+	if got := queue.drainSteering(); len(got) != 1 || got[0].Content != "a" {
+		t.Fatalf("one-at-a-time steering=%#v", got)
+	}
+	queue.SetModes("all", "all")
+	queue.FollowUp(Message{Role: "user", Content: "c"})
+	queue.FollowUp(Message{Role: "user", Content: "d"})
+	if got := queue.drainFollowUp(); len(got) != 2 {
+		t.Fatalf("all follow-up=%#v", got)
+	}
+}
+
 func (updatingProvider) Next(context.Context, []Message, []string) (Response, error) {
 	return Response{Text: "done", StopReason: "stop"}, nil
 }

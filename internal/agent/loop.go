@@ -118,9 +118,19 @@ type EventFunc func(Event)
 // Steering is consumed before the next assistant response; follow-up is
 // consumed after an assistant would otherwise settle.
 type MessageQueues struct {
-	mu       sync.Mutex
-	steering []Message
-	followUp []Message
+	mu                         sync.Mutex
+	steering                   []Message
+	followUp                   []Message
+	steeringMode, followUpMode string
+}
+
+func (q *MessageQueues) SetModes(steering, followUp string) {
+	if q == nil {
+		return
+	}
+	q.mu.Lock()
+	q.steeringMode, q.followUpMode = steering, followUp
+	q.mu.Unlock()
 }
 
 func (q *MessageQueues) Steer(message Message) {
@@ -147,8 +157,16 @@ func (q *MessageQueues) drainSteering() []Message {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	messages := q.steering
-	q.steering = nil
+	if q.steeringMode == "all" {
+		messages := q.steering
+		q.steering = nil
+		return messages
+	}
+	if len(q.steering) == 0 {
+		return nil
+	}
+	messages := q.steering[:1]
+	q.steering = q.steering[1:]
 	return messages
 }
 
@@ -158,8 +176,16 @@ func (q *MessageQueues) drainFollowUp() []Message {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	messages := q.followUp
-	q.followUp = nil
+	if q.followUpMode == "all" {
+		messages := q.followUp
+		q.followUp = nil
+		return messages
+	}
+	if len(q.followUp) == 0 {
+		return nil
+	}
+	messages := q.followUp[:1]
+	q.followUp = q.followUp[1:]
 	return messages
 }
 

@@ -353,7 +353,15 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		} else {
 			s.followUpMode = request.Mode
 		}
+		steering, followUp := s.steeringMode, s.followUpMode
 		s.modeMu.Unlock()
+		if steering == "" {
+			steering = "one-at-a-time"
+		}
+		if followUp == "" {
+			followUp = "one-at-a-time"
+		}
+		s.Runner.SetQueueModes(steering, followUp)
 		return s.response(output, request.ID, request.Type, true, map[string]any{"mode": request.Mode}, nil)
 	case "get_commands":
 		return s.response(output, request.ID, request.Type, true, map[string]any{"commands": builtinCommands()}, nil)

@@ -43,7 +43,7 @@ implementations and committed tests:
 | Provider configuration | `49794a2`, Yen-owned provider/model/key resolution; `d6c176c` installer key isolation; `197901d`, `ab7677e`, `521b164` Anthropic Messages streaming, stop mapping, and retry; runtime `set_model`, OpenAI-compatible `/models` discovery/cycling, seven-level thinking control, and retry control for supported protocols | full provider protocols, catalog breadth, OAuth, and auth UI |
 | Episodic migration | `a513983` | enriched legacy SQLite rows preserve optional workspace, conversation, channel, and turn metadata; broader historical migration policy remains explicit-only |
 
-The current verified code gate is 213 tests, race tests, vet, and diff checks.
+The current verified code gate is 214 tests, race tests, vet, and diff checks.
 The side-by-side VPS read-back places the tested release at
 `/opt/yen/releases/27d86c4`; both Yen units and both Theoses2 units remain
 active, and Yen `/healthz` returns `{"ok":true}`.
