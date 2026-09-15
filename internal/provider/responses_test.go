@@ -66,6 +66,19 @@ func TestOpenAIResponsesPersistsReasoningItemSignature(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesReturnsResponseFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"upstream failed\"}}}\n\n"))
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "responses-key", "gpt-5")
+	if _, err := provider.Next(context.Background(), nil, nil); err == nil || !strings.Contains(err.Error(), "server_error: upstream failed") {
+		t.Fatalf("error=%v, want provider failure", err)
+	}
+}
+
 func TestOpenAIResponsesUsesYenConfiguration(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "openai-responses")
 	t.Setenv("YEN_MODEL", "responses-model")

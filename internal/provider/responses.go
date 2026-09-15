@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -138,7 +139,11 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 				ID     string `json:"id"`
 				Model  string `json:"model"`
 				Status string `json:"status"`
-				Usage  *struct {
+				Error  *struct {
+					Code    string `json:"code"`
+					Message string `json:"message"`
+				} `json:"error"`
+				Usage *struct {
 					InputTokens  int `json:"input_tokens"`
 					OutputTokens int `json:"output_tokens"`
 					TotalTokens  int `json:"total_tokens"`
@@ -259,7 +264,12 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 				}
 				result.Usage = agent.Usage{Input: event.Response.Usage.InputTokens - cached, Output: event.Response.Usage.OutputTokens, CacheRead: cached, TotalTokens: event.Response.Usage.TotalTokens}
 			}
-		case "response.failed", "error":
+		case "response.failed":
+			if event.Response.Error != nil {
+				return agent.Response{}, fmt.Errorf("%s: %s", event.Response.Error.Code, event.Response.Error.Message)
+			}
+			return agent.Response{}, errors.New("Unknown error (no error details in response)")
+		case "error":
 			result.StopReason = "error"
 			result.ErrorMessage = event.Message
 			if result.ErrorMessage == "" {
