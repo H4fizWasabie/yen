@@ -25,6 +25,7 @@ import (
 type Runner struct {
 	Queue                          *conversation.Queue
 	Provider                       agent.Provider
+	SummarizationProvider          agent.Provider
 	ToolFactory                    func(workspace string) []agent.Tool
 	SessionToolFactory             func(workspace string, current *session.Session) []agent.Tool
 	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
@@ -98,6 +99,11 @@ func (r *Runner) ApplySettings(current settings.Settings) {
 	if os.Getenv("YEN_REASONING_EFFORT") == "" && thinking != "" {
 		if configured, err := providerpkg.SetThinkingLevel(r.Provider, thinking); err == nil {
 			r.Provider = configured
+		}
+	}
+	if os.Getenv("YEN_PROVIDER") == "" && current.SummarizationProvider != "" {
+		if configured, err := providerpkg.NewConfigured(current.SummarizationProvider, current.SummarizationModel); err == nil {
+			r.SummarizationProvider = configured
 		}
 	}
 	steering, followUp := settings.QueueModes(current)
@@ -383,7 +389,7 @@ func (r *Runner) SetSessionPath(conversationID, path string) {
 }
 
 func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentTurns int, instructions ...string) error {
-	if r.Provider == nil {
+	if r.Provider == nil && r.SummarizationProvider == nil {
 		return errors.New("compaction provider is required")
 	}
 	if _, active := r.Active(conversationID); active {
@@ -399,7 +405,11 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		return errors.New("compaction is already active")
 	}
 	defer r.compacting.Store(false)
-	if r.Provider == nil {
+	compactionProvider := r.Provider
+	if r.SummarizationProvider != nil {
+		compactionProvider = r.SummarizationProvider
+	}
+	if compactionProvider == nil {
 		return errors.New("compaction provider is required")
 	}
 	current, err := openOrCreate(r.pathFor(conversation.Turn{ConversationID: conversationID}), conversation.Turn{ConversationID: conversationID})
@@ -438,7 +448,7 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		transcript.WriteString(strings.TrimSpace(instructions[0]))
 	}
 	transcript.WriteString("\nReturn only the summary.")
-	response, err := r.Provider.Next(ctx, []agent.Message{{Role: "user", Content: transcript.String()}}, nil)
+	response, err := compactionProvider.Next(ctx, []agent.Message{{Role: "user", Content: transcript.String()}}, nil)
 	if err != nil {
 		return err
 	}
