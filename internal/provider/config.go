@@ -14,6 +14,7 @@ import (
 )
 
 var providerDefaults = map[string]string{
+	"amazon-bedrock":             "",
 	"ant-ling":                   "https://api.ant-ling.com/v1",
 	"baseten":                    "https://inference.baseten.co/v1",
 	"cerebras":                   "https://api.cerebras.ai/v1",
@@ -154,6 +155,17 @@ func googleVertexConfigured(model string) GoogleGenerativeAI {
 	return client
 }
 
+func bedrockConfigured(model string) BedrockConverse {
+	region := strings.TrimSpace(os.Getenv("AWS_REGION"))
+	if region == "" {
+		region = strings.TrimSpace(os.Getenv("AWS_DEFAULT_REGION"))
+	}
+	client := NewBedrockConverse(region, model)
+	client.Profile = strings.TrimSpace(os.Getenv("AWS_PROFILE"))
+	client.BaseURL = strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_AWS_BEDROCK_BASE_URL")), "/")
+	return client
+}
+
 func codexConfigured(model string) (OpenAIResponses, error) {
 	token := os.Getenv("YEN_OPENAI_CODEX_ACCESS_TOKEN")
 	if token == "" {
@@ -241,6 +253,13 @@ func NewFromEnv() OpenAICompletions {
 
 func ConfiguredFromEnv() agent.Provider {
 	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
+	if providerID == "amazon-bedrock" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "us.anthropic.claude-opus-4-6-v1"
+		}
+		return bedrockConfigured(model)
+	}
 	if providerID == "azure-openai-responses" {
 		model := os.Getenv("YEN_MODEL")
 		if model == "" {
@@ -365,6 +384,12 @@ func ConfiguredFromEnv() agent.Provider {
 func NewConfigured(providerID, model string) (agent.Provider, error) {
 	providerID = strings.ToLower(strings.TrimSpace(providerID))
 	model = strings.TrimSpace(model)
+	if providerID == "amazon-bedrock" {
+		if model == "" {
+			model = "us.anthropic.claude-opus-4-6-v1"
+		}
+		return bedrockConfigured(model), nil
+	}
 	if providerID == "azure-openai-responses" {
 		if model == "" {
 			model = "gpt-4.1"
@@ -532,6 +557,12 @@ func Describe(p agent.Provider) (string, string) {
 		return name, client.Model
 	case OpenAIResponses:
 		return client.name(), client.Model
+	case BedrockConverse:
+		name := client.ProviderName
+		if name == "" {
+			name = "amazon-bedrock"
+		}
+		return name, client.Model
 	default:
 		return "", ""
 	}
@@ -562,6 +593,9 @@ func SetModel(p agent.Provider, model string) (agent.Provider, error) {
 		client.Model = model
 		return client, nil
 	case OpenAIResponses:
+		client.Model = model
+		return client, nil
+	case BedrockConverse:
 		client.Model = model
 		return client, nil
 	default:
