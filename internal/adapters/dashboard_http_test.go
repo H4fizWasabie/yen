@@ -15,6 +15,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/runtime"
+	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 func TestDashboardHTTPRequiresAndAcceptsBearerToken(t *testing.T) {
@@ -87,6 +88,19 @@ func TestDashboardSessionsSortsMostRecentlyModifiedFirst(t *testing.T) {
 	sessions := dashboardSessions(registry, nil)
 	if len(sessions) != 2 || sessions[0]["id"] != "conv-new" || sessions[1]["id"] != "conv-old" {
 		t.Fatalf("sessions=%#v", sessions)
+	}
+}
+
+func TestDashboardHistoryIncludesMessageImages(t *testing.T) {
+	history := dashboardHistory([]session.Message{
+		{Role: "user", Content: "make an image", Images: []string{"data:image/png;base64,AA=="}},
+		{Role: "assistant", Content: "working"},
+		{Role: "toolResult", Content: "saved", Images: []string{"data:image/png;base64,BB=="}},
+	})
+	userSegments := history[0]["segments"].([]map[string]any)
+	toolSegments := history[1]["segments"].([]map[string]any)
+	if userSegments[1]["type"] != "image" || toolSegments[2]["type"] != "image" {
+		t.Fatalf("history=%#v", history)
 	}
 }
 

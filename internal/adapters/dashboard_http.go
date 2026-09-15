@@ -295,7 +295,9 @@ func dashboardHistory(messages []session.Message) []map[string]any {
 	history := make([]map[string]any, 0)
 	for _, message := range messages {
 		if message.Role == "user" {
-			history = append(history, map[string]any{"role": "user", "segments": []map[string]any{{"type": "text", "text": contentText(message.Content)}}})
+			segments := []map[string]any{{"type": "text", "text": contentText(message.Content)}}
+			segments = appendImageSegments(segments, message.Images)
+			history = append(history, map[string]any{"role": "user", "segments": segments})
 			continue
 		}
 		if message.Role == "assistant" {
@@ -305,8 +307,10 @@ func dashboardHistory(messages []session.Message) []map[string]any {
 		}
 		if message.Role == "toolResult" {
 			segment := map[string]any{"type": "tool_result", "id": message.ToolCallID, "name": "", "result": contentText(message.Content), "isError": strings.HasPrefix(contentText(message.Content), "Tool error:")}
+			segments := []map[string]any{segment}
+			segments = appendImageSegments(segments, message.Images)
 			if len(history) > 0 && history[len(history)-1]["role"] == "assistant" {
-				history[len(history)-1]["segments"] = append(history[len(history)-1]["segments"].([]map[string]any), segment)
+				history[len(history)-1]["segments"] = append(history[len(history)-1]["segments"].([]map[string]any), segments...)
 			}
 		}
 	}
@@ -325,6 +329,15 @@ func assistantSegments(content any) []map[string]any {
 			segments = append(segments, map[string]any{"type": "tool_call", "id": part.ID, "name": part.Name, "args": args})
 		} else if part.Type == "text" {
 			segments = append(segments, map[string]any{"type": "text", "text": part.Text})
+		}
+	}
+	return segments
+}
+
+func appendImageSegments(segments []map[string]any, images []string) []map[string]any {
+	for _, image := range images {
+		if strings.HasPrefix(image, "data:image/") {
+			segments = append(segments, map[string]any{"type": "image", "src": image})
 		}
 	}
 	return segments
@@ -384,7 +397,7 @@ const dashboardHTML = `<!doctype html>
 const state={sessions:[],active:null,history:[]};const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,options){const r=await fetch(path,options);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||r.status);return d}
 function renderSessions(){ $('sessions').innerHTML=state.sessions.map(s=>'<button class="session '+(state.active&&s.id===state.active.id?'active':'')+'" data-id="'+esc(s.id)+'">'+esc(s.title||s.id)+'<span class="meta">'+esc(s.channel||'')+'</span></button>').join('');document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>openSession(b.dataset.id)) }
-function renderHistory(history){state.history=history||state.history;$('messages').innerHTML=state.history.map(t=>{let body=(t.segments||[]).map(s=>s.type==='text'?esc(s.text):'<div class="tool">'+esc(s.name||'tool')+(s.result?' — '+esc(s.result):'')+'</div>').join('');return '<article class="turn '+esc(t.role)+'"><b>'+esc(t.role==='user'?'You':'Yen')+'</b><div>'+body+'</div></article>'}).join('')||'<p>No messages yet.</p>';$('messages').scrollTop=$('messages').scrollHeight}
+function renderHistory(history){state.history=history||state.history;$('messages').innerHTML=state.history.map(t=>{let body=(t.segments||[]).map(s=>s.type==='text'?esc(s.text):s.type==='image'?'<img class="attachment" src="'+esc(s.src)+'" alt="generated image">':'<div class="tool">'+esc(s.name||'tool')+(s.result?' — '+esc(s.result):'')+'</div>').join('');return '<article class="turn '+esc(t.role)+'"><b>'+esc(t.role==='user'?'You':'Yen')+'</b><div>'+body+'</div></article>'}).join('')||'<p>No messages yet.</p>';$('messages').scrollTop=$('messages').scrollHeight}
 async function openSession(id){const d=await api('/api/sessions/'+encodeURIComponent(id));state.active=d.session;$('title').textContent=d.session.title||id;$('stop').hidden=true;renderSessions();renderHistory(d.history)}
 async function load(){const d=await api('/api/sessions');state.sessions=d.sessions||[];renderSessions();if(!state.active&&state.sessions[0])await openSession(state.sessions[0].id)}
 $('login').querySelector('form').onsubmit=async e=>{e.preventDefault();try{await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('token').value})});$('login').hidden=true;$('app').hidden=false;await load()}catch(err){$('error').textContent=err.message}};
