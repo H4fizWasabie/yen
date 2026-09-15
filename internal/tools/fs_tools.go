@@ -57,24 +57,30 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 	root := normalizeReadPath(stringArg(args, "path", "."), t.cwd)
 	limit := intArg(args, "limit", 1000)
 	if limit < 1 { limit = 1 }
-	var matches []string
-	matchCount := 0
+	var files []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil { return err }
 		if e := ctx.Err(); e != nil { return e }
 		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") { return filepath.SkipDir }
-		if entry.IsDir() { return nil }
-		rel, err := filepath.Rel(root, path); if err != nil { return err }
-		rel = filepath.ToSlash(rel)
-		if gitIgnored(ctx, root, rel) { return nil }
+		if !entry.IsDir() {
+			rel, err := filepath.Rel(root, path); if err != nil { return err }
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil { return "", err }
+	ignored := gitIgnoredPaths(ctx, root, files)
+	var matches []string
+	matchCount := 0
+	for _, rel := range files {
+		if e := ctx.Err(); e != nil { return "", e }
+		if _, ok := ignored[rel]; ok { continue }
 		matched := matchFindPattern(pattern, rel)
 		if matched {
 			matchCount++
 			if len(matches) < limit { matches = append(matches, rel) }
 		}
-		return nil
-	})
-	if err != nil { return "", err }
+	}
 	if len(matches) == 0 { return "No files found matching pattern", nil }
 	sort.Strings(matches)
 	output := truncateFileSearchOutput(strings.Join(matches, "\n"))
@@ -82,8 +88,25 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 	return output, nil
 }
 
-func gitIgnored(ctx context.Context, root, rel string) bool {
-	return exec.CommandContext(ctx, "git", "-C", root, "check-ignore", "--quiet", "--", filepath.FromSlash(rel)).Run() == nil
+func gitIgnoredPaths(ctx context.Context, root string, rels []string) map[string]struct{} {
+	if len(rels) == 0 { return nil }
+	var input bytes.Buffer
+	for _, rel := range rels {
+		input.WriteString(filepath.FromSlash(rel))
+		input.WriteByte(0)
+	}
+	var output bytes.Buffer
+	cmd := exec.CommandContext(ctx, "git", "-C", root, "check-ignore", "-z", "--stdin")
+	cmd.Stdin = &input
+	cmd.Stdout = &output
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 { return nil }
+	}
+	ignored := make(map[string]struct{})
+	for _, path := range bytes.Split(output.Bytes(), []byte{0}) {
+		if len(path) > 0 { ignored[filepath.ToSlash(string(path))] = struct{}{} }
+	}
+	return ignored
 }
 
 func matchFindPattern(pattern, rel string) bool {
@@ -124,18 +147,29 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 	glob := stringArg(args, "glob", "")
 	limit := intArg(args, "limit", 100); if limit < 1 { limit = 1 }
 	contextLines := intArg(args, "context", 0); if contextLines < 0 { contextLines = 0 }
-	var out []string
-	matchCount := 0
+	var files []string
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil { return walkErr }
 		if e := ctx.Err(); e != nil { return e }
 		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") { return filepath.SkipDir }
-		if entry.IsDir() { return nil }
-		rel, err := filepath.Rel(root, path); if err != nil { return err }; rel = filepath.ToSlash(rel)
-		if gitIgnored(ctx, root, rel) { return nil }
-		if glob != "" && !matchFindPattern(glob, rel) { return nil }
-		data, err := os.ReadFile(path); if err != nil { return nil }
-		if bytes.IndexByte(data, 0) >= 0 { return nil }
+		if !entry.IsDir() {
+			rel, err := filepath.Rel(root, path); if err != nil { return err }
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil { return "", err }
+	ignored := gitIgnoredPaths(ctx, root, files)
+	var out []string
+	matchCount := 0
+	matchLimitReached := false
+filesLoop:
+	for _, rel := range files {
+		if e := ctx.Err(); e != nil { return "", e }
+		if _, ok := ignored[rel]; ok { continue }
+		if glob != "" && !matchFindPattern(glob, rel) { continue }
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))); if err != nil { continue }
+		if bytes.IndexByte(data, 0) >= 0 { continue }
 		lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", ""), "\n")
 		for i, line := range lines {
 			if !re.MatchString(line) { continue }
@@ -146,19 +180,14 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 				if j != i { separator = "-" }
 				out = append(out, fmt.Sprintf("%s%s%d%s %s", rel, separator, j+1, separator, truncateGrepLine(lines[j])))
 			}
-			if matchCount >= limit { return errGrepLimit }
+			if matchCount >= limit { matchLimitReached = true; break filesLoop }
 		}
-		return nil
-	})
-	matchLimitReached := err == errGrepLimit
-	if err != nil && err != errGrepLimit { return "", err }
+	}
 	if len(out) == 0 { return "No matches found", nil }
 	result := truncateToolOutput(strings.Join(out, "\n"))
 	if matchLimitReached { result += fmt.Sprintf("\n\n[%d matches limit reached. Use limit=%d for more, or refine pattern]", limit, limit*2) }
 	return result, nil
 }
-
-var errGrepLimit = fmt.Errorf("grep match limit reached")
 
 func truncateGrepLine(line string) string {
 	runes := []rune(line)
