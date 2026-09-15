@@ -16,6 +16,7 @@ import (
 type webSearchTool struct {
 	client   *http.Client
 	endpoint string
+	keys     []string
 }
 
 type tavilyResponse struct {
@@ -32,7 +33,22 @@ func NewWebSearchTool() agent.Tool {
 	if endpoint == "" {
 		endpoint = "https://api.tavily.com/search"
 	}
-	return webSearchTool{client: http.DefaultClient, endpoint: endpoint}
+	return webSearchTool{
+		client:   http.DefaultClient,
+		endpoint: endpoint,
+		keys:     configuredTavilyKeys(),
+	}
+}
+
+func configuredTavilyKeys() []string {
+	keys := []string{os.Getenv("YEN_TAVILY_API_KEY"), os.Getenv("YEN_TAVILY_API_KEY_2")}
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key != "" {
+			result = append(result, key)
+		}
+	}
+	return result
 }
 
 func (webSearchTool) Name() string { return "web_search" }
@@ -42,12 +58,12 @@ func (t webSearchTool) Execute(ctx context.Context, args map[string]any) (string
 	if !ok || strings.TrimSpace(query) == "" {
 		return "", fmt.Errorf("query is required")
 	}
-	keys := []string{os.Getenv("YEN_TAVILY_API_KEY"), os.Getenv("YEN_TAVILY_API_KEY_2")}
+	keys := t.keys
+	if keys == nil {
+		keys = configuredTavilyKeys()
+	}
 	var last error
 	for _, key := range keys {
-		if key == "" {
-			continue
-		}
 		body, _ := json.Marshal(map[string]any{"query": query, "max_results": 5})
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint, bytes.NewReader(body))
 		if err != nil {

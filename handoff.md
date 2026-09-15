@@ -466,6 +466,11 @@ plus race/vet/diff.
 `internal/codingagent/convert_doc_test.go` covers the ceiling; the full gate
 is now 255 tests plus race/vet/diff.
 
+`web_search` now snapshots Yen's filtered Tavily key list when the tool is
+constructed, matching the TypeScript tool-definition boundary while retaining
+legacy test construction that leaves keys unset. Fallback and snapshot tests
+pass; the full gate is now 257 tests plus race/vet/diff.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
