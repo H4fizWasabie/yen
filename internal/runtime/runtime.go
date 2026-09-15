@@ -4,25 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 type Runner struct {
-	Queue        *conversation.Queue
-	Provider     agent.Provider
-	ToolFactory  func(workspace string) []agent.Tool
-	SessionPath  func(turn conversation.Turn) string
-	Checkpoints  *memory.Checkpoints
-	Memory       *memory.Engine
-	SharedMemory bool
+	Queue                 *conversation.Queue
+	Provider              agent.Provider
+	ToolFactory           func(workspace string) []agent.Tool
+	SessionPath           func(turn conversation.Turn) string
+	Checkpoints           *memory.Checkpoints
+	Memory                *memory.Engine
+	SharedMemory          bool
+	AutoCompactTurns      int
+	AutoCompactOnOverflow bool
+	AutoConsolidate       bool
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -31,6 +38,24 @@ type Runner struct {
 
 func New(queue *conversation.Queue, provider agent.Provider, tools func(string) []agent.Tool) *Runner {
 	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues)}
+}
+
+func AutoCompactTurnsFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_TURNS"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
+}
+
+func AutoCompactOnOverflowFromEnv() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_OVERFLOW")))
+	return value == "1" || value == "true" || value == "yes"
+}
+
+func AutoConsolidateFromEnv() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_CONSOLIDATE")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func (r *Runner) Submit(link conversation.Link, prompt string) (conversation.Turn, error) {
@@ -49,21 +74,33 @@ func (r *Runner) RunNextWithUpdates(ctx context.Context, conversationID string, 
 }
 
 func (r *Runner) RunSubmitted(ctx context.Context, submitted conversation.Turn) (conversation.Turn, agent.Result, error) {
-	return r.runSubmitted(ctx, submitted, nil)
+	return r.runSubmitted(ctx, submitted, nil, nil, nil)
 }
 
 func (r *Runner) RunSubmittedWithUpdates(ctx context.Context, submitted conversation.Turn, onUpdate func(string)) (conversation.Turn, agent.Result, error) {
-	return r.runSubmitted(ctx, submitted, onUpdate)
+	return r.runSubmitted(ctx, submitted, nil, onUpdate, nil)
 }
 
-func (r *Runner) runSubmitted(ctx context.Context, submitted conversation.Turn, onUpdate func(string)) (conversation.Turn, agent.Result, error) {
+func (r *Runner) RunSubmittedWithEvents(ctx context.Context, submitted conversation.Turn, onUpdate func(string), onEvent agent.EventFunc) (conversation.Turn, agent.Result, error) {
+	return r.RunSubmittedWithEventsAndImages(ctx, submitted, nil, onUpdate, onEvent)
+}
+
+func (r *Runner) RunSubmittedWithEventsAndImages(ctx context.Context, submitted conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (conversation.Turn, agent.Result, error) {
+	return r.runSubmitted(ctx, submitted, images, onUpdate, onEvent)
+}
+
+func (r *Runner) runSubmitted(ctx context.Context, submitted conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (conversation.Turn, agent.Result, error) {
 	for {
 		turn, ok, err := r.Queue.Claim(submitted.ConversationID)
 		if err != nil {
 			return conversation.Turn{}, agent.Result{}, err
 		}
 		if ok {
-			result, runErr := r.runClaimed(ctx, turn, onUpdate)
+			turnImages := images
+			if turn.ID != submitted.ID {
+				turnImages = nil
+			}
+			result, runErr := r.runClaimed(ctx, turn, turnImages, onUpdate, onEvent)
 			if turn.ID == submitted.ID || runErr != nil {
 				return turn, result, runErr
 			}
@@ -85,11 +122,11 @@ func (r *Runner) runNext(ctx context.Context, conversationID string, onUpdate fu
 	if !ok {
 		return conversation.Turn{}, agent.Result{}, errors.New("no pending turn")
 	}
-	result, runErr := r.runClaimed(ctx, turn, onUpdate)
+	result, runErr := r.runClaimed(ctx, turn, nil, onUpdate, nil)
 	return turn, result, runErr
 }
 
-func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, onUpdate func(string)) (agent.Result, error) {
+func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	turnCtx, cancel := context.WithCancel(ctx)
 	queues := &agent.MessageQueues{}
 	r.mu.Lock()
@@ -129,7 +166,7 @@ func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, onUpdat
 		delete(r.queues, turn.ID)
 		r.mu.Unlock()
 	}()
-	result, runErr := r.runTurn(turnCtx, turn, queues, onUpdate)
+	result, runErr := r.runTurn(turnCtx, turn, images, queues, onUpdate, onEvent)
 	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
 		_ = r.Queue.Cancel(turn.ID)
 	} else {
@@ -188,13 +225,75 @@ func (r *Runner) OpenSession(link conversation.Link) (*session.Session, error) {
 	return openOrCreate(r.pathFor(conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID}), conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID})
 }
 
-func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *agent.MessageQueues, onUpdate func(string)) (agent.Result, error) {
+func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentTurns int) error {
+	if r.Provider == nil {
+		return errors.New("compaction provider is required")
+	}
+	if _, active := r.Active(conversationID); active {
+		return errors.New("cannot compact an active conversation")
+	}
+	return r.compactConversation(ctx, conversationID, keepRecentTurns)
+}
+
+func (r *Runner) compactConversation(ctx context.Context, conversationID string, keepRecentTurns int) error {
+	if r.Provider == nil {
+		return errors.New("compaction provider is required")
+	}
+	current, err := openOrCreate(r.pathFor(conversation.Turn{ConversationID: conversationID}), conversation.Turn{ConversationID: conversationID})
+	if err != nil {
+		return err
+	}
+	plan, err := current.PrepareCompaction(keepRecentTurns)
+	if err != nil {
+		return err
+	}
+	var transcript strings.Builder
+	if plan.PreviousSummary != "" {
+		transcript.WriteString("<previous-summary>\n")
+		transcript.WriteString(plan.PreviousSummary)
+		transcript.WriteString("\n</previous-summary>\n\n")
+	}
+	transcript.WriteString("<conversation>\n")
+	for _, message := range plan.Messages {
+		transcript.WriteString(message.Role)
+		transcript.WriteString(": ")
+		transcript.WriteString(fmt.Sprint(message.Content))
+		transcript.WriteByte('\n')
+	}
+	transcript.WriteString("</conversation>\n\nSummarize the conversation for a later agent. Preserve goals, constraints, decisions, progress, and next steps. Return only the summary.")
+	response, err := r.Provider.Next(ctx, []agent.Message{{Role: "user", Content: transcript.String()}}, nil)
+	if err != nil {
+		return err
+	}
+	if response.StopReason == "error" || response.StopReason == "aborted" {
+		return errors.New("compaction stopped: " + response.StopReason)
+	}
+	if strings.TrimSpace(response.Text) == "" || len(response.ToolCalls) > 0 {
+		return errors.New("compaction returned an invalid summary")
+	}
+	_, err = current.AppendCompaction(strings.TrimSpace(response.Text), plan.FirstKeptEntryID, plan.TokensBefore, &session.Usage{
+		Input: response.Usage.Input, Output: response.Usage.Output, Reasoning: response.Usage.Reasoning,
+		CacheRead: response.Usage.CacheRead, CacheWrite: response.Usage.CacheWrite, TotalTokens: response.Usage.TotalTokens,
+	})
+	return err
+}
+
+func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	path := r.pathFor(turn)
 	current, err := openOrCreate(path, turn)
 	if err != nil {
 		return agent.Result{}, err
 	}
-	history := toAgentMessages(current.Messages())
+	if r.AutoCompactTurns > 0 {
+		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
+			return agent.Result{}, err
+		}
+		current, err = openOrCreate(path, turn)
+		if err != nil {
+			return agent.Result{}, err
+		}
+	}
+	history := toAgentMessages(current.ContextMessages())
 	var tools []agent.Tool
 	if r.ToolFactory != nil {
 		tools = r.ToolFactory(turn.WorkspaceID)
@@ -205,7 +304,21 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})
-	result, runErr := agent.RunFromWithQueues(ctx, r.Provider, tools, history, turn.Prompt, queues, onUpdate)
+	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
+	if r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && recoverableLengthStop(result)) {
+		keepRecentTurns := r.AutoCompactTurns
+		if keepRecentTurns < 1 {
+			keepRecentTurns = 2
+		}
+		if compactErr := r.compactConversation(ctx, turn.ConversationID, keepRecentTurns); compactErr == nil {
+			current, err = openOrCreate(path, turn)
+			if err != nil {
+				return result, err
+			}
+			history = toAgentMessages(current.ContextMessages())
+			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
+		}
+	}
 	for _, message := range result.Messages[len(history):] {
 		if _, err := current.Append(toSessionMessage(message)); err != nil {
 			return result, err
@@ -215,6 +328,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 		if err := r.Memory.RecordTurn(turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, result.FinalText); err != nil {
 			return result, err
 		}
+		if r.AutoConsolidate {
+			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, toConsolidationTurns(current.TimedMessages()))
+		}
 	}
 	if runErr == nil && r.Checkpoints != nil {
 		if err := r.Checkpoints.Set(turn.ConversationID, memory.Checkpoint{LastEntryID: turn.ID}); err != nil {
@@ -222,6 +338,89 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 		}
 	}
 	return result, runErr
+}
+
+func recoverableLengthStop(result agent.Result) bool {
+	if len(result.Messages) == 0 {
+		return false
+	}
+	last := result.Messages[len(result.Messages)-1]
+	return last.Role == "assistant" && last.StopReason == "length"
+}
+
+func toConsolidationTurns(messages []session.TimedMessage) []memory.ConsolidationTurn {
+	turns := make([]memory.ConsolidationTurn, 0, len(messages))
+	for _, timed := range messages {
+		message := timed.Message
+		role := message.Role
+		if role == "toolResult" {
+			role = "tool"
+		}
+		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message), Timestamp: timed.Timestamp})
+	}
+	return turns
+}
+
+const (
+	consolidationToolArgsChars   = 200
+	consolidationToolResultChars = 500
+)
+
+func consolidationContent(message session.Message) string {
+	switch message.Role {
+	case "bashExecution":
+		if message.Cancelled {
+			return fmt.Sprintf("ran `%s` — cancelled", truncateConsolidation(message.Command, consolidationToolArgsChars))
+		}
+		exitCode := "?"
+		if message.ExitCode != nil {
+			exitCode = fmt.Sprint(*message.ExitCode)
+		}
+		return fmt.Sprintf("ran `%s` — exit %s: %s", truncateConsolidation(message.Command, consolidationToolArgsChars), exitCode, truncateConsolidation(message.Output, consolidationToolResultChars))
+	case "branchSummary", "compactionSummary":
+		return message.Summary
+	}
+	if text, ok := message.Content.(string); ok {
+		return text
+	}
+	data, err := json.Marshal(message.Content)
+	if err != nil {
+		return ""
+	}
+	var parts []session.ContentPart
+	if err := json.Unmarshal(data, &parts); err != nil {
+		return ""
+	}
+	var content strings.Builder
+	for _, part := range parts {
+		switch part.Type {
+		case "text":
+			if message.Role == "toolResult" {
+				status := "OK"
+				if strings.HasPrefix(part.Text, "Tool error:") || strings.HasPrefix(part.Text, "unknown tool:") || part.Text == "Operation aborted" {
+					status = "FAILED"
+				}
+				fmt.Fprintf(&content, "%s — %s", status, truncateConsolidation(part.Text, consolidationToolResultChars))
+			} else {
+				content.WriteString(part.Text)
+			}
+		case "toolCall":
+			args, _ := json.Marshal(part.Arguments)
+			fmt.Fprintf(&content, "called %s(%s)", part.Name, truncateConsolidation(string(args), consolidationToolArgsChars))
+		}
+		if content.Len() > 0 {
+			content.WriteByte('\n')
+		}
+	}
+	return strings.TrimSpace(content.String())
+}
+
+func truncateConsolidation(text string, max int) string {
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	return string(runes[:max]) + "…"
 }
 
 func (r *Runner) pathFor(turn conversation.Turn) string {
@@ -243,7 +442,35 @@ func openOrCreate(path string, turn conversation.Turn) (*session.Session, error)
 func toAgentMessages(messages []session.Message) []agent.Message {
 	result := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
-		converted := agent.Message{Role: message.Role, ToolCallID: message.ToolCallID, StopReason: message.StopReason}
+		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model}
+		if message.Usage != nil {
+			converted.Usage = &agent.Usage{
+				Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
+				CacheRead: message.Usage.CacheRead, CacheWrite: message.Usage.CacheWrite, TotalTokens: message.Usage.TotalTokens,
+			}
+		}
+		switch message.Role {
+		case "bashExecution":
+			if message.ExcludeFromContext {
+				continue
+			}
+			converted.Role = "user"
+			converted.Content = bashExecutionContext(message)
+			result = append(result, converted)
+			continue
+		case "branchSummary":
+			converted.Role = "user"
+			converted.Content = "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n" + message.Summary + "\n</summary>"
+			result = append(result, converted)
+			continue
+		case "compactionSummary":
+			converted.Role = "user"
+			converted.Content = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n" + message.Summary + "\n</summary>"
+			result = append(result, converted)
+			continue
+		case "custom":
+			converted.Role = "user"
+		}
 		if message.Role == "toolResult" {
 			converted.Role = "tool"
 		}
@@ -274,9 +501,34 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 	return result
 }
 
+func bashExecutionContext(message session.Message) string {
+	text := fmt.Sprintf("Ran `%s`\n", message.Command)
+	if message.Output != "" {
+		text += "```\n" + message.Output + "\n```"
+	} else {
+		text += "(no output)"
+	}
+	if message.Cancelled {
+		text += "\n\n(command cancelled)"
+	} else if message.ExitCode != nil && *message.ExitCode != 0 {
+		text += fmt.Sprintf("\n\nCommand exited with code %d", *message.ExitCode)
+	}
+	if message.Truncated && message.FullOutputPath != "" {
+		text += "\n\n[Output truncated. Full output: " + message.FullOutputPath + "]"
+	}
+	return text
+}
+
 func toSessionMessage(message agent.Message) session.Message {
+	var usage *session.Usage
+	if message.Usage != nil {
+		usage = &session.Usage{
+			Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
+			CacheRead: message.Usage.CacheRead, CacheWrite: message.Usage.CacheWrite, TotalTokens: message.Usage.TotalTokens,
+		}
+	}
 	if message.Role == "tool" {
-		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}}
+		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
 	}
 	if len(message.ToolCalls) > 0 {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+1)
@@ -286,7 +538,7 @@ func toSessionMessage(message agent.Message) session.Message {
 		for _, call := range message.ToolCalls {
 			parts = append(parts, session.ContentPart{Type: "toolCall", ID: call.ID, Name: call.Name, Arguments: call.Args})
 		}
-		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason}
+		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
 	}
-	return session.Message{Role: message.Role, Content: message.Content, StopReason: message.StopReason}
+	return session.Message{Role: message.Role, Content: message.Content, Images: message.Images, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
 }

@@ -1,6 +1,6 @@
 # Theoses2 Go rewrite handoff
 
-Date: 2026-09-14
+Date: 2026-09-15
 
 ## Current state
 
@@ -19,12 +19,111 @@ No cutover or TypeScript modification has happened. Local Telegram/dashboard
 adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
+Latest verified checkpoint: branch `feat/m2-first-slice`, PR #2 open, commit
+`d4345c2`, deployed as `/opt/yen/releases/d4345c2`. The latest memory parity
+slice adds TypeScript-compatible structured-output repair for trailing commas,
+raw control characters, and invalid string escapes, plus tolerant per-member
+fact/edge/reference filtering. Full verification reports 135 passing tests,
+including race, vet, builds, and deployment-script syntax. Yen and Theoses2
+units are all active; Yen dashboard health is 200. Yen data was backed up before
+deployment at `20260915T040441Z`.
+
+Provider credentials are intentionally split: Yen must use the separate
+`/etc/yen/yen-provider.env` file. Yen deployment configuration lives under
+`/etc/yen` and `/var/lib/yen`; the existing Theoses provider env is not a Yen
+deployment input.
+
+The dashboard SSE seam now emits the TypeScript event names and payload shapes
+for `delta`, `tool_call`, `tool_result`, `usage`, `done`, and `error`, including
+the TypeScript stream headers. This is covered by the agent event callback test
+and dashboard HTTP stream test; commit `aa7f816`.
+
+Active session context now follows the last leaf through `parentId`, matching
+the pinned TypeScript branch-path behavior. The v2 branch fixture proves that
+an earlier sibling is excluded from the runtime context; the durable read-back
+still retains both siblings.
+
+Dashboard session GET now includes the TypeScript UI contract (`session`,
+`history`, and `runtime`) while retaining the earlier `messages` field for
+pilot clients. The response is covered by the dashboard HTTP test.
+
+Dashboard session listing now maps registry links to the TypeScript session-view
+shape (`id`, `channel`, `title`, `modified`, `messageCount`, `path`), includes
+both dashboard and Telegram links, and de-duplicates shared conversation IDs.
+
+The live Go pilot now runs release `eb73910` with Yen-owned configuration and
+data paths. A real dashboard request succeeded through the separate Yen
+provider key after the data migration; all four Go/TypeScript units were
+verified active. Auto-consolidation was not enabled for this split-provider
+check.
+
+Auto-consolidation is now enabled through `YEN_AUTO_CONSOLIDATE=1` in
+`/etc/yen/yen.env`. A live `thanks` trigger succeeded using Yen's separate
+provider key; `/var/lib/yen/memory/consolidation-state.json` advanced and the
+SQLite episodic store read back a new current record. This acceptance did not
+modify or restart any TypeScript unit.
+
+The provider wrapper now maps `YEN_REASONING_EFFORT` to the OpenRouter
+`reasoning.effort` request field. The live Yen provider env sets it to `high`,
+and release `39cb375` passed a real dashboard request after restart. The
+request-shape contract is covered by `TestOpenAICompletionsSendsReasoningEffort`.
+
+Telegram now sends the Bot API `typing` action immediately and every four
+seconds while a turn runs, stopping it when the turn completes. Errors from
+the indicator are intentionally non-fatal, matching the pinned TypeScript
+behavior; `TestTelegramBotSendsTypingActionDuringTurn` covers the lifecycle.
+
+Plain Telegram output now uses the pinned TypeScript 4,000-character limit;
+`TestChunkTelegramTextMatchesTypeScriptLimit` covers the boundary.
+
+Telegram message and quoted-reply handling now falls back from `text` to
+`caption`, matching the pinned TypeScript extractor; the behavior is covered
+by `TestTelegramBotUsesCaptionForMessageAndReply`.
+
+Telegram stop controls now accept the pinned case-insensitive `stop`, `halt`,
+`/stop`, and `/cancel` forms, retaining Yen's existing `/abort` alias.
+
+Telegram replies now attempt the oracle's `sendRichMessage` Bot API method and
+fall back to classic `sendMessage` on any unsupported or failed request.
+
+Outbound replies also split on standalone `---` sections and thread each
+following message to the prior sent message, matching the Telegram source
+adapter's reply chain.
+
+Telegram poll batches now dispatch concurrently while the runtime queue keeps
+same-conversation turns FIFO; this lets stop/control updates reach an active
+turn without serial poll-loop blocking.
+
+Classic Telegram fallback now escapes and formats common Markdown constructs as
+HTML before `sendMessage`; the rich path remains preferred.
+
+Telegram now emits a `Running <tool>...` status message for tool calls,
+covered by `TestTelegramBotReportsToolStatus`; canonical shared-session routing
+is preserved through the event-enabled path.
+
+For short single-section replies, the status message is edited in place into
+the final answer, with rich-edit then classic-edit fallback.
+
+Telegram supports the oracle's `/on tool call(s)` and `/off tool call(s)`
+commands with bounded command/path/query previews. The preference persists in
+Yen's data directory as `telegram-preferences.json`.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
 conversation/session, and the shared-memory binary has restarted cleanly.
 The Go dashboard also resolved to that conversation and completed live
 requests, including shared memory, cancellation, and FIFO queue acceptance.
+
+The Yen dashboard now has a Yen-owned token configured in `/etc/yen/yen.env`;
+VPS acceptance returned 401 without credentials and 200 for Bearer, login
+cookie, and health requests. Theoses2 dashboard configuration was untouched.
+
+Telegram photos/documents and common media now download through bounded Bot API
+calls into `/var/lib/yen/telegram-artifacts`; the prompt points the existing
+read tool at the saved file. Photos also survive into OpenAI-compatible image
+content parts; live attachment acceptance still requires an incoming user file.
+Image MIME types and persisted image metadata now round-trip through sessions.
 See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md),
 [docs/M9-OPERATIONS.md](docs/M9-OPERATIONS.md), and
 [docs/M10-PARITY-REPORT.md](docs/M10-PARITY-REPORT.md).
@@ -44,8 +143,27 @@ not use the newer checkout as an unqualified oracle.
 ## What exists
 
 - `internal/session`: v3 JSONL creation, deferred first publication, parent
-  links, open, append, and restart continuation.
+  links, open, append, and restart continuation. Session open now scans past
+  malformed/blank lines before the header and malformed entries after it, as
+  covered by `TestOpenSessionSkipsMalformedLinesBeforeAndAfterHeader`.
+  Scanner capacity is explicitly bounded at 4 MiB and covered by
+  `TestOpenSessionReadsLargeJSONLMessageWithinBound`.
+  Opening a pinned TypeScript v1/v2 JSONL session now migrates it in place to
+  v3: IDs and parent links are assigned, `hookMessage` becomes `custom`, and
+  TypeScript flat compaction entries are read. Raw extension entries and
+  message metadata survive migration; branch semantics and malformed-line
+  recovery remain open. V2 sessions retain their existing tree links during
+  the v2-to-v3 role/version migration.
+  Assistant provider usage now round-trips through the session log.
+  Compaction entries, active-context projection, and provider-backed
+  `Runner.Compact` are supported. Set `THEOSES_AUTO_COMPACT_TURNS` to enable
+  the pre-prompt automatic threshold for a deployment; overflow retry and
+  `THEOSES_AUTO_COMPACT_OVERFLOW=1` to enable one bounded overflow
+  compact-and-retry attempt. Full TypeScript compaction settings remain
+  deferred.
 - `internal/agent`: tool-turn loop and normalized event collection.
+  Assistant responses now carry provider/model metadata through the runtime
+  into the durable session entry, matching the TypeScript session fields.
 - `internal/provider`: one OpenAI-compatible SSE client with fragmented tool
   call argument assembly.
 - `internal/tools`: read-only local file tool with offset/limit, basic
@@ -58,6 +176,11 @@ not use the newer checkout as an unqualified oracle.
   across runner processes.
 - `internal/adapters`: deterministic Telegram message and dashboard HTTP
   adapter seams sharing the canonical registry, runner, and memory engine.
+  Dashboard API authentication now supports the TypeScript-compatible Bearer
+  and cookie login boundary when `THEOSES_DASHBOARD_TOKEN` is configured.
+  Telegram replies now split at the Bot API text limit without breaking
+  Unicode runes, preserve capped quoted-message context, and target the
+  originating Telegram message when replying.
 - `cmd/theoses-dashboard`: local dashboard process with `/healthz`; a local
   start/readiness check has passed on `127.0.0.1:18789`.
 - `cmd/theoses-telegram`: standard-library Bot API polling process with an
@@ -93,8 +216,55 @@ matter, episodic SQLite records, durable checkpoints, an engine that records
 canonical turns, explicit additive migration helpers, and agent-facing
 `remember`/`save_note` tools plus bounded session-scoped `recall_turns`.
 The engine also applies extracted fact/edge/episode batches idempotently before
-advancing a checkpoint, and exposes an explicit one-provider-call
-`Consolidate` path for structured JSON extraction.
+advancing a checkpoint, and exposes an explicit provider-backed `Consolidate`
+path for structured JSON extraction.
+Consolidation edge writes now enforce the TypeScript closed relation vocabulary
+(`prefers`, `attributed_to`, `depends_on`, `located_at`, `requires`,
+`supersedes`, `used_in`, `maintains`).
+Opt-in runtime consolidation is now available with
+`THEOSES_AUTO_CONSOLIDATE=1`; it uses a separate consolidation-state file,
+the pinned 70-message trigger ceiling, and a 15-minute failure cooldown so it
+does not overwrite durable turn checkpoints. Its transcript is also capped at
+100,000 characters from the tail, matching the pinned memory-consolidation
+ceiling, and its provider call retries up to three times with exponential
+2-second-base delays without changing ordinary agent-turn retry behavior.
+Assistant tool calls, tool results, bash executions, and branch/compaction
+summaries are condensed to bounded transcript summaries matching the pinned
+TypeScript formatter.
+Length-limited assistant responses now refuse to execute potentially truncated
+tool arguments and return the same re-issue guidance shape as the TypeScript
+agent loop.
+The agent callback also exposes `tool_execution_start` and
+`tool_execution_end` lifecycle events with arguments, result, and error state.
+Recoverable provider `length` stops now use the existing overflow opt-in to
+compact once and retry once, matching the pinned TypeScript recovery path.
+Persisted bash, custom, branch-summary, and compaction-summary messages are
+converted into provider-compatible user context, including the bash exclusion
+flag and TypeScript summary wrappers.
+Independent multi-tool batches execute concurrently and retain provider/tool
+result ordering in the persisted conversation.
+Consolidation now carries session-entry timestamps into the transcript prefix.
+Persisted tool errors are labeled `FAILED` in that transcript, matching the
+TypeScript consolidation summary.
+The dashboard now serves a minimal same-origin HTML shell at `/` for login,
+session navigation, history, new sessions, messages, and stop; it intentionally
+does not claim full TypeScript dashboard UI parity.
+Its composer now consumes the existing SSE endpoint for incremental text and
+tool progress before refreshing the persisted session.
+Session-list metadata now reads the actual shared JSONL session for message
+count and last-entry timestamp instead of placeholder values.
+Visible dashboard sessions are sorted newest-first like the TypeScript dashboard.
+Dashboard session titles now use the first user message, capped at 80 runes,
+with the conversation ID as fallback.
+Dashboard send/read-back now falls back to a Telegram registry link for a shared
+conversation when no dashboard-specific link exists.
+Dashboard message requests now preserve bounded `replyContext` using the same
+quoted-context wrapper as Telegram and the pinned TypeScript session.
+Consolidation timestamped messages now follow the active parent-linked branch,
+excluding inactive sibling entries.
+When the configured provider supports it, consolidation also requests the
+OpenAI-compatible `response_format: {type: "json_object"}` wire mode; generic
+test providers retain the prompt-only fallback.
 Migration accepts semantic Markdown or the legacy JSONL memory file explicitly;
 it is never automatic and leaves source stores intact.
 
@@ -124,14 +294,34 @@ queue slices are now implemented and locally verified. Work in this order:
    record any accepted parity differences. The semantic edge walk and episodic
    search/point-in-time paths now have Go coverage.
 3. Add adapter-facing migration/read-back integration around the existing
-   deterministic seams; keep startup import disabled. The explicit migration
-   command, persisted tool-turn fixture, and dashboard SSE path now exist.
+   deterministic seams; keep startup memory import disabled. Session v1/v2
+   read-back migration now exists; the explicit semantic/episodic migration
+   command remains additive and source-preserving.
 4. Validate adapter reconnect/read-back behavior under concurrent processes;
    the queue and registry now use cross-process file locking, expiring
    per-turn leases, durable cancellation, and a subprocess claim test.
 5. Retry the Telegram pilot only with a valid replacement token; then verify
    visible delivery, restart/resume, shared memory, and rollback before any
    cutover decision.
+
+6. Exercise the configured dashboard token through `/api/login`, Bearer and
+   cookie requests in the side-by-side pilot before claiming live dashboard
+   authentication parity.
+
+7. Run `deploy/install-side-by-side.sh` on a disposable host with prepared
+   channel/provider env files, keeping `YEN_START=0` for the first read-back;
+   do not use the production VPS as the installer test host. The isolated
+   user-namespace installer acceptance has already passed with both binaries,
+   wrappers, units, mode `600` channel env, and no service start.
+
+The dashboard token boundary has also passed isolated local acceptance: health
+200, unauthenticated API 401, `/api/login` 200, cookie 200, and Bearer 200.
+The 2026-09-15 VPS read-back found both Go pilot units and both existing
+TypeScript units active, but no dashboard token configured in the Go env files;
+therefore live authenticated dashboard acceptance remains intentionally open.
+The installer acceptance was rerun after the consolidation wrapper change:
+temporary root/fake systemctl, both binaries and wrappers, service units,
+mode-600 channel env, and no service start all passed.
 
 ## Important deferred product change
 

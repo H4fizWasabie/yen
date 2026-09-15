@@ -9,10 +9,10 @@ Date: 2026-09-14
 - Existing TypeScript units: `theoses2-telegram.service`,
   `theoses2-telegram-staging.service`, `theoses2-dashboard.service`, and
   `theoses2-dashboard-staging.service`
-- Go data directory: `/var/lib/theoses-go-telegram`
+- Go data directory: `/var/lib/yen`
 - Go dashboard health: `127.0.0.1:30146/healthz`
 - Go release layout: `/opt/yen/releases/<commit>/`
-- Go secret file: `/etc/theoses-go/telegram.env`, mode `600`; never commit or
+- Go secret file: `/etc/yen/yen.env`, mode `600`; never commit or
   print its values.
 
 The TypeScript units and their ports, working directories, data, and pollers
@@ -24,7 +24,7 @@ are not modified by Go rollout or rollback.
 systemctl is-active yen-telegram-pilot.service yen-dashboard-pilot.service
 curl -fsS http://127.0.0.1:30146/healthz
 journalctl -u yen-telegram-pilot.service -u yen-dashboard-pilot.service --since "10 minutes ago" --no-pager
-du -sh /var/lib/theoses-go-telegram
+du -sh /var/lib/yen
 ```
 
 ## Backup and rollback
@@ -34,8 +34,8 @@ secret file; it is managed separately and must not enter an archive.
 
 ```sh
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-tar -C /var/lib -czf "/var/backups/yen-theoses-go-$stamp.tgz" theoses-go-telegram
-tar -tzf "/var/backups/yen-theoses-go-$stamp.tgz" >/dev/null
+tar -C /var/lib -czf "/var/backups/yen-$stamp.tgz" yen
+tar -tzf "/var/backups/yen-$stamp.tgz" >/dev/null
 ```
 
 Rollback is a unit-only change: point each Go unit at the previous release,
@@ -47,5 +47,8 @@ the failure is data-related; release rollback alone preserves current data.
 
 The pilot has passed live health, systemd restart, OpenRouter smoke, dashboard
 routing, verified backup creation, rollback/restore, cancellation, and FIFO
-queue acceptance. A reproducible fresh-host installer remains deferred; the
-documented unit/data/secret layout is the current operational contract.
+queue acceptance. `deploy/install-side-by-side.sh` now provides a reproducible
+fresh-host installation path. It passed an isolated user-namespace acceptance
+with a temporary root, fake systemctl, both binaries and wrappers present,
+unit files present, channel env mode `600`, and `YEN_START=0` proving no start.
+The documented unit/data/secret layout remains the operational contract.

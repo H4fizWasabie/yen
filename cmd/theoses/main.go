@@ -78,11 +78,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		model = "gpt-4o-mini"
 	}
 	client := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
+	client.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
 	queue, err := conversation.OpenQueue(filepath.Join(dataDir, "conversation-queue.jsonl"))
 	if err != nil {
 		return reportError(stderr, err)
 	}
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
+	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
+	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
+	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
 	runner.SharedMemory = canonicalConversationID != ""
 	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(dataDir, "consolidation-checkpoints.json"))
 	if err != nil {

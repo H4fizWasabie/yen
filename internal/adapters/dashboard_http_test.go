@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -15,6 +16,79 @@ import (
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 )
+
+func TestDashboardHTTPRequiresAndAcceptsBearerToken(t *testing.T) {
+	registry, err := conversation.OpenRegistry(filepath.Join(t.TempDir(), "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dashboard := DashboardHTTP{AccessToken: "secret", Dashboard: Dashboard{Service: Service{Registry: registry}}}
+	server := httptest.NewServer(dashboard)
+	defer server.Close()
+	response, err := http.Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("<title>Yen dashboard</title>")) {
+		t.Fatalf("dashboard shell status=%d body=%q err=%v", response.StatusCode, body, err)
+	}
+
+	response, err = http.Get(server.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized || response.Header.Get("WWW-Authenticate") == "" {
+		t.Fatalf("unauthorized status=%d headers=%v", response.StatusCode, response.Header)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/login", bytes.NewBufferString(`{"token":"secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("Set-Cookie") == "" {
+		t.Fatalf("login status=%d headers=%v", response.StatusCode, response.Header)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/sessions", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer secret")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("authorized status=%d", response.StatusCode)
+	}
+}
+
+func TestDashboardSessionsSortsMostRecentlyModifiedFirst(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "links.jsonl")
+	if err := os.WriteFile(path, []byte(
+		`{"adapter":"telegram","adapterKey":"old","conversationId":"conv-old","createdAt":"2026-01-01T00:00:00Z"}`+"\n"+
+			`{"adapter":"dashboard","adapterKey":"new","conversationId":"conv-new","createdAt":"2026-01-02T00:00:00Z"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := conversation.OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := dashboardSessions(registry, nil)
+	if len(sessions) != 2 || sessions[0]["id"] != "conv-new" || sessions[1]["id"] != "conv-old" {
+		t.Fatalf("sessions=%#v", sessions)
+	}
+}
 
 type httpProvider struct{}
 
@@ -68,7 +142,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusCreated || link.ConversationID == "" {
 		t.Fatalf("new session=%#v status=%d", link, response.StatusCode)
 	}
-	response, err = http.Post(server.URL+"/api/sessions/"+link.ConversationID+"/messages", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
+	response, err = http.Post(server.URL+"/api/sessions/"+link.ConversationID+"/messages", "application/json", bytes.NewBufferString(`{"message":"hello","replyContext":"quoted"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,11 +163,35 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&readback); err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != http.StatusOK || len(readback["messages"].([]any)) != 2 {
+	if response.StatusCode != http.StatusOK || len(readback["messages"].([]any)) != 2 || len(readback["history"].([]any)) != 2 {
 		t.Fatalf("readback=%#v status=%d", readback, response.StatusCode)
+	}
+	response, err = http.Get(server.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		Sessions []struct {
+			MessageCount int    `json:"messageCount"`
+			Title        string `json:"title"`
+		} `json:"sessions"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(listed.Sessions) != 1 || listed.Sessions[0].MessageCount != 2 || listed.Sessions[0].Title != "[Quoted message context]\nquoted\n[/Quoted message context]\n\nhello" {
+		t.Fatalf("session list=%#v status=%d", listed, response.StatusCode)
+	}
+	if _, ok := readback["runtime"].(map[string]any); !ok {
+		t.Fatalf("runtime readback=%#v", readback["runtime"])
 	}
 	if episodes, err := runner.Memory.Episodic.Recent(link.ConversationID, 8); err != nil || len(episodes) != 1 {
 		t.Fatalf("dashboard episodes=%#v err=%v", episodes, err)
+	}
+	if _, err := registry.ResolveShared("telegram", "chat-1", dir, link.ConversationID); err != nil {
+		t.Fatal(err)
 	}
 	response, err = http.Get(server.URL + "/api/sessions")
 	if err != nil {
@@ -106,6 +204,9 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || len(sessions["sessions"].([]any)) != 1 {
 		t.Fatalf("sessions=%#v status=%d", sessions, response.StatusCode)
+	}
+	if sessions["sessions"].([]any)[0].(map[string]any)["id"] != link.ConversationID {
+		t.Fatalf("session view=%#v", sessions["sessions"])
 	}
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/sessions/"+link.ConversationID+"/messages", bytes.NewBufferString(`{"message":"stream"}`))
 	if err != nil {
@@ -123,5 +224,11 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || !bytes.Contains(streamBody, []byte("event: delta")) || !bytes.Contains(streamBody, []byte("event: done")) {
 		t.Fatalf("stream=%q status=%d", streamBody, response.StatusCode)
+	}
+	if response.Header.Get("Content-Type") != "text/event-stream; charset=utf-8" || response.Header.Get("X-Accel-Buffering") != "no" {
+		t.Fatalf("stream headers=%v", response.Header)
+	}
+	if !bytes.Contains(streamBody, []byte("event: done\ndata: {}\n\n")) {
+		t.Fatalf("done event=%q", streamBody)
 	}
 }

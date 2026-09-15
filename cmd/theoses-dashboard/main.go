@@ -44,7 +44,11 @@ func main() {
 		model = "gpt-4o-mini"
 	}
 	provider := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
+	provider.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
 	runner := runtime.New(queue, provider, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
+	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
+	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
+	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
 	runner.SharedMemory = os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID") != ""
 	runner.SessionPath = func(turn conversation.Turn) string {
 		return filepath.Join(dataDir, "sessions", turn.ConversationID+".jsonl")
@@ -58,7 +62,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	handler := adapters.DashboardHTTP{Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")}, Workspace: workspace}}
+	handler := adapters.DashboardHTTP{AccessToken: os.Getenv("THEOSES_DASHBOARD_TOKEN"), Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")}, Workspace: workspace}}
 	log.Printf("theoses dashboard listening on %s", *addr)
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		log.Fatal(err)

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type scriptedProvider struct {
@@ -20,6 +22,8 @@ func (p failingProvider) Next(context.Context, []Message, []string) (Response, e
 
 type updatingProvider struct{}
 
+type eventStreamingProvider struct{}
+
 func (updatingProvider) Next(context.Context, []Message, []string) (Response, error) {
 	return Response{Text: "done", StopReason: "stop"}, nil
 }
@@ -27,6 +31,18 @@ func (updatingProvider) Next(context.Context, []Message, []string) (Response, er
 func (updatingProvider) NextWithUpdates(_ context.Context, _ []Message, _ []string, update func(string)) (Response, error) {
 	update("do")
 	update("ne")
+	return Response{Text: "done", StopReason: "stop"}, nil
+}
+
+func (eventStreamingProvider) Next(context.Context, []Message, []string) (Response, error) {
+	return Response{Text: "done", StopReason: "stop"}, nil
+}
+
+func (eventStreamingProvider) NextWithEvents(_ context.Context, _ []Message, _ []string, emit func(StreamEvent)) (Response, error) {
+	partial := Message{Role: "assistant", Content: "done"}
+	emit(StreamEvent{Type: "text_start", Partial: partial})
+	emit(StreamEvent{Type: "text_delta", Delta: "done", Partial: partial})
+	emit(StreamEvent{Type: "text_end", Partial: partial})
 	return Response{Text: "done", StopReason: "stop"}, nil
 }
 
@@ -72,6 +88,32 @@ func (readTool) Execute(context.Context, map[string]any) (string, error) {
 	return "README contents", nil
 }
 
+type countingTool struct{ calls *int }
+
+func (t countingTool) Name() string { return "read" }
+
+func (t countingTool) Execute(context.Context, map[string]any) (string, error) {
+	*t.calls++
+	return "should not run", nil
+}
+
+type parallelTool struct {
+	started chan<- struct{}
+	release <-chan struct{}
+}
+
+func (parallelTool) Name() string { return "parallel" }
+
+func (t parallelTool) Execute(ctx context.Context, _ map[string]any) (string, error) {
+	t.started <- struct{}{}
+	select {
+	case <-t.release:
+		return "done", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
 type failingTool struct{}
 
 func (failingTool) Name() string { return "read" }
@@ -112,6 +154,100 @@ func TestRunExecutesToolThenContinues(t *testing.T) {
 	}
 	if len(result.Messages) != 4 {
 		t.Fatalf("messages = %d, want user, assistant, tool, assistant", len(result.Messages))
+	}
+}
+
+func TestRunDoesNotExecuteToolCallsFromLengthLimitedResponse(t *testing.T) {
+	calls := 0
+	var events []Event
+	result, err := RunFromWithQueuesAndEvents(context.Background(), &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-1", Name: "read", Args: map[string]any{"path": "README.md"}}}, StopReason: "length"},
+		{Text: "re-issued", StopReason: "stop"},
+	}}, []Tool{countingTool{calls: &calls}}, nil, "read it", nil, nil, func(event Event) { events = append(events, event) })
+	if err != nil || result.FinalText != "re-issued" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if calls != 0 {
+		t.Fatalf("tool calls=%d, want 0", calls)
+	}
+	if len(result.Messages) != 4 || !strings.Contains(result.Messages[2].Content, "arguments may be truncated") {
+		t.Fatalf("messages=%#v", result.Messages)
+	}
+	if len(events) != 6 || events[3].Type != "tool_execution_end" || !events[3].IsError || events[4].Type != "tool_result" || !events[4].IsError {
+		t.Fatalf("events=%#v", events)
+	}
+}
+
+func TestRunExecutesIndependentToolCallsInParallel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	go func() {
+		select {
+		case <-started:
+			select {
+			case <-started:
+				close(release)
+			case <-ctx.Done():
+				close(release)
+			}
+		case <-ctx.Done():
+			close(release)
+		}
+	}()
+	result, err := Run(ctx, &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "one", Name: "parallel"}, {ID: "two", Name: "parallel"}}, StopReason: "toolUse"},
+		{Text: "complete", StopReason: "stop"},
+	}}, []Tool{parallelTool{started: started, release: release}}, "run both")
+	if err != nil || result.FinalText != "complete" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(result.Messages) != 5 || result.Messages[2].Content != "done" || result.Messages[3].Content != "done" {
+		t.Fatalf("messages=%#v", result.Messages)
+	}
+}
+
+func TestRunWithEventsReportsDashboardToolAndUsageEvents(t *testing.T) {
+	var events []Event
+	_, err := RunFromWithQueuesAndEvents(context.Background(), &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-1", Name: "read"}}, StopReason: "toolUse", Usage: Usage{Input: 2, Output: 3, TotalTokens: 5}},
+		{Text: "done", StopReason: "stop", Usage: Usage{Input: 4, Output: 1, TotalTokens: 5}},
+	}}, []Tool{readTool{}}, nil, "hello", nil, nil, func(event Event) { events = append(events, event) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 6 || events[0].Type != "usage" || events[1].Type != "tool_call" || events[2].Type != "tool_execution_start" || events[3].Type != "tool_execution_end" || events[4].Type != "tool_result" || events[5].Type != "usage" {
+		t.Fatalf("events = %#v", events)
+	}
+	if events[3].Result != "README contents" || events[3].IsError || events[4].Result != "README contents" || events[4].IsError {
+		t.Fatalf("tool result = %#v", events[3:5])
+	}
+	if events[0].Message == nil || events[0].Message.Role != "assistant" || events[0].StopReason != "toolUse" {
+		t.Fatalf("usage payload = %#v", events[0])
+	}
+	if events[1].Message == nil || len(events[1].Message.ToolCalls) != 1 || events[3].Message == nil || events[3].Message.Role != "tool" || events[3].Message.ToolCallID != "read-1" {
+		t.Fatalf("message payloads = %#v %#v", events[1].Message, events[3].Message)
+	}
+}
+
+func TestRunWithEventsIncludesProviderStreamPayload(t *testing.T) {
+	var events []Event
+	result, err := RunFromWithQueuesAndEvents(context.Background(), eventStreamingProvider{}, nil, nil, "hello", nil, nil, func(event Event) {
+		events = append(events, event)
+	})
+	if err != nil || result.FinalText != "done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	var delta Event
+	for _, event := range events {
+		if event.Type == "message_update" && event.AssistantEvent == "text_delta" {
+			delta = event
+			break
+		}
+	}
+	if delta.Delta != "done" || delta.Message == nil || delta.Message.Content != "done" {
+		t.Fatalf("stream payload=%#v", delta)
 	}
 }
 
@@ -215,6 +351,25 @@ func TestRunIncludesProviderUpdates(t *testing.T) {
 		if result.Events[4+i] != event {
 			t.Fatalf("events = %#v", result.Events)
 		}
+	}
+}
+
+func TestRunCarriesProviderUsageOnAssistantMessage(t *testing.T) {
+	result, err := Run(context.Background(), &scriptedProvider{responses: []Response{{
+		Text:       "done",
+		StopReason: "stop",
+		Provider:   "openrouter",
+		Model:      "z-ai/glm-5.3-flash",
+		Usage:      Usage{Input: 4, Output: 2, TotalTokens: 6},
+	}}}, nil, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Messages[1].Usage == nil || *result.Messages[1].Usage != (Usage{Input: 4, Output: 2, TotalTokens: 6}) {
+		t.Fatalf("assistant usage=%#v", result.Messages[1].Usage)
+	}
+	if result.Messages[1].Provider != "openrouter" || result.Messages[1].Model != "z-ai/glm-5.3-flash" {
+		t.Fatalf("assistant model=%#v", result.Messages[1])
 	}
 }
 

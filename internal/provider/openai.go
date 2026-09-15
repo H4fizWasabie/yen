@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    string           `json:"content,omitempty"`
+	Content    any              `json:"content,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
@@ -30,12 +31,13 @@ type openAIToolCall struct {
 }
 
 type OpenAICompletions struct {
-	BaseURL       string
-	APIKey        string
-	Model         string
-	Client        *http.Client
-	MaxRetries    int
-	MaxRetryDelay time.Duration
+	BaseURL         string
+	APIKey          string
+	Model           string
+	ReasoningEffort string
+	Client          *http.Client
+	MaxRetries      int
+	MaxRetryDelay   time.Duration
 }
 
 func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
@@ -43,16 +45,38 @@ func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
 }
 
 func (p OpenAICompletions) Next(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
-	return p.NextWithUpdates(ctx, messages, toolNames, nil)
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, nil, false)
 }
 
 func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string)) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolNames, update, nil, false)
+}
+
+func (p OpenAICompletions) NextWithEvents(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, emit, false)
+}
+
+// NextJSON requests the provider's object-mode response format for structured
+// calls such as memory consolidation. Ordinary turns keep the existing wire shape.
+func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, nil, true)
+}
+
+func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
 	payload := struct {
-		Model    string           `json:"model"`
-		Messages []openAIMessage  `json:"messages"`
-		Tools    []map[string]any `json:"tools,omitempty"`
-		Stream   bool             `json:"stream"`
+		Model          string            `json:"model"`
+		Messages       []openAIMessage   `json:"messages"`
+		Tools          []map[string]any  `json:"tools,omitempty"`
+		Stream         bool              `json:"stream"`
+		ResponseFormat map[string]string `json:"response_format,omitempty"`
+		Reasoning      map[string]string `json:"reasoning,omitempty"`
 	}{Model: p.Model, Messages: convertMessages(messages), Stream: true}
+	if p.ReasoningEffort != "" {
+		payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
+	}
+	if jsonMode {
+		payload.ResponseFormat = map[string]string{"type": "json_object"}
+	}
 	for _, name := range toolNames {
 		parameters := map[string]any{"type": "object"}
 		if name == "read" {
@@ -121,7 +145,11 @@ func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent
 			retryable = false
 		}
 		if !retryable || attempt >= p.MaxRetries {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
 			response.Body.Close()
+			if len(body) > 0 {
+				return agent.Response{}, fmt.Errorf("openai completions returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+			}
 			return agent.Response{}, fmt.Errorf("openai completions returned %s", response.Status)
 		}
 		response.Body.Close()
@@ -142,8 +170,13 @@ func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent
 	defer response.Body.Close()
 
 	var result agent.Response
+	result.Provider = "openai-completions"
+	result.Model = p.Model
 	var toolCalls []agent.ToolCall
 	arguments := map[string]string{}
+	partial := agent.Message{Role: "assistant", Provider: result.Provider, Model: result.Model}
+	startedText := false
+	startedTools := map[int]bool{}
 	scanner := bufio.NewScanner(response.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -204,6 +237,16 @@ func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent
 		}
 		for _, choice := range event.Choices {
 			result.Text += choice.Delta.Content
+			if choice.Delta.Content != "" {
+				if emit != nil && !startedText {
+					startedText = true
+					emit(agent.StreamEvent{Type: "text_start", ContentIndex: 0, Partial: partial})
+				}
+				partial.Content += choice.Delta.Content
+				if emit != nil {
+					emit(agent.StreamEvent{Type: "text_delta", ContentIndex: 0, Delta: choice.Delta.Content, Partial: partial})
+				}
+			}
 			if update != nil && choice.Delta.Content != "" {
 				update(choice.Delta.Content)
 			}
@@ -224,6 +267,16 @@ func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent
 					toolCalls[delta.Index].Name = delta.Function.Name
 				}
 				arguments[fmt.Sprint(delta.Index)] += delta.Function.Arguments
+				partial.ToolCalls = append([]agent.ToolCall(nil), toolCalls...)
+				if emit != nil {
+					if !startedTools[delta.Index] {
+						startedTools[delta.Index] = true
+						emit(agent.StreamEvent{Type: "toolcall_start", ContentIndex: delta.Index, Partial: partial})
+					}
+					if delta.Function.Arguments != "" {
+						emit(agent.StreamEvent{Type: "toolcall_delta", ContentIndex: delta.Index, Delta: delta.Function.Arguments, Partial: partial})
+					}
+				}
 			}
 		}
 	}
@@ -241,6 +294,14 @@ func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent
 			}
 		}
 		toolCalls[index].Args = args
+		if emit != nil {
+			call := toolCalls[index]
+			partial.ToolCalls = append([]agent.ToolCall(nil), toolCalls...)
+			emit(agent.StreamEvent{Type: "toolcall_end", ContentIndex: index, ToolCall: &call, Partial: partial})
+		}
+	}
+	if emit != nil && startedText {
+		emit(agent.StreamEvent{Type: "text_end", ContentIndex: 0, Partial: partial})
 	}
 	result.ToolCalls = toolCalls
 	if len(toolCalls) > 0 && result.StopReason == "" {
@@ -266,7 +327,18 @@ func retryDelay(header http.Header, attempt int) time.Duration {
 func convertMessages(messages []agent.Message) []openAIMessage {
 	converted := make([]openAIMessage, 0, len(messages))
 	for _, message := range messages {
-		convertedMessage := openAIMessage{Role: message.Role, Content: message.Content, ToolCallID: message.ToolCallID}
+		var content any = message.Content
+		if len(message.Images) > 0 {
+			parts := make([]map[string]any, 0, len(message.Images)+1)
+			if message.Content != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": message.Content})
+			}
+			for _, image := range message.Images {
+				parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}})
+			}
+			content = parts
+		}
+		convertedMessage := openAIMessage{Role: message.Role, Content: content, ToolCallID: message.ToolCallID}
 		for _, call := range message.ToolCalls {
 			arguments, _ := json.Marshal(call.Args)
 			toolCall := openAIToolCall{ID: call.ID, Type: "function"}

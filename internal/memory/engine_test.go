@@ -34,7 +34,7 @@ func TestEngineAppliesConsolidationFactsEdgesAndEpisodeIdempotently(t *testing.T
 		{ID: "f1", Subject: "User prefers concise replies", Body: "Keep answers short."},
 		{ID: "f2", Subject: "Theoses2 is the active project", Body: "The Go rewrite is called yen."},
 	}
-	inputEdges := []ConsolidatedEdge{{From: "f2", To: "f1", Rel: "depends_on"}}
+	inputEdges := []ConsolidatedEdge{{From: "f2", To: "f1", Rel: "depends_on"}, {From: "f1", To: "f2", Rel: "not-a-memory-relation"}}
 	episode := ConsolidatedEpisode{Summary: "Captured project and response preferences.", RelatedSemanticNodeIDs: []string{"f1", "f2"}}
 	if err := engine.ApplyConsolidation("turn-9", "conv-9", "work-9", "cli", inputFacts, inputEdges, episode); err != nil {
 		t.Fatal(err)
@@ -58,6 +58,13 @@ func TestEngineAppliesConsolidationFactsEdgesAndEpisodeIdempotently(t *testing.T
 	nodes, err := engine.Semantic.List()
 	if err != nil || len(nodes) != 2 || len(nodes[1].Edges) != 1 && len(nodes[0].Edges) != 1 {
 		t.Fatalf("nodes=%#v err=%v", nodes, err)
+	}
+	for _, node := range nodes {
+		for _, edge := range node.Edges {
+			if edge.Rel == "not-a-memory-relation" {
+				t.Fatalf("invalid edge persisted: %#v", node)
+			}
+		}
 	}
 	episodes, err := engine.Episodic.Recent("conv-9", 8)
 	if err != nil || len(episodes) != 1 || len(episodes[0].RelatedSemanticNodeIDs) != 2 {

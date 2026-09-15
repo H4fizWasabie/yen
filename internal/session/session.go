@@ -6,10 +6,16 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+)
+
+var (
+	ErrNothingToCompact = errors.New("nothing to compact")
+	ErrAlreadyCompacted = errors.New("already compacted")
 )
 
 type Header struct {
@@ -29,23 +35,106 @@ type ContentPart struct {
 	Arguments any    `json:"arguments,omitempty"`
 }
 
+type Usage struct {
+	Input       int `json:"input,omitempty"`
+	Output      int `json:"output,omitempty"`
+	Reasoning   int `json:"reasoning,omitempty"`
+	CacheRead   int `json:"cacheRead,omitempty"`
+	CacheWrite  int `json:"cacheWrite,omitempty"`
+	TotalTokens int `json:"totalTokens,omitempty"`
+}
+
+type Compaction struct {
+	Summary          string `json:"summary"`
+	FirstKeptEntryID string `json:"firstKeptEntryId"`
+	TokensBefore     int    `json:"tokensBefore"`
+	Usage            *Usage `json:"usage,omitempty"`
+}
+
+type CompactionPlan struct {
+	FirstKeptEntryID string
+	Messages         []Message
+	TokensBefore     int
+	PreviousSummary  string
+}
+
 type Message struct {
-	Role       string `json:"role"`
-	Content    any    `json:"content"`
-	ToolCallID string `json:"toolCallId,omitempty"`
-	StopReason string `json:"stopReason,omitempty"`
+	Role               string   `json:"role"`
+	Content            any      `json:"content"`
+	Images             []string `json:"images,omitempty"`
+	ToolCallID         string   `json:"toolCallId,omitempty"`
+	StopReason         string   `json:"stopReason,omitempty"`
+	Provider           string   `json:"provider,omitempty"`
+	Model              string   `json:"model,omitempty"`
+	Usage              *Usage   `json:"usage,omitempty"`
+	Command            string   `json:"command,omitempty"`
+	Output             string   `json:"output,omitempty"`
+	ExitCode           *int     `json:"exitCode,omitempty"`
+	Cancelled          bool     `json:"cancelled,omitempty"`
+	Truncated          bool     `json:"truncated,omitempty"`
+	FullOutputPath     string   `json:"fullOutputPath,omitempty"`
+	ExcludeFromContext bool     `json:"excludeFromContext,omitempty"`
+	Summary            string   `json:"summary,omitempty"`
+}
+
+type TimedMessage struct {
+	Message
+	Timestamp string
 }
 
 type sessionEntry struct {
-	Type             string   `json:"type"`
-	Version          int      `json:"version,omitempty"`
-	ID               string   `json:"id,omitempty"`
-	Timestamp        string   `json:"timestamp"`
-	CWD              string   `json:"cwd,omitempty"`
-	Channel          string   `json:"channel,omitempty"`
-	ChannelSessionID string   `json:"channelSessionId,omitempty"`
-	ParentID         *string  `json:"parentId"`
-	Message          *Message `json:"message,omitempty"`
+	Type                string      `json:"type"`
+	Version             int         `json:"version,omitempty"`
+	ID                  string      `json:"id,omitempty"`
+	Timestamp           string      `json:"timestamp"`
+	CWD                 string      `json:"cwd,omitempty"`
+	Channel             string      `json:"channel,omitempty"`
+	ChannelSessionID    string      `json:"channelSessionId,omitempty"`
+	ParentID            *string     `json:"parentId"`
+	Message             *Message    `json:"message,omitempty"`
+	Compaction          *Compaction `json:"compaction,omitempty"`
+	Summary             string      `json:"summary,omitempty"`
+	FirstKeptEntryID    string      `json:"firstKeptEntryId,omitempty"`
+	FirstKeptEntryIndex *int        `json:"firstKeptEntryIndex,omitempty"`
+	TokensBefore        int         `json:"tokensBefore,omitempty"`
+	Usage               *Usage      `json:"usage,omitempty"`
+	raw                 json.RawMessage
+}
+
+func (entry sessionEntry) MarshalJSON() ([]byte, error) {
+	if len(entry.raw) == 0 {
+		type plain sessionEntry
+		return json.Marshal(plain(entry))
+	}
+	var object map[string]any
+	if err := json.Unmarshal(entry.raw, &object); err != nil {
+		return nil, err
+	}
+	object["id"] = entry.ID
+	if entry.ParentID == nil {
+		object["parentId"] = nil
+	} else {
+		object["parentId"] = *entry.ParentID
+	}
+	if entry.Message != nil {
+		if message, ok := object["message"].(map[string]any); ok {
+			if entry.Message.Role == "custom" && message["role"] == "hookMessage" {
+				message["role"] = "custom"
+			}
+		} else {
+			object["message"] = entry.Message
+		}
+	}
+	if entry.Compaction != nil {
+		object["summary"] = entry.Compaction.Summary
+		object["firstKeptEntryId"] = entry.Compaction.FirstKeptEntryID
+		object["tokensBefore"] = entry.Compaction.TokensBefore
+		if entry.Compaction.Usage != nil {
+			object["usage"] = entry.Compaction.Usage
+		}
+		delete(object, "firstKeptEntryIndex")
+	}
+	return json.Marshal(object)
 }
 
 type sessionHeader struct {
@@ -92,7 +181,9 @@ func Open(path string) (*Session, error) {
 	defer file.Close()
 	s := &Session{path: path, flushed: true}
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4<<20)
 	line := 0
+	headerFound := false
 	for scanner.Scan() {
 		line++
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
@@ -102,25 +193,88 @@ func Open(path string) (*Session, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
 			continue
 		}
-		if len(s.entries) == 0 && s.header.Type == "" {
-			if err := json.Unmarshal(scanner.Bytes(), &s.header); err != nil || s.header.Type != "session" || s.header.ID == "" {
-				return nil, fmt.Errorf("session header missing")
+		if !headerFound {
+			var header sessionHeader
+			if err := json.Unmarshal(scanner.Bytes(), &header); err != nil || header.Type != "session" || header.ID == "" {
+				continue
 			}
+			s.header = header
+			headerFound = true
 			continue
 		}
 		var entry sessionEntry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			continue
 		}
+		entry.raw = append(json.RawMessage(nil), scanner.Bytes()...)
 		s.entries = append(s.entries, entry)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	if line == 0 {
+	if line == 0 || !headerFound {
 		return nil, fmt.Errorf("empty session")
 	}
+	if migrateSession(s) {
+		if err := s.rewrite(); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
+}
+
+func migrateSession(s *Session) bool {
+	version := s.header.Version
+	if version == 0 {
+		version = 1
+	}
+	changed := version < 3
+	if version >= 3 {
+		for i := range s.entries {
+			s.normalizeCompaction(&s.entries[i])
+		}
+		return false
+	}
+	var parent *string
+	for i := range s.entries {
+		entry := &s.entries[i]
+		if version < 2 {
+			if entry.ID == "" {
+				entry.ID = newEntryID(s.entries)
+			}
+			entry.ParentID = parent
+			current := entry.ID
+			parent = &current
+		}
+		if entry.Message != nil && entry.Message.Role == "hookMessage" {
+			entry.Message.Role = "custom"
+		}
+		s.normalizeCompaction(entry)
+		if version < 2 && entry.Compaction != nil && entry.FirstKeptEntryIndex != nil {
+			index := *entry.FirstKeptEntryIndex
+			// TypeScript counts the header in the JSONL entry array; Go stores it separately.
+			index--
+			if index >= 0 && index < len(s.entries) {
+				entry.Compaction.FirstKeptEntryID = s.entries[index].ID
+			}
+			entry.FirstKeptEntryIndex = nil
+		}
+		if entry.Compaction != nil {
+			entry.Summary, entry.FirstKeptEntryID, entry.TokensBefore, entry.Usage = "", "", 0, nil
+		}
+	}
+	s.header.Version = 3
+	return changed
+}
+
+func (s *Session) normalizeCompaction(entry *sessionEntry) {
+	if entry.Type != "compaction" || entry.Compaction != nil {
+		return
+	}
+	entry.Compaction = &Compaction{
+		Summary: entry.Summary, FirstKeptEntryID: entry.FirstKeptEntryID,
+		TokensBefore: entry.TokensBefore, Usage: entry.Usage,
+	}
 }
 
 func (s *Session) Append(message Message) (string, error) {
@@ -189,6 +343,181 @@ func (s *Session) Messages() []Message {
 	return messages
 }
 
+func (s *Session) TimedMessages() []TimedMessage {
+	entries := s.activeEntries()
+	messages := make([]TimedMessage, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Message != nil {
+			messages = append(messages, TimedMessage{Message: *entry.Message, Timestamp: entry.Timestamp})
+		}
+	}
+	return messages
+}
+
+func (s *Session) LastTimestamp() string {
+	if len(s.entries) > 0 && s.entries[len(s.entries)-1].Timestamp != "" {
+		return s.entries[len(s.entries)-1].Timestamp
+	}
+	return s.header.Timestamp
+}
+
+// ContextMessages projects the active leaf context after the latest
+// compaction boundary. Messages() remains the complete durable read-back.
+func (s *Session) ContextMessages() []Message {
+	entries := s.activeEntries()
+	compactionIndex := -1
+	for i, entry := range entries {
+		if entry.Type == "compaction" && entry.Compaction != nil {
+			compactionIndex = i
+		}
+	}
+	if compactionIndex < 0 {
+		return messagesFromEntries(entries)
+	}
+	compaction := entries[compactionIndex].Compaction
+	firstKept := -1
+	for i := 0; i < compactionIndex; i++ {
+		if entries[i].ID == compaction.FirstKeptEntryID {
+			firstKept = i
+			break
+		}
+	}
+	if firstKept < 0 {
+		return s.Messages()
+	}
+	result := []Message{{Role: "user", Content: "The conversation history before this point was compacted into the following summary:\n\n<summary>\n" + compaction.Summary + "\n</summary>"}}
+	for i := firstKept; i < compactionIndex; i++ {
+		if entries[i].Message != nil {
+			result = append(result, *entries[i].Message)
+		}
+	}
+	for i := compactionIndex + 1; i < len(entries); i++ {
+		if entries[i].Message != nil {
+			result = append(result, *entries[i].Message)
+		}
+	}
+	return result
+}
+
+func (s *Session) activeEntries() []sessionEntry {
+	if len(s.entries) == 0 {
+		return nil
+	}
+	byID := make(map[string]int, len(s.entries))
+	for i, entry := range s.entries {
+		if entry.ID != "" {
+			byID[entry.ID] = i
+		}
+	}
+	if len(byID) != len(s.entries) {
+		return append([]sessionEntry(nil), s.entries...)
+	}
+	path := make([]sessionEntry, 0, len(s.entries))
+	seen := make(map[string]bool, len(s.entries))
+	index := len(s.entries) - 1
+	for index >= 0 && !seen[s.entries[index].ID] {
+		entry := s.entries[index]
+		path = append(path, entry)
+		seen[entry.ID] = true
+		if entry.ParentID == nil {
+			break
+		}
+		parent, ok := byID[*entry.ParentID]
+		if !ok {
+			break
+		}
+		index = parent
+	}
+	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
+		path[left], path[right] = path[right], path[left]
+	}
+	return path
+}
+
+func messagesFromEntries(entries []sessionEntry) []Message {
+	messages := make([]Message, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Message != nil {
+			messages = append(messages, *entry.Message)
+		}
+	}
+	return messages
+}
+
+func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error) {
+	if keepRecentTurns <= 0 {
+		return CompactionPlan{}, fmt.Errorf("keep recent turns must be positive")
+	}
+	if len(s.entries) > 0 && s.entries[len(s.entries)-1].Type == "compaction" {
+		return CompactionPlan{}, ErrAlreadyCompacted
+	}
+	start := 0
+	previousSummary := ""
+	for i := len(s.entries) - 1; i >= 0; i-- {
+		if s.entries[i].Type != "compaction" || s.entries[i].Compaction == nil {
+			continue
+		}
+		previousSummary = s.entries[i].Compaction.Summary
+		for j, entry := range s.entries {
+			if entry.ID == s.entries[i].Compaction.FirstKeptEntryID {
+				start = j
+				break
+			}
+		}
+		break
+	}
+	userEntries := make([]int, 0)
+	for i := start; i < len(s.entries); i++ {
+		if s.entries[i].Message != nil && s.entries[i].Message.Role == "user" {
+			userEntries = append(userEntries, i)
+		}
+	}
+	if len(userEntries) <= keepRecentTurns {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	cut := userEntries[len(userEntries)-keepRecentTurns]
+	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary}
+	for i := start; i < cut; i++ {
+		if s.entries[i].Message != nil {
+			plan.Messages = append(plan.Messages, *s.entries[i].Message)
+			plan.TokensBefore += estimateMessageTokens(*s.entries[i].Message)
+		}
+	}
+	if len(plan.Messages) == 0 {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	return plan, nil
+}
+
+func estimateMessageTokens(message Message) int {
+	data, err := json.Marshal(message.Content)
+	if err != nil {
+		return 0
+	}
+	return (len(data) + 3) / 4
+}
+
+func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, usage *Usage) (string, error) {
+	if summary == "" || firstKeptEntryID == "" {
+		return "", fmt.Errorf("compaction summary and first kept entry are required")
+	}
+	id := newEntryID(s.entries)
+	var parentID *string
+	if len(s.entries) > 0 {
+		parent := s.entries[len(s.entries)-1].ID
+		parentID = &parent
+	}
+	entry := sessionEntry{
+		Type: "compaction", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID,
+		Compaction: &Compaction{Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Usage: usage},
+	}
+	s.entries = append(s.entries, entry)
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
+}
+
 func (s *Session) publish() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
@@ -208,6 +537,33 @@ func (s *Session) publish() error {
 	}
 	s.flushed = true
 	return nil
+}
+
+func (s *Session) rewrite() error {
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".session-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := writeJSONLine(tmp, s.header); err != nil {
+		tmp.Close()
+		return err
+	}
+	for _, entry := range s.entries {
+		if err := writeJSONLine(tmp, entry); err != nil {
+			tmp.Close()
+			return err
+		}
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, s.path)
 }
 
 func (s *Session) appendFile(entry sessionEntry) error {

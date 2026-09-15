@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,7 +19,78 @@ import (
 type provider struct{}
 
 func (provider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
-	return agent.Response{Text: "done", StopReason: "stop"}, nil
+	return agent.Response{Text: "done", StopReason: "stop", Provider: "test-provider", Model: "test-model"}, nil
+}
+
+type autoConsolidationProvider struct{ calls int }
+
+func (p *autoConsolidationProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{Text: "done", StopReason: "stop"}, nil
+	}
+	return agent.Response{Text: `{"facts":[{"id":"f1","subject":"User prefers concise replies"}],"episode":{"summary":"Recorded a preference.","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
+}
+
+type contextCaptureProvider struct {
+	messages []agent.Message
+}
+
+func (p *contextCaptureProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.messages = append([]agent.Message(nil), messages...)
+	return agent.Response{Text: "continued", StopReason: "stop"}, nil
+}
+
+type summaryProvider struct {
+	response agent.Response
+	seen     []agent.Message
+}
+
+func (p *summaryProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.seen = append([]agent.Message(nil), messages...)
+	return p.response, nil
+}
+
+type autoCompactionProvider struct {
+	calls int
+	seen  [][]agent.Message
+}
+
+func (p *autoCompactionProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	p.seen = append(p.seen, append([]agent.Message(nil), messages...))
+	if p.calls == 1 {
+		return agent.Response{Text: "automatic summary", StopReason: "stop", Usage: agent.Usage{Input: 8, Output: 3, TotalTokens: 11}}, nil
+	}
+	return agent.Response{Text: "continued", StopReason: "stop"}, nil
+}
+
+type overflowRecoveryProvider struct{ calls int }
+
+func (p *overflowRecoveryProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	switch p.calls {
+	case 1:
+		return agent.Response{}, errors.New("400 input exceeds the model's maximum context length of 128 tokens")
+	case 2:
+		return agent.Response{Text: "overflow summary", StopReason: "stop"}, nil
+	default:
+		return agent.Response{Text: "recovered", StopReason: "stop"}, nil
+	}
+}
+
+type lengthRecoveryProvider struct{ calls int }
+
+func (p *lengthRecoveryProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	switch p.calls {
+	case 1:
+		return agent.Response{Text: "truncated", StopReason: "length"}, nil
+	case 2:
+		return agent.Response{Text: `{"episode":{"summary":"compacted","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
+	default:
+		return agent.Response{Text: "recovered", StopReason: "stop"}, nil
+	}
 }
 
 type slowProvider struct {
@@ -134,6 +206,9 @@ func TestRunnerUsesCanonicalQueueAndResumesSession(t *testing.T) {
 	if len(stored.Messages()) != 2 {
 		t.Fatalf("messages=%#v", stored.Messages())
 	}
+	if stored.Messages()[1].Provider != "test-provider" || stored.Messages()[1].Model != "test-model" {
+		t.Fatalf("assistant metadata=%#v", stored.Messages()[1])
+	}
 	if runner.Checkpoints.Get(link.ConversationID).LastEntryID != turn.ID {
 		t.Fatalf("checkpoint=%#v", runner.Checkpoints.Get(link.ConversationID))
 	}
@@ -154,6 +229,275 @@ func TestRunnerUsesCanonicalQueueAndResumesSession(t *testing.T) {
 	}
 	if len(stored.Messages()) != 4 {
 		t.Fatalf("resumed messages=%#v", stored.Messages())
+	}
+}
+
+func TestRunnerOptInConsolidationUsesSeparateCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &autoConsolidationProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoConsolidate = true
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	runner.Memory, err = memory.OpenEngine(filepath.Join(dir, "memory"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Memory.Close()
+	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(dir, "runtime-checkpoints.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := conversation.Link{Adapter: "telegram", AdapterKey: "chat-1", ConversationID: "conv-auto", WorkspaceID: dir}
+	turn, err := runner.Submit(link, "Thanks, keep replies concise")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunSubmitted(context.Background(), turn); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls=%d, want normal turn plus consolidation", provider.calls)
+	}
+	hits, err := runner.Memory.Remember("concise replies", memory.Context{WorkspaceID: dir, ConversationID: link.ConversationID})
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("memory hits=%#v err=%v", hits, err)
+	}
+	if got := runner.Memory.ConsolidationCheckpoints.Get(link.ConversationID).LastEntryID; got != turn.ID {
+		t.Fatalf("consolidation checkpoint=%q", got)
+	}
+	if got := runner.Checkpoints.Get(link.ConversationID).LastEntryID; got != turn.ID {
+		t.Fatalf("runtime checkpoint=%q", got)
+	}
+}
+
+func TestRunnerUsesCompactionAwareContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-compact.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-compact", ConversationID: "conv-compact", CWD: dir, Channel: "cli", ChannelSessionID: dir})
+	if _, err := saved.Append(session.Message{Role: "user", Content: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.Append(session.Message{Role: "assistant", Content: "old reply"}); err != nil {
+		t.Fatal(err)
+	}
+	keptID, err := saved.Append(session.Message{Role: "user", Content: "keep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.Append(session.Message{Role: "assistant", Content: "keep reply"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.AppendCompaction("old summary", keptID, 42, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &contextCaptureProvider{}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-compact", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "new prompt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.messages) != 4 || provider.messages[0].Content == "old" || provider.messages[1].Content != "keep" || provider.messages[3].Content != "new prompt" {
+		t.Fatalf("provider context=%#v", provider.messages)
+	}
+}
+
+func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-compact.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-compact", ConversationID: "conv-compact", CWD: dir, Channel: "cli", ChannelSessionID: dir})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &summaryProvider{response: agent.Response{Text: "structured summary", StopReason: "stop", Usage: agent.Usage{Input: 12, Output: 4, TotalTokens: 16}}}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	if err := runner.Compact(context.Background(), "conv-compact", 2); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.seen) != 1 || !strings.Contains(provider.seen[0].Content, "one reply") {
+		t.Fatalf("summary prompt=%#v", provider.seen)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextMessages := reopened.ContextMessages()
+	if len(contextMessages) != 5 || !strings.Contains(contextMessages[0].Content.(string), "structured summary") || contextMessages[1].Content != "two" {
+		t.Fatalf("context=%#v", contextMessages)
+	}
+}
+
+func TestRunnerCompactionDoesNotPersistInvalidSummary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-invalid.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-invalid", ConversationID: "conv-invalid", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := New(queue, &summaryProvider{response: agent.Response{ToolCalls: []agent.ToolCall{{ID: "bad", Name: "read"}}, StopReason: "toolUse"}}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	if err := runner.Compact(context.Background(), "conv-invalid", 1); err == nil {
+		t.Fatal("expected invalid summary error")
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.ContextMessages()) != 4 {
+		t.Fatalf("context changed after failed compaction: %#v", reopened.ContextMessages())
+	}
+}
+
+func TestRunnerAutoCompactsBeforePrompt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-auto.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-auto", ConversationID: "conv-auto", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &autoCompactionProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactTurns = 2
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-auto", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "four"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "continued" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if provider.calls != 2 || len(provider.seen[1]) == 0 || provider.seen[1][0].Content == "one" {
+		t.Fatalf("provider calls=%d messages=%#v", provider.calls, provider.seen)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "automatic summary") {
+		t.Fatalf("context=%#v", reopened.ContextMessages())
+	}
+}
+
+func TestRunnerRetriesOnceAfterOptInContextOverflow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-overflow.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-overflow", ConversationID: "conv-overflow", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &overflowRecoveryProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactOnOverflow = true
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-overflow", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "recover"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "recovered" {
+		t.Fatalf("result=%#v err=%v calls=%d", result, err, provider.calls)
+	}
+	if provider.calls != 3 {
+		t.Fatalf("provider calls=%d, want overflow, summary, retry", provider.calls)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "overflow summary") {
+		t.Fatalf("context=%#v", reopened.ContextMessages())
+	}
+}
+
+func TestRunnerCompactsAndRetriesRecoverableLengthStop(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-length.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-length", ConversationID: "conv-length", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &lengthRecoveryProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactOnOverflow = true
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-length", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "continue"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "recovered" {
+		t.Fatalf("result=%#v err=%v calls=%d", result, err, provider.calls)
+	}
+	if provider.calls != 3 {
+		t.Fatalf("provider calls=%d, want compaction and one retry", provider.calls)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(fmt.Sprint(reopened.Messages()), "truncated") || !strings.Contains(fmt.Sprint(reopened.Messages()), "recovered") {
+		t.Fatalf("persisted messages=%#v", reopened.Messages())
 	}
 }
 
@@ -314,5 +658,67 @@ func TestRunnerSteersActiveTurnThroughAgentQueue(t *testing.T) {
 	defer provider.mu.Unlock()
 	if len(provider.seen) != 2 || len(provider.seen[1]) != 3 || provider.seen[1][2].Content != "change direction" {
 		t.Fatalf("provider messages=%#v", provider.seen)
+	}
+}
+
+func TestToConsolidationTurnsCondensesToolPayloads(t *testing.T) {
+	toolResult := strings.Repeat("r", consolidationToolResultChars+10)
+	turns := toConsolidationTurns([]session.TimedMessage{
+		{Message: session.Message{Role: "assistant", Content: []session.ContentPart{{Type: "toolCall", Name: "read", Arguments: map[string]any{"path": "README.md"}}}}},
+		{Message: session.Message{Role: "toolResult", Content: []session.ContentPart{{Type: "text", Text: toolResult}}}},
+	})
+	if turns[0].Content != `called read({"path":"README.md"})` {
+		t.Fatalf("tool call transcript=%q", turns[0].Content)
+	}
+	if !strings.HasPrefix(turns[1].Content, "OK — "+strings.Repeat("r", consolidationToolResultChars)) || !strings.HasSuffix(turns[1].Content, "…") {
+		t.Fatalf("tool result transcript was not bounded: len=%d", len([]rune(turns[1].Content)))
+	}
+}
+
+func TestToConsolidationTurnsFormatsSpecialEntries(t *testing.T) {
+	exitCode := 2
+	turns := toConsolidationTurns([]session.TimedMessage{
+		{Message: session.Message{Role: "bashExecution", Command: "go test ./...", Output: "failed", ExitCode: &exitCode}},
+		{Message: session.Message{Role: "bashExecution", Command: "sleep 10", Cancelled: true}},
+		{Message: session.Message{Role: "branchSummary", Summary: "The branch chose the safer path."}},
+		{Message: session.Message{Role: "compactionSummary", Summary: "Earlier context was compacted."}},
+		{Message: session.Message{Role: "toolResult", Content: []session.ContentPart{{Type: "text", Text: "Tool error: missing file"}}}},
+	})
+	want := []string{
+		"ran `go test ./...` — exit 2: failed",
+		"ran `sleep 10` — cancelled",
+		"The branch chose the safer path.",
+		"Earlier context was compacted.",
+		"FAILED — Tool error: missing file",
+	}
+	for i := range want {
+		if turns[i].Content != want[i] {
+			t.Fatalf("turn %d = %q, want %q", i, turns[i].Content, want[i])
+		}
+	}
+}
+
+func TestToAgentMessagesConvertsPersistedSpecialMessages(t *testing.T) {
+	exitCode := 1
+	messages := toAgentMessages([]session.Message{
+		{Role: "bashExecution", Command: "go test", Output: "failed", ExitCode: &exitCode},
+		{Role: "branchSummary", Summary: "safer branch"},
+		{Role: "compactionSummary", Summary: "old context"},
+		{Role: "custom", Content: "extension note"},
+		{Role: "bashExecution", Command: "secret", ExcludeFromContext: true},
+	})
+	if len(messages) != 4 {
+		t.Fatalf("converted messages=%#v", messages)
+	}
+	want := []string{
+		"Ran `go test`\n```\nfailed\n```\n\nCommand exited with code 1",
+		"The following is a summary of a branch that this conversation came back from:\n\n<summary>\nsafer branch\n</summary>",
+		"The conversation history before this point was compacted into the following summary:\n\n<summary>\nold context\n</summary>",
+		"extension note",
+	}
+	for i := range want {
+		if messages[i].Role != "user" || messages[i].Content != want[i] {
+			t.Fatalf("message %d=%#v want role user content %q", i, messages[i], want[i])
+		}
 	}
 }

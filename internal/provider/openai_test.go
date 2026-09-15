@@ -40,6 +40,48 @@ func TestOpenAICompletionsReadsTextSSE(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsJSONModeSetsResponseFormat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			ResponseFormat map[string]string `json:"response_format"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ResponseFormat["type"] != "json_object" {
+			t.Fatalf("response_format=%#v", payload.ResponseFormat)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	if _, err := NewOpenAICompletions(server.URL, "", "test-model").NextJSON(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenAICompletionsSendsReasoningEffort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Reasoning map[string]string `json:"reasoning"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Reasoning["effort"] != "high" {
+			t.Fatalf("reasoning=%#v", payload.Reasoning)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "", "test-model")
+	client.ReasoningEffort = "high"
+	if _, err := client.Next(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompletionsReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provider failed", http.StatusBadGateway)
@@ -101,6 +143,26 @@ func TestOpenAICompletionsEmitsTextUpdates(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsEmitsPartialMessageEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"a"}}]}`)
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"b"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	var events []agent.StreamEvent
+	result, err := NewOpenAICompletions(server.URL, "", "test-model").NextWithEvents(context.Background(), nil, nil, func(event agent.StreamEvent) {
+		events = append(events, event)
+	})
+	if err != nil || result.Text != "ab" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(events) != 4 || events[0].Type != "text_start" || events[1].Type != "text_delta" || events[1].Delta != "a" || events[2].Delta != "b" || events[3].Type != "text_end" || events[3].Partial.Content != "ab" {
+		t.Fatalf("events=%#v", events)
+	}
+}
+
 func TestOpenAICompletionsCombinesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -140,6 +202,30 @@ func TestOpenAICompletionsSendsReadToolSchema(t *testing.T) {
 	}))
 	defer server.Close()
 	if _, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, []string{"read"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenAICompletionsSendsImageContentParts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []struct {
+				Content any `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		parts, ok := payload.Messages[0].Content.([]any)
+		if !ok || len(parts) != 2 || parts[0].(map[string]any)["text"] != "look" || parts[1].(map[string]any)["type"] != "image_url" {
+			t.Fatalf("content=%#v", payload.Messages[0].Content)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"seen"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	_, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{"data:image/jpeg;base64,AA=="}}}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 }

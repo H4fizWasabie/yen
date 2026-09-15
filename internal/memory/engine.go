@@ -13,12 +13,14 @@ import (
 )
 
 type Engine struct {
-	Semantic           *Store
-	Episodic           *EpisodicStore
-	Checkpoints        *Checkpoints
-	ConversationScoped bool
-	mu                 sync.Mutex
-	active             map[string]bool
+	Semantic                 *Store
+	Episodic                 *EpisodicStore
+	Checkpoints              *Checkpoints
+	ConsolidationCheckpoints *Checkpoints
+	ConversationScoped       bool
+	mu                       sync.Mutex
+	active                   map[string]bool
+	inFlight                 map[string]bool
 }
 
 type ConsolidatedFact struct {
@@ -41,6 +43,11 @@ type ConsolidatedEpisode struct {
 	RelatedSemanticNodeIDs []string
 }
 
+var allowedEdgeRelations = map[string]struct{}{
+	"prefers": {}, "attributed_to": {}, "depends_on": {}, "located_at": {},
+	"requires": {}, "supersedes": {}, "used_in": {}, "maintains": {},
+}
+
 func OpenEngine(dir string) (*Engine, error) {
 	episodic, err := OpenEpisodicStore(filepath.Join(dir, "episodes.db"))
 	if err != nil {
@@ -51,11 +58,17 @@ func OpenEngine(dir string) (*Engine, error) {
 		_ = episodic.Close()
 		return nil, err
 	}
-	return NewEngine(NewStore(filepath.Join(dir, "semantic")), episodic, checkpoints), nil
+	engine := NewEngine(NewStore(filepath.Join(dir, "semantic")), episodic, checkpoints)
+	engine.ConsolidationCheckpoints, err = OpenCheckpoints(filepath.Join(dir, "consolidation-state.json"))
+	if err != nil {
+		_ = episodic.Close()
+		return nil, err
+	}
+	return engine, nil
 }
 
 func NewEngine(semantic *Store, episodic *EpisodicStore, checkpoints *Checkpoints) *Engine {
-	return &Engine{Semantic: semantic, Episodic: episodic, Checkpoints: checkpoints, active: make(map[string]bool)}
+	return &Engine{Semantic: semantic, Episodic: episodic, Checkpoints: checkpoints, active: make(map[string]bool), inFlight: make(map[string]bool)}
 }
 
 func (e *Engine) SaveNote(text string, ctx Context) (Node, error) {
@@ -144,6 +157,9 @@ func (e *Engine) applyConsolidation(turnID, conversationID, workspaceID, adapter
 		nodes[node.ID] = node
 	}
 	for _, edge := range edges {
+		if _, ok := allowedEdgeRelations[edge.Rel]; !ok {
+			continue
+		}
 		from, fromNew := ids[edge.From]
 		if !fromNew && safeID(edge.From) {
 			from = edge.From
