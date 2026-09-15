@@ -14,6 +14,7 @@ type Settings struct {
 	Reasoning      string   `json:"reasoningEffort,omitempty"`
 	ContextFiles   []string `json:"contextFiles,omitempty"`
 	SkillDirs      []string `json:"skillDirs,omitempty"`
+	PromptDirs     []string `json:"promptDirs,omitempty"`
 	Trusted        *bool    `json:"trusted,omitempty"`
 	AutoCompaction *bool    `json:"autoCompaction,omitempty"`
 	SteeringMode   string   `json:"steeringMode,omitempty"`
@@ -126,6 +127,9 @@ func merge(target *Settings, source Settings) {
 	}
 	if source.SkillDirs != nil {
 		target.SkillDirs = source.SkillDirs
+	}
+	if source.PromptDirs != nil {
+		target.PromptDirs = source.PromptDirs
 	}
 	if source.Trusted != nil {
 		target.Trusted = source.Trusted

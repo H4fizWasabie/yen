@@ -354,6 +354,12 @@ func TestQueueModeAndCommandDiscovery(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".theoses", "skills", "summarize", "SKILL.md"), []byte("---\nname: summarize\ndescription: Summarize the current work\n---\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(dir, ".theoses", "prompts"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".theoses", "prompts", "review.md"), []byte("---\ndescription: Review a target\n---\nReview $1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
 	if err != nil {
 		t.Fatal(err)
@@ -372,7 +378,7 @@ func TestQueueModeAndCommandDiscovery(t *testing.T) {
 	if err := server.handle(context.Background(), &output, command{Type: "get_commands"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), `"steeringMode":"all"`) || !strings.Contains(output.String(), `"name":"compact"`) || !strings.Contains(output.String(), `"name":"skill:summarize"`) {
+	if !strings.Contains(output.String(), `"steeringMode":"all"`) || !strings.Contains(output.String(), `"name":"compact"`) || !strings.Contains(output.String(), `"name":"skill:summarize"`) || !strings.Contains(output.String(), `"name":"review"`) {
 		t.Fatalf("output=%s", output.String())
 	}
 }

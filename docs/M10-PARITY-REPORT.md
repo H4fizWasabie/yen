@@ -78,6 +78,15 @@ the oracle's skill portion of `get_commands`. TypeScript authority:
 `internal/codingagent/prompt.go`, `internal/rpc/server.go`, and
 `internal/rpc/server_test.go`; the full 265-test race/vet/diff gate passes.
 
+Prompt templates now load project `.theoses/prompts`, Yen config prompts, and
+configured prompt directories; `/name args` expands `$1`, `$@`, and
+`$ARGUMENTS` before the agent call, and RPC discovery advertises templates as
+prompt commands. TypeScript authority:
+`packages/coding-agent/src/core/prompt-templates.ts:136-266` and
+`packages/coding-agent/src/core/agent-session.ts:1244-1249`. Go evidence:
+`internal/codingagent/prompt_templates.go`, `internal/runtime/runtime.go`,
+and focused template/RPC tests; the full 267-test race/vet/diff gate passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

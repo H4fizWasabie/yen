@@ -419,6 +419,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			}
 		}
 		commands = append(commands, codingagent.SkillCommands(workspace)...)
+		commands = append(commands, codingagent.PromptCommands(workspace)...)
 		return s.response(output, request.ID, request.Type, true, map[string]any{"commands": commands}, nil)
 	case "set_model":
 		if strings.TrimSpace(request.Provider) == "" || strings.TrimSpace(request.Model) == "" {

@@ -383,6 +383,7 @@ func (r *Runner) distillDroppedMemory(ctx context.Context, conversationID string
 
 func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	path := r.pathFor(turn)
+	expandedPrompt := codingagent.ExpandPrompt(turn.WorkspaceID, turn.Prompt)
 	current, err := openOrCreate(path, turn)
 	if err != nil {
 		return agent.Result{}, err
@@ -445,7 +446,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})
-	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
+	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && recoverableLengthStop(result)) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
@@ -463,7 +464,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			if skillsMessage, ok := codingagent.SkillsMessage(turn.WorkspaceID); ok {
 				history = append([]agent.Message{skillsMessage}, history...)
 			}
-			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
+			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 		}
 	}
 	outcome := "completed"
@@ -487,11 +488,11 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		}
 	}
 	if runErr == nil && r.Memory != nil {
-		if err := r.Memory.RecordTurn(turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, result.FinalText); err != nil {
+		if err := r.Memory.RecordTurn(turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, expandedPrompt, result.FinalText); err != nil {
 			return result, err
 		}
 		if r.AutoConsolidate {
-			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, toConsolidationTurns(current.TimedMessages()))
+			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, expandedPrompt, toConsolidationTurns(current.TimedMessages()))
 		}
 	}
 	if runErr == nil && r.Checkpoints != nil {

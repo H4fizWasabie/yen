@@ -535,6 +535,11 @@ description and source-path metadata. Focused command-discovery coverage and
 the full 265-test race/vet/diff gate pass; executing extension, prompt, and
 skill commands remains a separate open surface.
 
+Prompt templates now load from project/global/configured directories, expand
+`/name args` before the agent call, and appear in RPC discovery with prompt
+source metadata. Focused expansion/discovery tests and the full 267-test
+race/vet/diff gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
