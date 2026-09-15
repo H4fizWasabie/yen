@@ -40,6 +40,26 @@ func TestOpenAICompletionsReadsTextSSE(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsJSONModeSetsResponseFormat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			ResponseFormat map[string]string `json:"response_format"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ResponseFormat["type"] != "json_object" {
+			t.Fatalf("response_format=%#v", payload.ResponseFormat)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	if _, err := NewOpenAICompletions(server.URL, "", "test-model").NextJSON(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompletionsReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provider failed", http.StatusBadGateway)

@@ -36,6 +36,10 @@ type ConsolidationTurn struct {
 	Timestamp string
 }
 
+type jsonConsolidationProvider interface {
+	NextJSON(context.Context, []agent.Message, []string) (agent.Response, error)
+}
+
 func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnID, conversationID, workspaceID, adapter string, turns []ConsolidationTurn) error {
 	if provider == nil {
 		return errors.New("consolidation provider is required")
@@ -63,7 +67,13 @@ func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnI
 
 func retryConsolidationCall(ctx context.Context, provider agent.Provider, messages []agent.Message) (agent.Response, error) {
 	for attempt := 0; ; attempt++ {
-		response, err := provider.Next(ctx, messages, nil)
+		var response agent.Response
+		var err error
+		if structured, ok := provider.(jsonConsolidationProvider); ok {
+			response, err = structured.NextJSON(ctx, messages, nil)
+		} else {
+			response, err = provider.Next(ctx, messages, nil)
+		}
 		if err == nil || attempt >= consolidationMaxRetries {
 			return response, err
 		}

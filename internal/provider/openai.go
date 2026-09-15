@@ -44,16 +44,30 @@ func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
 }
 
 func (p OpenAICompletions) Next(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
-	return p.NextWithUpdates(ctx, messages, toolNames, nil)
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, false)
 }
 
 func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string)) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolNames, update, false)
+}
+
+// NextJSON requests the provider's object-mode response format for structured
+// calls such as memory consolidation. Ordinary turns keep the existing wire shape.
+func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, true)
+}
+
+func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), jsonMode bool) (agent.Response, error) {
 	payload := struct {
-		Model    string           `json:"model"`
-		Messages []openAIMessage  `json:"messages"`
-		Tools    []map[string]any `json:"tools,omitempty"`
-		Stream   bool             `json:"stream"`
+		Model          string            `json:"model"`
+		Messages       []openAIMessage   `json:"messages"`
+		Tools          []map[string]any  `json:"tools,omitempty"`
+		Stream         bool              `json:"stream"`
+		ResponseFormat map[string]string `json:"response_format,omitempty"`
 	}{Model: p.Model, Messages: convertMessages(messages), Stream: true}
+	if jsonMode {
+		payload.ResponseFormat = map[string]string{"type": "json_object"}
+	}
 	for _, name := range toolNames {
 		parameters := map[string]any{"type": "object"}
 		if name == "read" {

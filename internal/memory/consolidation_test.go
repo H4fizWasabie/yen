@@ -32,6 +32,17 @@ func (p *retryConsolidationProvider) Next(context.Context, []agent.Message, []st
 	return agent.Response{Text: `{"episode":{"summary":"recovered","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
 }
 
+type jsonModeConsolidationProvider struct{ used bool }
+
+func (p *jsonModeConsolidationProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	return agent.Response{}, errors.New("plain consolidation call used")
+}
+
+func (p *jsonModeConsolidationProvider) NextJSON(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.used = true
+	return agent.Response{Text: `{"episode":{"summary":"structured","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
+}
+
 func (p *captureConsolidationProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
 	p.seen = messages[0].Content
 	return agent.Response{Text: p.text, StopReason: "stop"}, nil
@@ -166,5 +177,20 @@ func TestConsolidationRetriesProviderFailureOnlyWithinConsolidation(t *testing.T
 	}
 	if provider.calls != 2 {
 		t.Fatalf("provider calls=%d, want 2", provider.calls)
+	}
+}
+
+func TestConsolidationUsesOptionalJSONProviderMode(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	provider := &jsonModeConsolidationProvider{}
+	if err := engine.Consolidate(context.Background(), provider, "turn-json", "conv-json", "work", "cli", []ConsolidationTurn{{Role: "user", Content: "hello"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !provider.used {
+		t.Fatal("structured provider mode was not used")
 	}
 }
