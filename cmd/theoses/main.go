@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
@@ -25,6 +27,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("theoses", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	prompt := flags.String("p", "", "run one non-interactive prompt")
+	interactive := flags.Bool("i", false, "read prompts from stdin until EOF")
 	semanticSource := flags.String("migrate-semantic", "", "copy semantic Markdown or legacy JSONL from this path")
 	episodicSource := flags.String("migrate-episodes", "", "copy episodes from this SQLite database")
 	memoryDir := flags.String("memory-dir", "", "target semantic memory directory")
@@ -39,7 +42,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if *semanticSource != "" || *episodicSource != "" {
 		return runMigration(stdout, stderr, *semanticSource, *episodicSource, *memoryDir, *episodesDB, *scope, *ownerID, *workspaceID, *conversationID)
 	}
-	if *prompt == "" {
+	if *prompt == "" && !*interactive {
 		fmt.Fprintln(stderr, "usage: theoses -p PROMPT")
 		return 2
 	}
@@ -110,14 +113,39 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	defer runner.Memory.Close()
 	runner.SessionPath = func(conversation.Turn) string { return sessionPath }
-	turn, err := runner.Submit(link, *prompt)
-	if err != nil {
-		return reportError(stderr, err)
+	runPrompt := func(prompt string) error {
+		turn, err := runner.Submit(link, prompt)
+		if err != nil {
+			return err
+		}
+		_, result, err := runner.RunSubmitted(context.Background(), turn)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, result.FinalText)
+		return err
 	}
-	if _, result, err := runner.RunSubmitted(context.Background(), turn); err != nil {
+	if *interactive {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			prompt := scanner.Text()
+			if prompt == "/quit" || prompt == "/exit" {
+				break
+			}
+			if strings.TrimSpace(prompt) == "" {
+				continue
+			}
+			if err := runPrompt(prompt); err != nil {
+				return reportError(stderr, err)
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			return reportError(stderr, err)
+		}
+		return 0
+	}
+	if err := runPrompt(*prompt); err != nil {
 		return reportError(stderr, err)
-	} else {
-		fmt.Fprintln(stdout, result.FinalText)
 	}
 	return 0
 }
