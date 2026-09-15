@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 func ServeUnix(ctx context.Context, path string, server *Server) error {
@@ -92,10 +93,27 @@ func DialUnix(path string) (*Client, error) {
 }
 
 func (c *Client) Call(command map[string]any) (map[string]any, error) {
+	return c.CallWithEvents(command, nil)
+}
+
+// CallWithEvents sends one JSONL command and returns its correlated response.
+// Lines that are not the matching response are forwarded to onEvent, allowing
+// callers to observe the same streaming events as the TypeScript RPC client.
+func (c *Client) CallWithEvents(command map[string]any, onEvent func(map[string]any)) (map[string]any, error) {
 	if c == nil || c.connection == nil {
 		return nil, errors.New("rpc client is closed")
 	}
-	data, err := json.Marshal(command)
+	if command == nil {
+		return nil, errors.New("rpc command is required")
+	}
+	request := make(map[string]any, len(command)+1)
+	for key, value := range command {
+		request[key] = value
+	}
+	if id, ok := request["id"].(string); !ok || id == "" {
+		request["id"] = fmt.Sprintf("req_%d", time.Now().UnixNano())
+	}
+	data, err := json.Marshal(request)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +127,11 @@ func (c *Client) Call(command map[string]any) (map[string]any, error) {
 		if err := json.Unmarshal(c.scanner.Bytes(), &response); err != nil {
 			continue
 		}
-		if response["type"] == "response" {
+		if response["type"] == "response" && response["id"] == request["id"] {
 			return response, nil
+		}
+		if onEvent != nil {
+			onEvent(response)
 		}
 	}
 	if err := c.scanner.Err(); err != nil {
