@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -85,6 +86,38 @@ func TestTelegramBotSendsTypingActionDuringTurn(t *testing.T) {
 	close(provider.release)
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTelegramBotGroupsMultipleResultImages(t *testing.T) {
+	var media []map[string]string
+	var files int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/bottoken/sendMediaGroup" {
+			t.Fatalf("path=%q", r.URL.Path)
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(r.FormValue("media")), &media); err != nil {
+			t.Fatal(err)
+		}
+		for _, parts := range r.MultipartForm.File {
+			files += len(parts)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Token: "token", APIBase: server.URL}
+	result := agent.Result{Messages: []agent.Message{{Role: "tool", Images: []string{
+		"data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png")),
+		"data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte("jpeg")),
+	}}}}
+	if err := bot.sendResultImages(context.Background(), "42", result, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(media) != 2 || files != 2 || media[0]["media"] != "attach://file0" || media[1]["media"] != "attach://file1" {
+		t.Fatalf("media=%#v files=%d", media, files)
 	}
 }
 
