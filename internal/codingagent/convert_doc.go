@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,6 +14,8 @@ import (
 )
 
 type convertDocTool struct{ cwd string }
+
+const convertDocMaxOutput = 2_000_000
 
 func (convertDocTool) Name() string { return "convert_doc" }
 
@@ -26,12 +29,29 @@ func (t convertDocTool) Execute(ctx context.Context, args map[string]any) (strin
 		return "", err
 	}
 	command := exec.CommandContext(ctx, "markitdown", resolved)
-	output, err := command.Output()
+	stdout, err := command.StdoutPipe()
 	if err != nil {
+		return "", err
+	}
+	command.Stderr = io.Discard
+	if err := command.Start(); err != nil {
 		var executableError *exec.Error
 		if errors.As(err, &executableError) {
 			return "", fmt.Errorf("markitdown is not installed; install the markitdown CLI before using convert_doc")
 		}
+		return "", fmt.Errorf("markitdown failed: %w", err)
+	}
+	output, readErr := io.ReadAll(io.LimitReader(stdout, convertDocMaxOutput+1))
+	if len(output) > convertDocMaxOutput {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		return "", fmt.Errorf("markitdown failed: output exceeds %d bytes", convertDocMaxOutput)
+	}
+	if readErr != nil {
+		_ = command.Wait()
+		return "", fmt.Errorf("markitdown failed: %w", readErr)
+	}
+	if err := command.Wait(); err != nil {
 		return "", fmt.Errorf("markitdown failed: %w", err)
 	}
 	text := strings.TrimSpace(string(output))

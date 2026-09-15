@@ -461,6 +461,11 @@ render persisted assistant `thinking` segments instead of treating them as
 generic tools. Focused API/shell tests pass; the full gate is now 253 tests
 plus race/vet/diff.
 
+`convert_doc` now bounds markitdown stdout at the oracle's 2,000,000-byte
+`maxBuffer` using a capped pipe reader, and terminates an oversized producer.
+`internal/codingagent/convert_doc_test.go` covers the ceiling; the full gate
+is now 255 tests plus race/vet/diff.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
