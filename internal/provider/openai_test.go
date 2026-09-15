@@ -157,6 +157,59 @@ func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleProvidersUseNativeThinkingFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		check    func(t *testing.T, payload map[string]json.RawMessage)
+	}{
+		{name: "qwen", provider: "qwen-token-plan", check: func(t *testing.T, payload map[string]json.RawMessage) {
+			var enabled bool
+			if json.Unmarshal(payload["enable_thinking"], &enabled) != nil || !enabled || payload["reasoning"] != nil {
+				t.Fatalf("payload=%s", payloadJSON(payload))
+			}
+		}},
+		{name: "deepseek", provider: "deepseek", check: func(t *testing.T, payload map[string]json.RawMessage) {
+			var thinking map[string]string
+			if json.Unmarshal(payload["thinking"], &thinking) != nil || thinking["type"] != "enabled" || payload["reasoning"] != nil {
+				t.Fatalf("payload=%s", payloadJSON(payload))
+			}
+		}},
+		{name: "together", provider: "together", check: func(t *testing.T, payload map[string]json.RawMessage) {
+			var reasoning map[string]bool
+			var effort string
+			if json.Unmarshal(payload["reasoning"], &reasoning) != nil || !reasoning["enabled"] || json.Unmarshal(payload["reasoning_effort"], &effort) != nil || effort != "high" {
+				t.Fatalf("payload=%s", payloadJSON(payload))
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				payload := make(map[string]json.RawMessage)
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				test.check(t, payload)
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+			}))
+			defer server.Close()
+			client := NewOpenAICompletions(server.URL, "", "test-model")
+			client.ProviderName = test.provider
+			client.ReasoningEffort = "high"
+			if _, err := client.Next(context.Background(), nil, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func payloadJSON(payload map[string]json.RawMessage) string {
+	data, _ := json.Marshal(payload)
+	return string(data)
+}
+
 func TestMistralParsesThinkingChunksAndNormalizesToolIDs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {

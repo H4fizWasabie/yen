@@ -120,15 +120,36 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		Tools           []map[string]any  `json:"tools,omitempty"`
 		Stream          bool              `json:"stream"`
 		ResponseFormat  map[string]string `json:"response_format,omitempty"`
-		Reasoning       map[string]string `json:"reasoning,omitempty"`
+		Reasoning       map[string]any    `json:"reasoning,omitempty"`
+		Thinking        map[string]any    `json:"thinking,omitempty"`
+		EnableThinking  *bool             `json:"enable_thinking,omitempty"`
+		ToolStream      bool              `json:"tool_stream,omitempty"`
 		ReasoningEffort string            `json:"reasoning_effort,omitempty"`
 	}{Model: p.Model, Messages: converted, Stream: true}
 	if p.ReasoningEffort != "" {
 		if p.ProviderName == "mistral" {
 			payload.ReasoningEffort = p.ReasoningEffort
+		} else if p.ProviderName == "zai" || p.ProviderName == "zai-coding-cn" {
+			payload.Thinking = map[string]any{"type": "enabled", "clear_thinking": false}
+			payload.ToolStream = true
+		} else if isQwenTokenPlan(p.ProviderName) {
+			enabled := true
+			payload.EnableThinking = &enabled
+		} else if p.ProviderName == "deepseek" {
+			payload.Thinking = map[string]any{"type": "enabled"}
+		} else if p.ProviderName == "together" {
+			payload.Reasoning = map[string]any{"enabled": true}
+			payload.ReasoningEffort = p.ReasoningEffort
 		} else {
-			payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
+			payload.Reasoning = map[string]any{"effort": p.ReasoningEffort}
 		}
+	} else if isQwenTokenPlan(p.ProviderName) {
+		enabled := false
+		payload.EnableThinking = &enabled
+	} else if p.ProviderName == "deepseek" {
+		payload.Thinking = map[string]any{"type": "disabled"}
+	} else if p.ProviderName == "together" {
+		payload.Reasoning = map[string]any{"enabled": false}
 	}
 	if jsonMode {
 		payload.ResponseFormat = map[string]string{"type": "json_object"}
@@ -462,6 +483,10 @@ func hasMessageImages(messages []agent.Message) bool {
 		}
 	}
 	return false
+}
+
+func isQwenTokenPlan(provider string) bool {
+	return provider == "qwen-token-plan" || provider == "qwen-token-plan-cn" || provider == "qwen-token-plan-individual"
 }
 
 func openAIContentDelta(raw json.RawMessage) (text, thinking string) {

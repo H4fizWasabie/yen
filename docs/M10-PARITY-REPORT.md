@@ -157,6 +157,18 @@ loader. TypeScript authority:
 `internal/codingagent/prompt.go`, `internal/codingagent/prompt_templates.go`,
 and focused resource tests; the full 270-test race/vet/diff gate passes.
 
+OpenAI-compatible Qwen, DeepSeek, and Together providers now use their native
+reasoning request fields instead of the generic shape: `enable_thinking`,
+DeepSeek `thinking`, and Together `reasoning.enabled` plus its effort field.
+TypeScript authority:
+`packages/ai/src/api/openai-completions.ts:857-900,917-925,1640-1650` and
+the provider model compatibility data under
+`packages/ai/src/providers/data/{qwen-token-plan,deepseek}.json`. Go evidence:
+`internal/provider/openai.go` and
+`TestOpenAICompatibleProvidersUseNativeThinkingFields`; the full gate passes
+311 tests, race, vet, and diff checks. Per-model thinking maps and remaining
+chat-template formats remain open.
+
 The agent loop now exposes opt-in `before` and `after` tool interception hooks:
 the former can block a validated call with a policy reason, and the latter can
 replace the executed text/images or error status before tool-result events and
