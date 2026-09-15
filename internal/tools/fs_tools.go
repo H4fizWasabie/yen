@@ -52,8 +52,7 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 		if entry.IsDir() { return nil }
 		rel, err := filepath.Rel(root, path); if err != nil { return err }
 		rel = filepath.ToSlash(rel)
-		matched, _ := filepath.Match(pattern, filepath.Base(rel))
-		if !matched { matched, _ = filepath.Match(pattern, rel) }
+		matched := matchFindPattern(pattern, rel)
 		if matched && len(matches) < limit { matches = append(matches, rel) }
 		return nil
 	})
@@ -61,6 +60,30 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 	if len(matches) == 0 { return "No files found matching pattern", nil }
 	sort.Strings(matches)
 	return strings.Join(matches, "\n"), nil
+}
+
+func matchFindPattern(pattern, rel string) bool {
+	pattern = filepath.ToSlash(pattern)
+	if !strings.Contains(pattern, "/") {
+		matched, _ := filepath.Match(pattern, filepath.Base(rel))
+		return matched
+	}
+	return matchGlobstar(strings.Split(strings.Trim(pattern, "/"), "/"), strings.Split(strings.Trim(rel, "/"), "/"), 0, 0)
+}
+
+func matchGlobstar(pattern, path []string, patternIndex, pathIndex int) bool {
+	if patternIndex == len(pattern) {
+		return pathIndex == len(path)
+	}
+	if pattern[patternIndex] == "**" {
+		return matchGlobstar(pattern, path, patternIndex+1, pathIndex) ||
+			(pathIndex < len(path) && matchGlobstar(pattern, path, patternIndex, pathIndex+1))
+	}
+	if pathIndex == len(path) {
+		return false
+	}
+	matched, _ := filepath.Match(pattern[patternIndex], path[pathIndex])
+	return matched && matchGlobstar(pattern, path, patternIndex+1, pathIndex+1)
 }
 
 type GrepTool struct{ cwd string }
