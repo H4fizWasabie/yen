@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -425,6 +426,33 @@ func TestTelegramToolDetailPreferenceSurvivesReopen(t *testing.T) {
 	second.toolMu.Unlock()
 	if !got {
 		t.Fatal("tool detail preference was not persisted")
+	}
+}
+
+func TestTelegramBotStoresDocumentAttachmentForReadTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottoken/getFile":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_path":"documents/report.txt"}}`))
+		case "/file/bottoken/documents/report.txt":
+			_, _ = w.Write([]byte("attachment contents"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	bot := &TelegramBot{Token: "token", APIBase: server.URL, ArtifactDir: dir}
+	note, err := bot.storeAttachment(context.Background(), &telegramMessage{Document: &telegramFile{FileID: "file-1", FileName: "report.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "report.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "attachment contents" || !strings.Contains(note, filepath.Join(dir, "report.txt")) {
+		t.Fatalf("data=%q note=%q", data, note)
 	}
 }
 

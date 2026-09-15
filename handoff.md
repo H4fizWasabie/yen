@@ -109,6 +109,10 @@ requests, including shared memory, cancellation, and FIFO queue acceptance.
 The Yen dashboard now has a Yen-owned token configured in `/etc/yen/yen.env`;
 VPS acceptance returned 401 without credentials and 200 for Bearer, login
 cookie, and health requests. Theoses2 dashboard configuration was untouched.
+
+Telegram photos/documents and common media now download through bounded Bot API
+calls into `/var/lib/yen/telegram-artifacts`; the prompt points the existing
+read tool at the saved file. Multimodal provider delivery remains deferred.
 See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md),
 [docs/M9-OPERATIONS.md](docs/M9-OPERATIONS.md), and
 [docs/M10-PARITY-REPORT.md](docs/M10-PARITY-REPORT.md).
