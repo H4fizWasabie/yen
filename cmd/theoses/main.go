@@ -244,6 +244,27 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err := fmt.Fprintf(stdout, "Trusted: %s\n", workspace)
 		return true, err
+	case text == "/settings":
+		workspace := link.WorkspaceID
+		if workspace == "" {
+			workspace = current.Header().CWD
+		}
+		configured, err := settings.Load(workspace)
+		if err != nil {
+			return true, err
+		}
+		data, err := json.Marshal(configured)
+		if err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintf(stdout, "%s\n", data)
+		return true, err
+	case text == "/reload":
+		if err := current.Reload(); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintln(stdout, "Session reloaded")
+		return true, err
 	case text == "/name":
 		if name := current.SessionName(); name != "" {
 			_, err := fmt.Fprintf(stdout, "Session name: %s\n", name)

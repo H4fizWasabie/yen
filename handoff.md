@@ -447,6 +447,10 @@ when `ProviderName` is `mistral`, while preserving the existing `reasoning`
 shape for other OpenAI-compatible providers. A wire regression test covers the
 distinction; the full gate is now 250 tests plus race/vet/diff.
 
+The interactive CLI also exposes `/settings` as JSON settings read-back and
+`/reload` to reopen the active session from disk. Focused command coverage and
+the full 251-test race/vet gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

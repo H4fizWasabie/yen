@@ -279,6 +279,28 @@ func TestInteractiveProviderAndTrustCommands(t *testing.T) {
 	}
 }
 
+func TestInteractiveSettingsAndReloadCommands(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})
+	if _, err := current.Append(session.Message{Role: "user", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	activePath := current.Path()
+	var output bytes.Buffer
+	handled, err := handleInteractiveCommand("/settings", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "{") {
+		t.Fatalf("settings handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	output.Reset()
+	handled, err = handleInteractiveCommand("/reload", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "Session reloaded") || len(current.Messages()) != 2 {
+		t.Fatalf("reload handled=%v err=%v output=%q messages=%#v", handled, err, output.String(), current.Messages())
+	}
+}
+
 func providerModel(value agent.Provider) string {
 	_, model := provider.Describe(value)
 	return model
