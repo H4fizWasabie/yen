@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -291,6 +293,18 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		stats := session.Stats(current)
 		_, err := fmt.Fprintf(stdout, "Session Info\n\nName: %s\nFile: %s\nID: %s\nMessages: %v\n", current.SessionName(), current.Path(), current.Header().ID, stats["totalMessages"])
 		return true, err
+	case text == "/copy":
+		content := lastAssistantText(current)
+		if content == "" {
+			_, err := fmt.Fprintln(stdout, "No agent messages to copy yet.")
+			return true, err
+		}
+		if err := copyToClipboard(content, stdout); err != nil {
+			_, writeErr := fmt.Fprintf(stdout, "Copy failed: %v\n", err)
+			return true, writeErr
+		}
+		_, err := fmt.Fprintln(stdout, "Copied last agent message to clipboard")
+		return true, err
 	case text == "/tree":
 		data, err := json.Marshal(current.Tree())
 		if err != nil {
@@ -460,4 +474,65 @@ func runMigration(stdout, stderr io.Writer, semanticSource, episodicSource, memo
 func reportError(stderr io.Writer, err error) int {
 	fmt.Fprintln(stderr, err)
 	return 1
+}
+
+func lastAssistantText(current *session.Session) string {
+	messages := current.Messages()
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message.Role != "assistant" || (message.StopReason == "aborted" && contentTextForCopy(message.Content) == "") {
+			continue
+		}
+		if text := strings.TrimSpace(contentTextForCopy(message.Content)); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func contentTextForCopy(content any) string {
+	if text, ok := content.(string); ok {
+		return text
+	}
+	if parts, ok := content.([]session.ContentPart); ok {
+		var builder strings.Builder
+		for _, part := range parts {
+			if part.Type == "text" {
+				builder.WriteString(part.Text)
+			}
+		}
+		return builder.String()
+	}
+	data, err := json.Marshal(content)
+	if err != nil {
+		return ""
+	}
+	var parts []session.ContentPart
+	if json.Unmarshal(data, &parts) != nil {
+		return ""
+	}
+	return contentTextForCopy(parts)
+}
+
+func copyToClipboard(text string, stdout io.Writer) error {
+	remote := os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_CLIENT") != "" || os.Getenv("MOSH_CONNECTION") != ""
+	if remote {
+		encoded := base64.StdEncoding.EncodeToString([]byte(text))
+		if len(encoded) <= 100000 {
+			_, err := fmt.Fprintf(stdout, "\x1b]52;c;%s\a", encoded)
+			return err
+		}
+	}
+	candidates := [][]string{{"wl-copy", "--type", "text/plain"}, {"xclip", "-selection", "clipboard"}, {"xsel", "--clipboard", "--input"}, {"pbcopy"}, {"clip.exe"}}
+	for _, candidate := range candidates {
+		if _, err := exec.LookPath(candidate[0]); err != nil {
+			continue
+		}
+		command := exec.Command(candidate[0], candidate[1:]...)
+		command.Stdin = strings.NewReader(text)
+		if err := command.Run(); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("no supported clipboard command found")
 }
