@@ -186,6 +186,9 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 			if err != nil {
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 				if ctx.Err() != nil {
+					result.Events = append(result.Events, "message_start:toolResult")
+					result.Messages = append(result.Messages, Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID})
+					result.Events = append(result.Events, "message_end:toolResult", "turn_end", "agent_end")
 					return result, ctx.Err()
 				}
 				content = "Tool error: " + err.Error()

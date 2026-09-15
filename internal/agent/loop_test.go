@@ -80,6 +80,15 @@ func (failingTool) Execute(context.Context, map[string]any) (string, error) {
 	return "", errors.New("missing file")
 }
 
+type abortingTool struct{ cancel context.CancelFunc }
+
+func (t abortingTool) Name() string { return "read" }
+
+func (t abortingTool) Execute(context.Context, map[string]any) (string, error) {
+	t.cancel()
+	return "", context.Canceled
+}
+
 func TestRunExecutesToolThenContinues(t *testing.T) {
 	result, err := Run(context.Background(), &scriptedProvider{responses: []Response{
 		{Text: "I will read it.", ToolCalls: []ToolCall{{ID: "read-1", Name: "read"}}, StopReason: "toolUse"},
@@ -164,6 +173,21 @@ func TestRunRecordsAbortedAssistantBoundary(t *testing.T) {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	if !reflect.DeepEqual(result.Events[4:], []string{"message_start:assistant", "message_end:assistant:aborted", "turn_end", "agent_end"}) {
+		t.Fatalf("events=%#v", result.Events)
+	}
+}
+
+func TestRunRecordsAbortedToolResultBoundary(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	result, err := Run(ctx, &scriptedProvider{responses: []Response{{ToolCalls: []ToolCall{{ID: "read-1", Name: "read"}}, StopReason: "toolUse"}}}, []Tool{abortingTool{cancel: cancel}}, "read it")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+	if len(result.Messages) != 3 || result.Messages[2].Content != "Operation aborted" || result.Messages[2].Role != "tool" {
+		t.Fatalf("messages=%#v", result.Messages)
+	}
+	want := []string{"tool_execution_start:read-1", "tool_execution_end:read-1", "message_start:toolResult", "message_end:toolResult", "turn_end", "agent_end"}
+	if !reflect.DeepEqual(result.Events[len(result.Events)-len(want):], want) {
 		t.Fatalf("events=%#v", result.Events)
 	}
 }
