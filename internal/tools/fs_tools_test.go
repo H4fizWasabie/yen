@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,6 +91,35 @@ func TestFindToolSupportsRecursiveGlobstar(t *testing.T) {
 	}
 }
 
+func TestFindToolRespectsGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "-C", dir, "init", "-q").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored/\n*.secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"visible.txt", "ignored/hidden.txt", "private.secret"} {
+		fullPath := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte("needle\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "**/*"})
+	if err != nil || got != ".gitignore\nvisible.txt" {
+		t.Fatalf("find=%q err=%v", got, err)
+	}
+
+	got, err = NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle"})
+	if err != nil || !strings.Contains(got, "visible.txt:1: needle") || strings.Contains(got, "hidden.txt") || strings.Contains(got, "private.secret") {
+		t.Fatalf("grep=%q err=%v", got, err)
+	}
+}
+
 func TestGrepToolMatchesRecursiveGlobstarPaths(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "internal", "nested", "main.go")
@@ -104,6 +134,30 @@ func TestGrepToolMatchesRecursiveGlobstarPaths(t *testing.T) {
 		"pattern": "package", "glob": "internal/**/*.go",
 	})
 	if err != nil || !strings.Contains(got, "internal/nested/main.go:1: package nested") {
+		t.Fatalf("grep=%q err=%v", got, err)
+	}
+}
+
+func TestGrepToolSkipsBinaryFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "binary.dat"), []byte("needle\x00binary\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle"})
+	if err != nil || got != "No matches found" {
+		t.Fatalf("grep=%q err=%v", got, err)
+	}
+}
+
+func TestGrepToolRemovesCarriageReturns(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "cr.txt"), []byte("needle\rtext\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle"})
+	if err != nil || got != "cr.txt:1: needletext" {
 		t.Fatalf("grep=%q err=%v", got, err)
 	}
 }
@@ -215,8 +269,17 @@ func TestFileSearchToolsReportResultLimit(t *testing.T) {
 		t.Fatalf("ls=%q err=%v", ls, err)
 	}
 	find, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "*.txt", "limit": 1})
-	if err != nil || !strings.Contains(find, "1 results limit reached") {
+	if err != nil || !strings.Contains(find, "1 results limit reached. Use limit=2 for more, or refine pattern") {
 		t.Fatalf("find=%q err=%v", find, err)
+	}
+
+	exactDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(exactDir, "only.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	find, err = NewFindTool(exactDir).Execute(context.Background(), map[string]any{"pattern": "*.txt", "limit": 1})
+	if err != nil || !strings.Contains(find, "1 results limit reached. Use limit=2 for more, or refine pattern") {
+		t.Fatalf("exact find=%q err=%v", find, err)
 	}
 }
 
