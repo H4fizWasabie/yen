@@ -437,6 +437,13 @@ pinned native Anthropic Messages endpoints and Yen-owned API-key variables.
 controls and diagnostics. Configuration tests cover both mappings; the full
 gate is now 248 tests plus race/vet/diff.
 
+## Latest operations evidence
+
+The current VPS data was backed up on 2026-09-15 to
+`/var/backups/yen-20260915T093942Z.tgz`. Archive listing validation succeeded;
+the archive is mode `600`, and all Yen and Theoses2 units plus Yen health
+remained green. No runtime data was changed.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future
