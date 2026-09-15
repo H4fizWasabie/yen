@@ -77,7 +77,7 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 	if len(matches) == 0 { return "No files found matching pattern", nil }
 	sort.Strings(matches)
 	output := truncateFileSearchOutput(strings.Join(matches, "\n"))
-	if matchCount > limit { output += fmt.Sprintf("\n\n[%d results limit reached]", limit) }
+	if matchCount > limit { output += fmt.Sprintf("\n\n[%d results limit reached. Use limit=%d for more, or refine pattern]", limit, limit*2) }
 	return output, nil
 }
 

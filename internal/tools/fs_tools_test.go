@@ -240,7 +240,7 @@ func TestFileSearchToolsReportResultLimit(t *testing.T) {
 		t.Fatalf("ls=%q err=%v", ls, err)
 	}
 	find, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "*.txt", "limit": 1})
-	if err != nil || !strings.Contains(find, "1 results limit reached") {
+	if err != nil || !strings.Contains(find, "1 results limit reached. Use limit=2 for more, or refine pattern") {
 		t.Fatalf("find=%q err=%v", find, err)
 	}
 }
