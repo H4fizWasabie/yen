@@ -1,0 +1,144 @@
+package memory
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
+)
+
+const ConsolidationTurnCeiling = 70
+
+var consolidationTriggerPhrases = []string{"thanks", "thank you", "great job", "good work", "nice work", "perfect", "awesome", "that's all", "all done"}
+
+func ShouldTriggerConsolidation(userMessage string, turnsSinceCheckpoint int) bool {
+	lower := strings.ToLower(userMessage)
+	for _, phrase := range consolidationTriggerPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return turnsSinceCheckpoint >= ConsolidationTurnCeiling
+}
+
+type ConsolidationTurn struct {
+	Role      string
+	Content   string
+	Timestamp string
+}
+
+func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnID, conversationID, workspaceID, adapter string, turns []ConsolidationTurn) error {
+	if provider == nil {
+		return errors.New("consolidation provider is required")
+	}
+	if len(turns) == 0 {
+		return errors.New("consolidation turns are required")
+	}
+	prompt, err := e.consolidationPrompt(turns, Context{WorkspaceID: workspaceID, ConversationID: conversationID})
+	if err != nil {
+		return err
+	}
+	response, err := provider.Next(ctx, []agent.Message{{Role: "user", Content: prompt}}, nil)
+	if err != nil {
+		return err
+	}
+	if response.StopReason == "error" || response.StopReason == "aborted" {
+		return fmt.Errorf("consolidation stopped: %s", response.StopReason)
+	}
+	result, err := parseConsolidationResponse(response.Text)
+	if err != nil {
+		return err
+	}
+	if result.Episode.StartedAt == "" {
+		result.Episode.StartedAt = turns[0].Timestamp
+	}
+	if result.Episode.EndedAt == "" {
+		result.Episode.EndedAt = turns[len(turns)-1].Timestamp
+	}
+	return e.ApplyConsolidation(turnID, conversationID, workspaceID, adapter, result.Facts, result.Edges, result.Episode)
+}
+
+func (e *Engine) consolidationPrompt(turns []ConsolidationTurn, ctx Context) (string, error) {
+	if e == nil || e.Semantic == nil {
+		return "", errors.New("semantic memory is not configured")
+	}
+	var transcript strings.Builder
+	for _, turn := range turns {
+		if strings.TrimSpace(turn.Content) == "" {
+			continue
+		}
+		fmt.Fprintf(&transcript, "%s: %s\n", turn.Role, strings.TrimSpace(turn.Content))
+	}
+	if transcript.Len() == 0 {
+		return "", errors.New("consolidation turns are empty")
+	}
+	existingNodes, err := e.Semantic.Remember(transcript.String(), ctx)
+	if err != nil {
+		return "", err
+	}
+	var existing strings.Builder
+	for _, node := range existingNodes {
+		fmt.Fprintf(&existing, "- %s: %s\n", node.ID, node.Subject)
+	}
+	if existing.Len() == 0 {
+		existing.WriteString("- none\n")
+	}
+	return "You are a memory consolidation pass. Extract durable facts from the conversation and return only JSON with this shape: " +
+		`{"facts":[{"id":"f1","subject":"...","body":"..."}],"edges":[{"from":"f1","to":"f2","rel":"depends_on"}],"episode":{"summary":"...","startedAt":"ISO-8601","endedAt":"ISO-8601","relatedFactIds":["f1"]}}` +
+		". Existing nodes:\n" + existing.String() + "Conversation:\n" + transcript.String(), nil
+}
+
+func parseConsolidationResponse(raw string) (struct {
+	Facts   []ConsolidatedFact
+	Edges   []ConsolidatedEdge
+	Episode ConsolidatedEpisode
+}, error) {
+	var result struct {
+		Facts   []ConsolidatedFact `json:"facts"`
+		Edges   []ConsolidatedEdge `json:"edges"`
+		Episode struct {
+			Summary        string   `json:"summary"`
+			StartedAt      string   `json:"startedAt"`
+			EndedAt        string   `json:"endedAt"`
+			RelatedFactIDs []string `json:"relatedFactIds"`
+			RelatedNodeIDs []string `json:"relatedSemanticNodeIds"`
+		} `json:"episode"`
+	}
+	cleaned := strings.TrimSpace(raw)
+	if strings.HasPrefix(cleaned, "```") {
+		if newline := strings.IndexByte(cleaned, '\n'); newline >= 0 {
+			cleaned = strings.TrimSpace(cleaned[newline+1:])
+		}
+		cleaned = strings.TrimSuffix(cleaned, "```")
+		cleaned = strings.TrimSpace(cleaned)
+	}
+	if start, end := strings.IndexByte(cleaned, '{'), strings.LastIndexByte(cleaned, '}'); start >= 0 && end > start {
+		cleaned = cleaned[start : end+1]
+	}
+	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
+		return struct {
+			Facts   []ConsolidatedFact
+			Edges   []ConsolidatedEdge
+			Episode ConsolidatedEpisode
+		}{}, fmt.Errorf("consolidation JSON: %w", err)
+	}
+	if strings.TrimSpace(result.Episode.Summary) == "" {
+		return struct {
+			Facts   []ConsolidatedFact
+			Edges   []ConsolidatedEdge
+			Episode ConsolidatedEpisode
+		}{}, errors.New("consolidation episode summary is required")
+	}
+	related := result.Episode.RelatedFactIDs
+	if len(related) == 0 {
+		related = result.Episode.RelatedNodeIDs
+	}
+	return struct {
+		Facts   []ConsolidatedFact
+		Edges   []ConsolidatedEdge
+		Episode ConsolidatedEpisode
+	}{Facts: result.Facts, Edges: result.Edges, Episode: ConsolidatedEpisode{Summary: result.Episode.Summary, StartedAt: result.Episode.StartedAt, EndedAt: result.Episode.EndedAt, RelatedSemanticNodeIDs: related}}, nil
+}

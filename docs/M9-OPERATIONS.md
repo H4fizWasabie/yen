@@ -1,0 +1,51 @@
+# M9 operations
+
+Date: 2026-09-14
+
+## Side-by-side pilot layout
+
+- Telegram unit: `yen-telegram-pilot.service`
+- Dashboard unit: `yen-dashboard-pilot.service`
+- Existing TypeScript units: `theoses2-telegram.service`,
+  `theoses2-telegram-staging.service`, `theoses2-dashboard.service`, and
+  `theoses2-dashboard-staging.service`
+- Go data directory: `/var/lib/theoses-go-telegram`
+- Go dashboard health: `127.0.0.1:30146/healthz`
+- Go release layout: `/opt/yen/releases/<commit>/`
+- Go secret file: `/etc/theoses-go/telegram.env`, mode `600`; never commit or
+  print its values.
+
+The TypeScript units and their ports, working directories, data, and pollers
+are not modified by Go rollout or rollback.
+
+## Read-back
+
+```sh
+systemctl is-active yen-telegram-pilot.service yen-dashboard-pilot.service
+curl -fsS http://127.0.0.1:30146/healthz
+journalctl -u yen-telegram-pilot.service -u yen-dashboard-pilot.service --since "10 minutes ago" --no-pager
+du -sh /var/lib/theoses-go-telegram
+```
+
+## Backup and rollback
+
+Back up the Go data directory before changing a release. Exclude the systemd
+secret file; it is managed separately and must not enter an archive.
+
+```sh
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+tar -C /var/lib -czf "/var/backups/yen-theoses-go-$stamp.tgz" theoses-go-telegram
+tar -tzf "/var/backups/yen-theoses-go-$stamp.tgz" >/dev/null
+```
+
+Rollback is a unit-only change: point each Go unit at the previous release,
+run `systemctl daemon-reload`, restart the Go units, and repeat the read-back.
+Do not stop or edit any `theoses2-*` unit. Restore the data archive only when
+the failure is data-related; release rollback alone preserves current data.
+
+## Current gate
+
+The pilot has passed live health, systemd restart, OpenRouter smoke, dashboard
+routing, verified backup creation, rollback/restore, cancellation, and FIFO
+queue acceptance. A reproducible fresh-host installer remains deferred; the
+documented unit/data/secret layout is the current operational contract.

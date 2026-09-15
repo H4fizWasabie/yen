@@ -2,6 +2,9 @@ package session
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +14,8 @@ import (
 
 type Header struct {
 	ID               string `json:"id"`
+	ConversationID   string `json:"conversationId,omitempty"`
+	WorkspaceID      string `json:"workspaceId,omitempty"`
 	CWD              string `json:"cwd"`
 	Channel          string `json:"channel"`
 	ChannelSessionID string `json:"channelSessionId"`
@@ -28,6 +33,7 @@ type Message struct {
 	Role       string `json:"role"`
 	Content    any    `json:"content"`
 	ToolCallID string `json:"toolCallId,omitempty"`
+	StopReason string `json:"stopReason,omitempty"`
 }
 
 type sessionEntry struct {
@@ -46,6 +52,8 @@ type sessionHeader struct {
 	Type             string `json:"type"`
 	Version          int    `json:"version"`
 	ID               string `json:"id"`
+	ConversationID   string `json:"conversationId,omitempty"`
+	WorkspaceID      string `json:"workspaceId,omitempty"`
 	Timestamp        string `json:"timestamp"`
 	CWD              string `json:"cwd"`
 	Channel          string `json:"channel,omitempty"`
@@ -66,6 +74,8 @@ func New(path string, header Header) *Session {
 			Type:             "session",
 			Version:          3,
 			ID:               header.ID,
+			ConversationID:   header.ConversationID,
+			WorkspaceID:      header.WorkspaceID,
 			Timestamp:        time.Now().UTC().Format(time.RFC3339Nano),
 			CWD:              header.CWD,
 			Channel:          header.Channel,
@@ -85,18 +95,22 @@ func Open(path string) (*Session, error) {
 	line := 0
 	for scanner.Scan() {
 		line++
-		if line == 1 {
-			if err := json.Unmarshal(scanner.Bytes(), &s.header); err != nil {
-				return nil, fmt.Errorf("session line %d: %w", line, err)
-			}
-			if s.header.Type != "session" {
+		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
+			continue
+		}
+		var raw map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
+			continue
+		}
+		if len(s.entries) == 0 && s.header.Type == "" {
+			if err := json.Unmarshal(scanner.Bytes(), &s.header); err != nil || s.header.Type != "session" || s.header.ID == "" {
 				return nil, fmt.Errorf("session header missing")
 			}
 			continue
 		}
 		var entry sessionEntry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-			return nil, fmt.Errorf("session line %d: %w", line, err)
+			continue
 		}
 		s.entries = append(s.entries, entry)
 	}
@@ -113,7 +127,7 @@ func (s *Session) Append(message Message) (string, error) {
 	if message.Role == "" {
 		return "", fmt.Errorf("message role is required")
 	}
-	id := fmt.Sprintf("entry-%d", len(s.entries)+1)
+	id := newEntryID(s.entries)
 	var parentID *string
 	if len(s.entries) > 0 {
 		parent := s.entries[len(s.entries)-1].ID
@@ -141,6 +155,28 @@ func (s *Session) Append(message Message) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+func newEntryID(entries []sessionEntry) string {
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		seen[entry.ID] = struct{}{}
+	}
+	for i := 0; i < 100; i++ {
+		var raw [4]byte
+		if _, err := rand.Read(raw[:]); err != nil {
+			panic(err)
+		}
+		id := hex.EncodeToString(raw[:])
+		if _, ok := seen[id]; !ok {
+			return id
+		}
+	}
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(raw[:])
 }
 
 func (s *Session) Messages() []Message {
