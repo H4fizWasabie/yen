@@ -588,10 +588,12 @@ func TestAutoCompactDisabledFromEnv(t *testing.T) {
 }
 
 func TestApplySettingsConfiguresSharedRuntime(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "")
 	runner := New(nil, providerpkg.NewOpenAICompletions("http://fixture", "key", "model"), nil)
 	enabled := false
 	runner.ApplySettings(settings.Settings{
 		SteeringMode: "all", FollowUpMode: "one-at-a-time",
+		SummarizationProvider: "openai", SummarizationModel: "summary-model",
 		Compaction: &settings.CompactionSettings{Enabled: &enabled, ReserveTokens: 99, KeepRecentTokens: 88, MaxHistoryTurns: 3},
 		Retry:      &settings.RetrySettings{MaxRetries: 2},
 	})
@@ -600,6 +602,10 @@ func TestApplySettingsConfiguresSharedRuntime(t *testing.T) {
 	}
 	if !providerpkg.RetryEnabled(runner.Provider) {
 		t.Fatal("retry should remain enabled")
+	}
+	name, model := providerpkg.Describe(runner.SummarizationProvider)
+	if name != "openai" || model != "summary-model" {
+		t.Fatalf("summarization provider=%s model=%s", name, model)
 	}
 }
 
@@ -659,6 +665,32 @@ func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	contextMessages := reopened.ContextMessages()
 	if len(contextMessages) != 5 || !strings.Contains(contextMessages[0].Content.(string), "structured summary") || contextMessages[1].Content != "two" {
 		t.Fatalf("context=%#v", contextMessages)
+	}
+}
+
+func TestRunnerUsesSeparateSummarizationProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-summary-provider.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-summary-provider", ConversationID: "conv-summary-provider", CWD: dir})
+	for _, message := range []session.Message{{Role: "user", Content: "old"}, {Role: "assistant", Content: "reply"}, {Role: "user", Content: "recent"}} {
+		if _, err := saved.Append(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := &summaryProvider{response: agent.Response{Text: "active summary", StopReason: "stop"}}
+	summarizer := &summaryProvider{response: agent.Response{Text: "dedicated summary", StopReason: "stop"}}
+	runner := New(queue, active, nil)
+	runner.SummarizationProvider = summarizer
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	if err := runner.Compact(context.Background(), "conv-summary-provider", 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(active.seen) != 0 || len(summarizer.seen) != 1 {
+		t.Fatalf("active=%#v summarizer=%#v", active.seen, summarizer.seen)
 	}
 }
 
