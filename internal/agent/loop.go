@@ -81,6 +81,15 @@ type Tool interface {
 	Execute(ctx context.Context, args map[string]any) (string, error)
 }
 
+type ToolResult struct {
+	Text   string
+	Images []string
+}
+
+type RichTool interface {
+	ExecuteRich(ctx context.Context, args map[string]any) (ToolResult, error)
+}
+
 type Result struct {
 	Messages  []Message
 	Events    []string
@@ -333,7 +342,8 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				continue
 			}
 			result.Events = append(result.Events, "tool_execution_start:"+call.ID)
-			content, err := tool.Execute(ctx, call.Args)
+			toolResult, err := executeTool(ctx, tool, call.Args)
+			content, images := toolResult.Text, toolResult.Images
 			if err != nil {
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 				if ctx.Err() != nil {
@@ -358,7 +368,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 			}
 			result.Events = append(result.Events, "message_start:toolResult")
-			toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+			toolMessage := Message{Role: "tool", Content: content, Images: images, ToolCallID: call.ID}
 			result.Messages = append(result.Messages, toolMessage)
 			toolResults = append(toolResults, toolMessage)
 			emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -378,7 +388,16 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 type parallelToolResult struct {
 	call    ToolCall
 	content string
+	images  []string
 	err     error
+}
+
+func executeTool(ctx context.Context, tool Tool, args map[string]any) (ToolResult, error) {
+	if rich, ok := tool.(RichTool); ok {
+		return rich.ExecuteRich(ctx, args)
+	}
+	text, err := tool.Execute(ctx, args)
+	return ToolResult{Text: text}, err
 }
 
 func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc) ([]Message, error) {
@@ -401,7 +420,8 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 				outcomes[i].err = errors.New(outcomes[i].content)
 				return
 			}
-			outcomes[i].content, outcomes[i].err = tool.Execute(ctx, call.Args)
+			toolResult, err := executeTool(ctx, tool, call.Args)
+			outcomes[i].content, outcomes[i].images, outcomes[i].err = toolResult.Text, toolResult.Images, err
 		}(i, call)
 	}
 	wait.Wait()
@@ -419,7 +439,7 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 			}
 		}
 		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
-		toolMessage := Message{Role: "tool", Content: content, ToolCallID: outcome.call.ID}
+		toolMessage := Message{Role: "tool", Content: content, Images: outcome.images, ToolCallID: outcome.call.ID}
 		result.Messages = append(result.Messages, toolMessage)
 		toolMessages = append(toolMessages, toolMessage)
 		emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})

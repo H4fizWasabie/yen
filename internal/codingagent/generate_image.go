@@ -66,6 +66,20 @@ func (t generateImageTool) Execute(ctx context.Context, args map[string]any) (st
 	return fmt.Sprintf("Image saved to %s (via %s)", path, provider), nil
 }
 
+func (t generateImageTool) ExecuteRich(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
+	text, err := t.Execute(ctx, args)
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+	path := strings.TrimPrefix(strings.SplitN(strings.TrimPrefix(text, "Image saved to "), " (via ", 2)[0], " ")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return agent.ToolResult{Text: text}, nil
+	}
+	mimeType := sniffImageMIME(data)
+	return agent.ToolResult{Text: text, Images: []string{"data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)}}, nil
+}
+
 func (t generateImageTool) generate(ctx context.Context, prompt string) ([]byte, string, string, error) {
 	client := t.client
 	if client == nil {

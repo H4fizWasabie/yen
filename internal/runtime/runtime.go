@@ -632,7 +632,7 @@ func toSessionMessage(message agent.Message) session.Message {
 		}
 	}
 	if message.Role == "tool" {
-		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
+		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Images: message.Images, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
 	}
 	if len(message.ToolCalls) > 0 || message.Thinking != "" || message.ThinkingSignature != "" {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)
