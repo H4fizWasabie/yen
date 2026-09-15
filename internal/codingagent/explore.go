@@ -41,7 +41,8 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 		return "", ctx.Err()
 	}
 	history := []agent.Message{{Role: "system", Content: explorerPrompt(tier, lines, turns)}}
-	result, err := agent.RunFrom(ctx, &turnLimitedProvider{provider: t.provider, limit: turns, tier: tier}, []agent.Tool{
+	limited := &turnLimitedProvider{provider: t.provider, limit: turns, tier: tier}
+	result, err := agent.RunFrom(ctx, limited, []agent.Tool{
 		tools.NewReadTool(t.cwd),
 		tools.NewGrepTool(t.cwd),
 		tools.NewFindTool(t.cwd),
@@ -50,7 +51,18 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 	if err != nil {
 		return "", err
 	}
-	return capExplorerAnswer(result.FinalText, lines), nil
+	answer := strings.TrimSpace(result.FinalText)
+	if answer == "" {
+		answer = "INCOMPLETE: budget exhausted before a final answer was produced."
+	}
+	if strings.HasPrefix(answer, "INCOMPLETE:") {
+		return answer + fmt.Sprintf("\n~%dK in, %d/%d turns", (limited.inputTokens+500)/1000, limited.calls, turns), nil
+	}
+	answer = capExplorerAnswer(answer, lines)
+	if !strings.HasSuffix(answer, " turns") || !strings.Contains(answer[strings.LastIndex(answer, "\n")+1:], "/") {
+		answer += fmt.Sprintf("\n~%dK in, %d/%d turns", (limited.inputTokens+500)/1000, limited.calls, turns)
+	}
+	return answer, nil
 }
 
 func explorerPrompt(tier string, lines, turns int) string {
@@ -62,10 +74,12 @@ func explorerPrompt(tier string, lines, turns int) string {
 }
 
 type turnLimitedProvider struct {
-	provider agent.Provider
-	limit    int
-	calls    int
-	tier     string
+	provider     agent.Provider
+	limit        int
+	calls        int
+	tier         string
+	inputTokens  int
+	outputTokens int
 }
 
 func (p *turnLimitedProvider) Next(ctx context.Context, messages []agent.Message, tools []string) (agent.Response, error) {
@@ -76,7 +90,12 @@ func (p *turnLimitedProvider) Next(ctx context.Context, messages []agent.Message
 		}, nil
 	}
 	p.calls++
-	return p.provider.Next(ctx, messages, tools)
+	response, err := p.provider.Next(ctx, messages, tools)
+	if err == nil {
+		p.inputTokens += response.Usage.Input
+		p.outputTokens += response.Usage.Output
+	}
+	return response, err
 }
 
 func capExplorerAnswer(answer string, limit int) string {
