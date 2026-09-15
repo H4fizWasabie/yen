@@ -123,6 +123,24 @@ func TestFileSearchToolsBoundOutput(t *testing.T) {
 	}
 }
 
+func TestFileSearchToolsReportResultLimit(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ls, err := NewListTool(dir).Execute(context.Background(), map[string]any{"limit": 1})
+	if err != nil || !strings.Contains(ls, "1 entries limit reached") {
+		t.Fatalf("ls=%q err=%v", ls, err)
+	}
+	find, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "*.txt", "limit": 1})
+	if err != nil || !strings.Contains(find, "1 results limit reached") {
+		t.Fatalf("find=%q err=%v", find, err)
+	}
+}
+
 func TestEditRequiresUniqueOldText(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "x.txt"), []byte("x\nx\n"), 0o600); err != nil {

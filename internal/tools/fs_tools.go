@@ -25,6 +25,7 @@ func (t ListTool) Execute(ctx context.Context, args map[string]any) (string, err
 	if err != nil { return "", fmt.Errorf("cannot read directory: %w", err) }
 	limit := intArg(args, "limit", 500)
 	if limit < 1 { limit = 1 }
+	limitReached := len(entries) > limit
 	lines := make([]string, 0, min(len(entries), limit))
 	for i, entry := range entries {
 		if i >= limit { break }
@@ -34,7 +35,9 @@ func (t ListTool) Execute(ctx context.Context, args map[string]any) (string, err
 	}
 	sort.SliceStable(lines, func(i, j int) bool { return strings.ToLower(lines[i]) < strings.ToLower(lines[j]) })
 	if len(lines) == 0 { return "(empty directory)", nil }
-	return truncateFileSearchOutput(strings.Join(lines, "\n")), nil
+	output := truncateFileSearchOutput(strings.Join(lines, "\n"))
+	if limitReached { output += fmt.Sprintf("\n\n[%d entries limit reached. Use limit=%d for more]", limit, limit*2) }
+	return output, nil
 }
 
 type FindTool struct{ cwd string }
@@ -48,6 +51,7 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 	limit := intArg(args, "limit", 1000)
 	if limit < 1 { limit = 1 }
 	var matches []string
+	matchCount := 0
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil { return err }
 		if e := ctx.Err(); e != nil { return e }
@@ -56,13 +60,18 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 		rel, err := filepath.Rel(root, path); if err != nil { return err }
 		rel = filepath.ToSlash(rel)
 		matched := matchFindPattern(pattern, rel)
-		if matched && len(matches) < limit { matches = append(matches, rel) }
+		if matched {
+			matchCount++
+			if len(matches) < limit { matches = append(matches, rel) }
+		}
 		return nil
 	})
 	if err != nil { return "", err }
 	if len(matches) == 0 { return "No files found matching pattern", nil }
 	sort.Strings(matches)
-	return truncateFileSearchOutput(strings.Join(matches, "\n")), nil
+	output := truncateFileSearchOutput(strings.Join(matches, "\n"))
+	if matchCount > limit { output += fmt.Sprintf("\n\n[%d results limit reached]", limit) }
+	return output, nil
 }
 
 func matchFindPattern(pattern, rel string) bool {
