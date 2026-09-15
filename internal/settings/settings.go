@@ -13,6 +13,8 @@ type Settings struct {
 	DefaultProvider      string              `json:"defaultProvider,omitempty"`
 	DefaultModel         string              `json:"defaultModel,omitempty"`
 	BaseURL              string              `json:"baseUrl,omitempty"`
+	ShellPath            string              `json:"shellPath,omitempty"`
+	ShellCommandPrefix   string              `json:"shellCommandPrefix,omitempty"`
 	Reasoning            string              `json:"reasoningEffort,omitempty"`
 	DefaultThinkingLevel string              `json:"defaultThinkingLevel,omitempty"`
 	ContextFiles         []string            `json:"contextFiles,omitempty"`
@@ -150,6 +152,12 @@ func merge(target *Settings, source Settings) {
 	}
 	if source.BaseURL != "" {
 		target.BaseURL = source.BaseURL
+	}
+	if source.ShellPath != "" {
+		target.ShellPath = source.ShellPath
+	}
+	if source.ShellCommandPrefix != "" {
+		target.ShellCommandPrefix = source.ShellCommandPrefix
 	}
 	if source.Reasoning != "" {
 		target.Reasoning = source.Reasoning

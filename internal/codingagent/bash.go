@@ -13,8 +13,8 @@ type sessionBashTool struct {
 	session *session.Session
 }
 
-func newSessionBashTool(workspace string, current *session.Session) agent.Tool {
-	return sessionBashTool{bash: tools.NewBashTool(workspace), session: current}
+func newSessionBashTool(workspace string, current *session.Session, options tools.BashOptions) agent.Tool {
+	return sessionBashTool{bash: tools.NewBashToolWithOptions(workspace, options), session: current}
 }
 
 func (sessionBashTool) Name() string { return "bash" }

@@ -176,7 +176,8 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 			return true, nil
 		}
 		cwd := current.Header().CWD
-		bashResult, err := tools.NewBashTool(cwd).ExecuteResult(context.Background(), map[string]any{"command": command})
+		resourceSettings, _ := settings.Load(cwd)
+		bashResult, err := tools.NewBashToolWithOptions(cwd, tools.BashOptions{ShellPath: resourceSettings.ShellPath, CommandPrefix: resourceSettings.ShellCommandPrefix}).ExecuteResult(context.Background(), map[string]any{"command": command})
 		result := bashResult.Output
 		message := session.Message{
 			Role: "bashExecution", Command: command, Output: result, ExitCode: bashResult.ExitCode,

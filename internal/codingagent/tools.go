@@ -10,6 +10,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 	"github.com/H4fizWasabie/yen/internal/tools"
 )
 
@@ -35,9 +36,11 @@ func NewToolsForSessionWithProviderWithoutExternal(workspace string, current *se
 func NewExternalTools() []agent.Tool { return loadExternalTools() }
 
 func newTools(workspace string, current *session.Session, provider agent.Provider, includeExternal bool) []agent.Tool {
+	resourceSettings, _ := settings.Load(workspace)
+	bashOptions := tools.BashOptions{ShellPath: resourceSettings.ShellPath, CommandPrefix: resourceSettings.ShellCommandPrefix}
 	result := []agent.Tool{
 		tools.NewReadTool(workspace),
-		tools.NewBashTool(workspace),
+		tools.NewBashToolWithOptions(workspace, bashOptions),
 		tools.NewPowerShellTool(workspace),
 		tools.NewEditTool(workspace),
 		tools.NewWriteTool(workspace),
@@ -55,7 +58,7 @@ func newTools(workspace string, current *session.Session, provider agent.Provide
 		}
 	}
 	if current != nil {
-		result[1] = newSessionBashTool(workspace, current)
+		result[1] = newSessionBashTool(workspace, current, bashOptions)
 		result = append(result,
 			newWorkingNoteTool(current),
 			operationalNotesTool{path: filepath.Join(workspace, ".theoses-go", "operational-notes.md")},
