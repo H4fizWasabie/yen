@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -188,5 +189,47 @@ func TestSessionReadbackPreservesAssistantUsage(t *testing.T) {
 	messages := reopened.Messages()
 	if len(messages) != 2 || messages[1].Usage == nil || *messages[1].Usage != *usage {
 		t.Fatalf("messages=%#v", messages)
+	}
+}
+
+func TestSessionContextUsesCompactionBoundary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	session := New(path, Header{ID: "compact", CWD: t.TempDir(), Channel: "cli"})
+	if _, err := session.Append(Message{Role: "user", Content: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Append(Message{Role: "assistant", Content: "old reply"}); err != nil {
+		t.Fatal(err)
+	}
+	keptID, err := session.Append(Message{Role: "user", Content: "keep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Append(Message{Role: "assistant", Content: "keep reply"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.AppendCompaction("old summary", keptID, 42, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Append(Message{Role: "user", Content: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Append(Message{Role: "assistant", Content: "new reply"}); err != nil {
+		t.Fatal(err)
+	}
+
+	messages := session.ContextMessages()
+	if len(messages) != 5 || messages[0].Role != "user" || messages[1].Content != "keep" || messages[4].Content != "new reply" {
+		t.Fatalf("context messages=%#v", messages)
+	}
+	if !strings.Contains(messages[0].Content.(string), "old summary") {
+		t.Fatalf("summary message=%#v", messages[0])
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.ContextMessages(); len(got) != 5 || got[1].Content != "keep" {
+		t.Fatalf("reopened context=%#v", got)
 	}
 }

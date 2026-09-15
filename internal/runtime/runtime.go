@@ -194,7 +194,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 	if err != nil {
 		return agent.Result{}, err
 	}
-	history := toAgentMessages(current.Messages())
+	history := toAgentMessages(current.ContextMessages())
 	var tools []agent.Tool
 	if r.ToolFactory != nil {
 		tools = r.ToolFactory(turn.WorkspaceID)

@@ -38,6 +38,13 @@ type Usage struct {
 	TotalTokens int `json:"totalTokens,omitempty"`
 }
 
+type Compaction struct {
+	Summary          string `json:"summary"`
+	FirstKeptEntryID string `json:"firstKeptEntryId"`
+	TokensBefore     int    `json:"tokensBefore"`
+	Usage            *Usage `json:"usage,omitempty"`
+}
+
 type Message struct {
 	Role       string `json:"role"`
 	Content    any    `json:"content"`
@@ -47,15 +54,16 @@ type Message struct {
 }
 
 type sessionEntry struct {
-	Type             string   `json:"type"`
-	Version          int      `json:"version,omitempty"`
-	ID               string   `json:"id,omitempty"`
-	Timestamp        string   `json:"timestamp"`
-	CWD              string   `json:"cwd,omitempty"`
-	Channel          string   `json:"channel,omitempty"`
-	ChannelSessionID string   `json:"channelSessionId,omitempty"`
-	ParentID         *string  `json:"parentId"`
-	Message          *Message `json:"message,omitempty"`
+	Type             string      `json:"type"`
+	Version          int         `json:"version,omitempty"`
+	ID               string      `json:"id,omitempty"`
+	Timestamp        string      `json:"timestamp"`
+	CWD              string      `json:"cwd,omitempty"`
+	Channel          string      `json:"channel,omitempty"`
+	ChannelSessionID string      `json:"channelSessionId,omitempty"`
+	ParentID         *string     `json:"parentId"`
+	Message          *Message    `json:"message,omitempty"`
+	Compaction       *Compaction `json:"compaction,omitempty"`
 }
 
 type sessionHeader struct {
@@ -197,6 +205,64 @@ func (s *Session) Messages() []Message {
 		}
 	}
 	return messages
+}
+
+// ContextMessages projects the active leaf context after the latest
+// compaction boundary. Messages() remains the complete durable read-back.
+func (s *Session) ContextMessages() []Message {
+	compactionIndex := -1
+	for i, entry := range s.entries {
+		if entry.Type == "compaction" && entry.Compaction != nil {
+			compactionIndex = i
+		}
+	}
+	if compactionIndex < 0 {
+		return s.Messages()
+	}
+	compaction := s.entries[compactionIndex].Compaction
+	firstKept := -1
+	for i := 0; i < compactionIndex; i++ {
+		if s.entries[i].ID == compaction.FirstKeptEntryID {
+			firstKept = i
+			break
+		}
+	}
+	if firstKept < 0 {
+		return s.Messages()
+	}
+	result := []Message{{Role: "user", Content: "The conversation history before this point was compacted into the following summary:\n\n<summary>\n" + compaction.Summary + "\n</summary>"}}
+	for i := firstKept; i < compactionIndex; i++ {
+		if s.entries[i].Message != nil {
+			result = append(result, *s.entries[i].Message)
+		}
+	}
+	for i := compactionIndex + 1; i < len(s.entries); i++ {
+		if s.entries[i].Message != nil {
+			result = append(result, *s.entries[i].Message)
+		}
+	}
+	return result
+}
+
+func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, usage *Usage) (string, error) {
+	if summary == "" || firstKeptEntryID == "" {
+		return "", fmt.Errorf("compaction summary and first kept entry are required")
+	}
+	id := newEntryID(s.entries)
+	var parentID *string
+	if len(s.entries) > 0 {
+		parent := s.entries[len(s.entries)-1].ID
+		parentID = &parent
+	}
+	entry := sessionEntry{
+		Type: "compaction", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID,
+		Compaction: &Compaction{Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Usage: usage},
+	}
+	s.entries = append(s.entries, entry)
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
 }
 
 func (s *Session) publish() error {
