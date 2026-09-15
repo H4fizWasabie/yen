@@ -490,6 +490,10 @@ including the previously omitted Ant Ling, Baseten, Cerebras, Fireworks, Hugging
 Face, Qwen, Together, Xiaomi, Z.AI-CN, Google, Azure, and auth-store variables
 through both service wrappers. Shell syntax and the full Go gate pass.
 
+GitHub Actions now runs the repository test, race, vet, and diff gates on
+pushes and pull requests. This closes the prior PR-review gap where GitHub
+reported no checks.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
