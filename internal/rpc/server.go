@@ -21,6 +21,7 @@ import (
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	sessionpkg "github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 type Server struct {
@@ -362,6 +363,16 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			followUp = "one-at-a-time"
 		}
 		s.Runner.SetQueueModes(steering, followUp)
+		if link.WorkspaceID != "" {
+			current, err := settings.Load(link.WorkspaceID)
+			if err != nil {
+				return err
+			}
+			current.SteeringMode, current.FollowUpMode = steering, followUp
+			if err := settings.Save(link.WorkspaceID, current); err != nil {
+				return err
+			}
+		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"mode": request.Mode}, nil)
 	case "get_commands":
 		return s.response(output, request.ID, request.Type, true, map[string]any{"commands": builtinCommands()}, nil)

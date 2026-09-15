@@ -47,6 +47,21 @@ func Load(workspace string) (Settings, error) {
 	return result, nil
 }
 
+func Save(workspace string, current Settings) error {
+	path := os.Getenv("YEN_SETTINGS_FILE")
+	if path == "" {
+		path = filepath.Join(workspace, ".theoses", "settings.json")
+	}
+	data, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o600)
+}
+
 func TrustPath(workspace string) string {
 	if configDir, err := os.UserConfigDir(); err == nil {
 		return filepath.Join(configDir, "yen", "trusted-projects.json")

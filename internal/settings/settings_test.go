@@ -33,6 +33,19 @@ func TestQueueModesDefaultAndValidation(t *testing.T) {
 	}
 }
 
+func TestSaveRoundTripsQueueModes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	t.Setenv("YEN_SETTINGS_FILE", path)
+	if err := Save(dir, Settings{SteeringMode: "all", FollowUpMode: "one-at-a-time"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir)
+	if err != nil || got.SteeringMode != "all" || got.FollowUpMode != "one-at-a-time" {
+		t.Fatalf("settings=%#v err=%v", got, err)
+	}
+}
+
 func TestTrustWritesScopedProjectDecision(t *testing.T) {
 	dir := t.TempDir()
 	config := t.TempDir()
