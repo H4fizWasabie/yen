@@ -191,7 +191,6 @@ func TestNewConfiguredSupportsPinnedOpenAICompatibleProviders(t *testing.T) {
 		{"ant-ling", "YEN_ANT_LING_API_KEY"},
 		{"baseten", "YEN_BASETEN_API_KEY"},
 		{"cerebras", "YEN_CEREBRAS_API_KEY"},
-		{"fireworks", "YEN_FIREWORKS_API_KEY"},
 		{"huggingface", "YEN_HF_TOKEN"},
 		{"moonshotai-cn", "YEN_MOONSHOT_API_KEY"},
 		{"nvidia", "YEN_NVIDIA_API_KEY"},
@@ -215,6 +214,28 @@ func TestNewConfiguredSupportsPinnedOpenAICompatibleProviders(t *testing.T) {
 				t.Fatalf("provider=%#v", configured)
 			}
 		})
+	}
+}
+
+func TestNewConfiguredSelectsFireworksProtocolByModel(t *testing.T) {
+	t.Setenv("YEN_FIREWORKS_API_KEY", "fireworks-key")
+	t.Setenv("YEN_REASONING_EFFORT", "high")
+	configured, err := NewConfigured("fireworks", "accounts/fireworks/models/glm-5p3-flash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	anthropic, ok := configured.(AnthropicMessages)
+	if !ok || anthropic.ProviderName != "fireworks" || anthropic.BaseURL != providerDefaults["fireworks"] || anthropic.APIKey != "fireworks-key" || anthropic.ThinkingLevel != "high" {
+		t.Fatalf("provider=%#v", configured)
+	}
+
+	configured, err = NewConfigured("fireworks", "accounts/fireworks/models/glm-5p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openAI, ok := configured.(OpenAICompletions)
+	if !ok || openAI.ProviderName != "fireworks" || openAI.BaseURL != providerDefaults["fireworks"] {
+		t.Fatalf("openai provider=%#v", configured)
 	}
 }
 
