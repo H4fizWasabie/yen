@@ -23,7 +23,7 @@ deferred below.
 | Semantic memory | `packages/coding-agent/src/core/tools/memory.ts:18-59`, `packages/coding-agent/src/core/memory-store.ts:9-19`, `packages/coding-agent/src/core/memory-consolidation.ts:28-70`, `:257-330`, `:401-406`, `:443-464`, `:500-525` | conversation-scoped `save_note`/`remember`; live favorite-color and probe read-back; non-overlapping consolidation provider passes; active-branch timestamped, bounded tool-call/result (including failed-result status), bash-execution, and summary transcript entries; consolidation applies only the pinned closed edge vocabulary; opt-in trigger, 70-message ceiling, 100,000-character tail cap, separate state, failure cooldown, scoped provider retry, required episode timestamps, optional JSON-object request mode, and live trigger/checkpoint/episode read-back with the separate Yen provider key | partial; broader extraction-output parity remains open |
 | Session read-back/migration | `packages/coding-agent/src/core/session-manager.ts:31-104`, `:284-355`, `:357-370`, `:397-430`, `:986-1022` | Go fixtures migrate v1/v2 JSONL to v3, skip malformed lines before/after the header, read bounded 4 MiB JSONL entries, preserve image metadata and v2 tree links/extension/message payloads, assign v1 IDs/parents, convert `hookMessage`, project the active parent-linked branch, and read flat v3 compaction entries; 127 Go tests | partial; malformed/truncated-stream behavior beyond the explicit bound remains open |
 | Episodic memory | `packages/coding-agent/src/core/episodic-store.ts:85-` | eight live records (`cli`, `telegram`, `dashboard`) in shared SQLite store; restart read-back | partial; historical episodic migration remains explicit-only |
-| Operations | deployed TypeScript systemd units | Go systemd units, health, journald, verified backup, rollback/restore, isolated installer acceptance with temporary root/fake systemctl, and repeated real-host side-by-side rollout/read-back | partial; fresh-host installation remains open |
+| Operations | deployed TypeScript systemd units | Go systemd units, health, journald, verified backup, rollback/restore, isolated installer acceptance with temporary root/fake systemctl, and repeated real-host side-by-side rollout/read-back | accepted for the side-by-side pilot; unprivileged fresh-host production rollout remains untested |
 
 ## Accepted and deferred differences
 
@@ -35,9 +35,10 @@ deferred below.
   implemented behind the Yen dashboard token, and authenticated live
   acceptance is now recorded. Live consolidation acceptance is now recorded; the
   full provider matrix and historical episodic migration remain deferred.
-- A fresh-host installer remains deferred; the side-by-side systemd layout,
-  backup, health, journald, and rollback procedure are verified on the pilot
-  VPS.
+- An unprivileged fresh-host production rollout remains deferred; the
+  installer itself is covered by isolated temporary-root acceptance, while
+  the side-by-side systemd layout, backup, health, journald, and rollback
+  procedure are verified on the pilot VPS.
 
 This is a no-cutover parity decision, not a claim of total feature parity.
 The TypeScript runtime remains operational, Go remains a reversible pilot, and
