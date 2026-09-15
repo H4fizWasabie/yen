@@ -435,6 +435,12 @@ func toolParameters(name string) map[string]any {
 			"section": stringProperty("Section heading for the operational note"),
 			"content": stringProperty("One concise durable operational line"),
 		}, "section", "content")
+	case "convert_doc":
+		return optional(map[string]any{"path": stringProperty("Path to a document file")}, "path")
+	case "web_search":
+		return optional(map[string]any{"query": stringProperty("The web search query")}, "query")
+	case "generate_image":
+		return optional(map[string]any{"prompt": stringProperty("Detailed description of the image to generate")}, "prompt")
 	default:
 		return map[string]any{"type": "object"}
 	}

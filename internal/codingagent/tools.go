@@ -29,6 +29,8 @@ func newTools(workspace string, current *session.Session) []agent.Tool {
 		tools.NewGrepTool(workspace),
 		tools.NewFindTool(workspace),
 		tools.NewListTool(workspace),
+		convertDocTool{cwd: workspace},
+		NewWebSearchTool(),
 	}
 	if current != nil {
 		result[1] = newSessionBashTool(workspace, current)

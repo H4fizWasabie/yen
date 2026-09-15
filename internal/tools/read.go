@@ -22,6 +22,8 @@ type ReadTool struct {
 
 func NewReadTool(cwd string) ReadTool { return ReadTool{cwd: cwd} }
 
+func ResolvePath(rawPath, cwd string) string { return normalizeReadPath(rawPath, cwd) }
+
 func (ReadTool) Name() string { return "read" }
 
 func (t ReadTool) Execute(ctx context.Context, args map[string]any) (string, error) {
