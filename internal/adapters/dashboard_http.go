@@ -179,7 +179,8 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case len(parts) == 2 && parts[1] == "messages" && r.Method == http.MethodPost:
 		var input struct {
-			Message string `json:"message"`
+			Message      string `json:"message"`
+			ReplyContext string `json:"replyContext,omitempty"`
 		}
 		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if readErr != nil {
@@ -203,7 +204,7 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 					flush.Flush()
 				}
 			}
-			_, runErr := h.Dashboard.SendStreamWithEvents(r.Context(), id, input.Message, func(text string) {
+			_, runErr := h.Dashboard.SendStreamWithEventsAndReply(r.Context(), id, input.Message, input.ReplyContext, func(text string) {
 				emit("delta", map[string]string{"text": text})
 			}, func(event agent.Event) {
 				switch event.Type {
@@ -225,7 +226,7 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		result, runErr := h.Dashboard.Send(r.Context(), id, input.Message)
+		result, runErr := h.Dashboard.SendWithReply(r.Context(), id, input.Message, input.ReplyContext)
 		if runErr != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": runErr.Error()})
 			return

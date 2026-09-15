@@ -70,12 +70,7 @@ func (a Telegram) HandleMessageWithImagesEvents(ctx context.Context, chatID, tex
 }
 
 func (a Telegram) handleMessageWithReply(ctx context.Context, chatID, text, replyContext string, images []string, onEvent agent.EventFunc) (agent.Result, error) {
-	if replyContext != "" {
-		if len([]rune(replyContext)) > 2000 {
-			replyContext = string([]rune(replyContext)[:2000])
-		}
-		text = "[Quoted message context]\n" + replyContext + "\n[/Quoted message context]\n\n" + text
-	}
+	text = addReplyContext(text, replyContext)
 	link, err := a.Service.resolve("telegram", chatID, a.Workspace)
 	if err != nil {
 		return agent.Result{}, err
@@ -108,6 +103,10 @@ func (a Dashboard) Send(ctx context.Context, conversationID, text string) (agent
 	return a.send(ctx, conversationID, text, nil, nil)
 }
 
+func (a Dashboard) SendWithReply(ctx context.Context, conversationID, text, replyContext string) (agent.Result, error) {
+	return a.sendWithReply(ctx, conversationID, text, replyContext, nil, nil)
+}
+
 func (a Dashboard) SendStream(ctx context.Context, conversationID, text string, onUpdate func(string)) (agent.Result, error) {
 	return a.send(ctx, conversationID, text, onUpdate, nil)
 }
@@ -116,17 +115,36 @@ func (a Dashboard) SendStreamWithEvents(ctx context.Context, conversationID, tex
 	return a.send(ctx, conversationID, text, onUpdate, onEvent)
 }
 
+func (a Dashboard) SendStreamWithEventsAndReply(ctx context.Context, conversationID, text, replyContext string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
+	return a.sendWithReply(ctx, conversationID, text, replyContext, onUpdate, onEvent)
+}
+
 func (a Dashboard) send(ctx context.Context, conversationID, text string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
+	return a.sendWithReply(ctx, conversationID, text, "", onUpdate, onEvent)
+}
+
+func (a Dashboard) sendWithReply(ctx context.Context, conversationID, text, replyContext string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	link, ok := findDashboardConversation(a.Service.Registry, conversationID)
 	if !ok {
 		return agent.Result{}, errors.New("dashboard conversation not found")
 	}
-	turn, err := a.Service.Runner.Submit(link, text)
+	turn, err := a.Service.Runner.Submit(link, addReplyContext(text, replyContext))
 	if err != nil {
 		return agent.Result{}, err
 	}
 	_, result, err := a.Service.Runner.RunSubmittedWithEvents(ctx, turn, onUpdate, onEvent)
 	return result, err
+}
+
+func addReplyContext(text, replyContext string) string {
+	if replyContext == "" {
+		return text
+	}
+	runes := []rune(replyContext)
+	if len(runes) > 2000 {
+		runes = runes[:2000]
+	}
+	return "[Quoted message context]\n" + string(runes) + "\n[/Quoted message context]\n\n" + text
 }
 
 func findDashboardConversation(registry *conversation.Registry, conversationID string) (conversation.Link, bool) {

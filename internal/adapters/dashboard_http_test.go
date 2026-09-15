@@ -142,7 +142,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusCreated || link.ConversationID == "" {
 		t.Fatalf("new session=%#v status=%d", link, response.StatusCode)
 	}
-	response, err = http.Post(server.URL+"/api/sessions/"+link.ConversationID+"/messages", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
+	response, err = http.Post(server.URL+"/api/sessions/"+link.ConversationID+"/messages", "application/json", bytes.NewBufferString(`{"message":"hello","replyContext":"quoted"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || len(listed.Sessions) != 1 || listed.Sessions[0].MessageCount != 2 || listed.Sessions[0].Title != "hello" {
+	if response.StatusCode != http.StatusOK || len(listed.Sessions) != 1 || listed.Sessions[0].MessageCount != 2 || listed.Sessions[0].Title != "[Quoted message context]\nquoted\n[/Quoted message context]\n\nhello" {
 		t.Fatalf("session list=%#v status=%d", listed, response.StatusCode)
 	}
 	if _, ok := readback["runtime"].(map[string]any); !ok {
