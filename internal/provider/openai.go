@@ -91,14 +91,56 @@ func (p OpenAICompletions) ListModels(ctx context.Context) ([]ModelInfo, error) 
 	}
 	var payload struct {
 		Data []struct {
-			ID string `json:"id"`
+			ID                 string `json:"id"`
+			ModelPickerEnabled *bool  `json:"model_picker_enabled"`
+			Capabilities       struct {
+				Supports struct {
+					ToolCalls *bool `json:"tool_calls"`
+				} `json:"supports"`
+			} `json:"capabilities"`
+			Policy struct {
+				State string `json:"state"`
+			} `json:"policy"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
 		return nil, err
 	}
-	models := make([]ModelInfo, 0, len(payload.Data))
-	for _, model := range payload.Data {
+	data := payload.Data
+	if p.ProviderName == "github-copilot" {
+		pickerIDs := make(map[string]struct{})
+		policyIDs := make(map[string]struct{})
+		metadata := false
+		for _, model := range data {
+			if model.Capabilities.Supports.ToolCalls != nil && !*model.Capabilities.Supports.ToolCalls {
+				continue
+			}
+			if model.ModelPickerEnabled != nil || model.Policy.State != "" || model.Capabilities.Supports.ToolCalls != nil {
+				metadata = true
+			}
+			if model.ModelPickerEnabled != nil && *model.ModelPickerEnabled && model.Policy.State != "disabled" {
+				pickerIDs[model.ID] = struct{}{}
+			}
+			if model.Policy.State == "enabled" {
+				policyIDs[model.ID] = struct{}{}
+			}
+		}
+		if metadata {
+			allowed := pickerIDs
+			if len(allowed) == 0 {
+				allowed = policyIDs
+			}
+			filtered := data[:0]
+			for _, model := range data {
+				if _, ok := allowed[model.ID]; ok {
+					filtered = append(filtered, model)
+				}
+			}
+			data = filtered
+		}
+	}
+	models := make([]ModelInfo, 0, len(data))
+	for _, model := range data {
 		if strings.TrimSpace(model.ID) != "" {
 			models = append(models, ModelInfo{Provider: p.ProviderName, ID: model.ID})
 		}

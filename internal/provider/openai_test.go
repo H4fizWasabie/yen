@@ -70,6 +70,24 @@ func TestOpenAICompletionsListsModels(t *testing.T) {
 	}
 }
 
+func TestGitHubCopilotCatalogFiltersUnavailableModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"disabled","model_picker_enabled":true,"policy":{"state":"disabled"}},
+			{"id":"available","model_picker_enabled":true,"policy":{"state":"enabled"}},
+			{"id":"policy-only","model_picker_enabled":false,"policy":{"state":"enabled"}},
+			{"id":"no-tools","model_picker_enabled":true,"policy":{"state":"enabled"},"capabilities":{"supports":{"tool_calls":false}}}
+		]}`))
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "key", "model")
+	client.ProviderName = "github-copilot"
+	models, err := client.ListModels(context.Background())
+	if err != nil || len(models) != 1 || models[0].ID != "available" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
 func TestOpenAICompletionsPreservesResponseMetadataAndFinishReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
