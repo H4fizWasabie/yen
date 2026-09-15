@@ -167,7 +167,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			}
 			return s.response(output, request.ID, request.Type, true, map[string]any{"text": ""}, nil)
 		default:
-			return s.response(output, request.ID, request.Type, true, map[string]any{"messageCount": len(session.Messages()), "leafId": session.LeafID()}, nil)
+			return s.response(output, request.ID, request.Type, true, sessionStats(session), nil)
 		}
 	case "branch":
 		session, err := s.Runner.OpenSession(link)
@@ -184,6 +184,18 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"artifacts": session.Artifacts()}, nil)
+	case "get_fork_messages":
+		session, err := s.Runner.OpenSession(link)
+		if err != nil {
+			return err
+		}
+		messages := make([]map[string]string, 0)
+		for _, entry := range session.Tree() {
+			if entry.Message != nil && entry.Message.Role == "user" {
+				messages = append(messages, map[string]string{"entryId": entry.ID, "text": contentText(entry.Message.Content)})
+			}
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"messages": messages}, nil)
 	case "set_session_name":
 		session, err := s.Runner.OpenSession(link)
 		if err != nil {
@@ -334,4 +346,40 @@ func contentText(content any) string {
 		return builder.String()
 	}
 	return fmt.Sprint(content)
+}
+
+func sessionStats(current *session.Session) map[string]any {
+	stats := map[string]any{
+		"sessionFile": current.Path(), "sessionId": current.Header().ID,
+		"userMessages": 0, "assistantMessages": 0, "toolCalls": 0, "toolResults": 0,
+		"totalMessages": 0,
+		"tokens":        map[string]int{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
+	}
+	for _, message := range current.Messages() {
+		stats["totalMessages"] = stats["totalMessages"].(int) + 1
+		switch message.Role {
+		case "user":
+			stats["userMessages"] = stats["userMessages"].(int) + 1
+		case "assistant":
+			stats["assistantMessages"] = stats["assistantMessages"].(int) + 1
+		case "toolResult":
+			stats["toolResults"] = stats["toolResults"].(int) + 1
+		}
+		if message.Usage != nil {
+			tokens := stats["tokens"].(map[string]int)
+			tokens["input"] += message.Usage.Input
+			tokens["output"] += message.Usage.Output
+			tokens["cacheRead"] += message.Usage.CacheRead
+			tokens["cacheWrite"] += message.Usage.CacheWrite
+			tokens["total"] += message.Usage.TotalTokens
+		}
+		if parts, ok := message.Content.([]session.ContentPart); ok {
+			for _, part := range parts {
+				if part.Type == "toolCall" {
+					stats["toolCalls"] = stats["toolCalls"].(int) + 1
+				}
+			}
+		}
+	}
+	return stats
 }

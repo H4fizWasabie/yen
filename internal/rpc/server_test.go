@@ -181,3 +181,32 @@ func TestImportSessionCommandCopiesExternalSession(t *testing.T) {
 		t.Fatalf("active=%#v err=%v", active, err)
 	}
 }
+
+func TestSessionStatsAndForkMessagesCommands(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stats.jsonl")
+	saved := session.New(path, session.Header{ID: "stats", ConversationID: "stats", CWD: dir})
+	if _, err := saved.Append(session.Message{Role: "user", Content: "choose fork"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.Append(session.Message{Role: "assistant", Content: "done", Usage: &session.Usage{Input: 2, Output: 3, TotalTokens: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "stats", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{ID: "1", Type: "get_session_stats"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{ID: "2", Type: "get_fork_messages"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"userMessages":1`) || !strings.Contains(output.String(), "choose fork") || !strings.Contains(output.String(), `"total":5`) {
+		t.Fatalf("output=%s", output.String())
+	}
+}
