@@ -415,10 +415,11 @@ from disk. The focused test covers both directions. The full gate is now 242
 tests plus race/vet/diff. Clone/new and the full TUI selector flow still need
 an active-session ownership slice.
 
-`/clone [path.jsonl]` now creates a durable fork at the current leaf and
-preserves the source path as `parentSession`; it reports the new path but does
-not switch the active CLI session yet. The focused clone test and full 243-test
-gate pass.
+`/clone [path.jsonl]` now creates a durable fork at the current leaf, preserves
+the source path as `parentSession`, and switches the active CLI session and
+runner path to the clone. `/new` creates and switches to a fresh session while
+preserving the canonical conversation identity. Focused clone/new tests and
+the full 244-test gate pass.
 
 ## Important deferred product change
 

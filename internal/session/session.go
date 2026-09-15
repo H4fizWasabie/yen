@@ -287,12 +287,25 @@ func Import(source, destination string) (*Session, error) {
 
 // Reload replaces the in-memory view with the validated contents on disk.
 func (s *Session) Reload() error {
-	reloaded, err := Open(s.path)
+	return s.ReplaceFrom(s.path)
+}
+
+// ReplaceFrom switches this handle to another validated session file.
+func (s *Session) ReplaceFrom(path string) error {
+	reloaded, err := Open(path)
 	if err != nil {
 		return err
 	}
 	*s = *reloaded
 	return nil
+}
+
+// Save publishes a newly created session header and any pending entries.
+func (s *Session) Save() error {
+	if s.flushed {
+		return nil
+	}
+	return s.publish()
 }
 
 func migrateSession(s *Session) bool {

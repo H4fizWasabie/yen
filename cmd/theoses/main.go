@@ -140,7 +140,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			if strings.TrimSpace(prompt) == "" {
 				continue
 			}
-			handled, err := handleInteractiveCommand(prompt, currentSession, runner, link, stdout)
+			handled, err := handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, stdout)
 			if err != nil {
 				return reportError(stderr, err)
 			}
@@ -162,7 +162,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func handleInteractiveCommand(input string, current *session.Session, runner *runtime.Runner, link conversation.Link, stdout io.Writer) (bool, error) {
+func handleInteractiveCommand(input string, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
 	text := strings.TrimSpace(input)
 	if strings.HasPrefix(text, "!") {
 		excludeFromContext := strings.HasPrefix(text, "!!")
@@ -321,7 +321,26 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		if err != nil {
 			return true, err
 		}
+		if err := current.ReplaceFrom(cloned.Path()); err != nil {
+			return true, err
+		}
+		*sessionPath = cloned.Path()
 		_, err = fmt.Fprintf(stdout, "Session cloned to: %s\n", cloned.Path())
+		return true, err
+	case text == "/new":
+		path := filepath.Join(filepath.Dir(current.Path()), fmt.Sprintf("session-%d.jsonl", time.Now().UnixNano()))
+		header := current.Header()
+		header.ID = "session-" + fmt.Sprint(time.Now().UnixNano())
+		header.ParentSession = ""
+		fresh := session.New(path, header)
+		if err := fresh.Save(); err != nil {
+			return true, err
+		}
+		if err := current.ReplaceFrom(path); err != nil {
+			return true, err
+		}
+		*sessionPath = path
+		_, err := fmt.Fprintf(stdout, "New session started: %s\n", path)
 		return true, err
 	case text == "/working-note":
 		note := current.WorkingNote()

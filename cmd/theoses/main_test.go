@@ -137,26 +137,27 @@ func TestInteractiveSessionCommands(t *testing.T) {
 	runner := &runtime.Runner{}
 	link := conversation.Link{ConversationID: "conv-1"}
 	var output bytes.Buffer
-	handled, err := handleInteractiveCommand("/name evening", current, runner, link, &output)
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/name evening", current, runner, link, &activePath, &output)
 	if err != nil || !handled || current.SessionName() != "evening" {
 		t.Fatalf("name command handled=%v err=%v name=%q", handled, err, current.SessionName())
 	}
-	handled, err = handleInteractiveCommand("/session", current, runner, link, &output)
+	handled, err = handleInteractiveCommand("/session", current, runner, link, &activePath, &output)
 	if err != nil || !handled || !strings.Contains(output.String(), "session-1") {
 		t.Fatalf("session command handled=%v err=%v output=%q", handled, err, output.String())
 	}
-	handled, err = handleInteractiveCommand("/working-note", current, runner, link, &output)
+	handled, err = handleInteractiveCommand("/working-note", current, runner, link, &activePath, &output)
 	if err != nil || !handled || !strings.Contains(output.String(), "Working Note is empty") {
 		t.Fatalf("working note command handled=%v err=%v output=%q", handled, err, output.String())
 	}
 	if _, err := current.StoreArtifact("fixture", "result.txt", []byte("artifact")); err != nil {
 		t.Fatal(err)
 	}
-	handled, err = handleInteractiveCommand("/tree", current, runner, link, &output)
+	handled, err = handleInteractiveCommand("/tree", current, runner, link, &activePath, &output)
 	if err != nil || !handled || !strings.Contains(output.String(), "session-1") {
 		t.Fatalf("tree command handled=%v err=%v output=%q", handled, err, output.String())
 	}
-	handled, err = handleInteractiveCommand("/artifacts", current, runner, link, &output)
+	handled, err = handleInteractiveCommand("/artifacts", current, runner, link, &activePath, &output)
 	if err != nil || !handled || !strings.Contains(output.String(), "fixture") {
 		t.Fatalf("artifacts command handled=%v err=%v output=%q", handled, err, output.String())
 	}
@@ -166,7 +167,8 @@ func TestInteractiveBashCommandsPersistOutputAndExclusion(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})
 	var output bytes.Buffer
-	handled, err := handleInteractiveCommand("!!printf hidden", current, &runtime.Runner{}, conversation.Link{}, &output)
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("!!printf hidden", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
 	if err != nil || !handled || !strings.Contains(output.String(), "hidden") {
 		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
 	}
@@ -188,7 +190,8 @@ func TestInteractiveSessionExportAndImport(t *testing.T) {
 	}
 	exportPath := filepath.Join(dir, "copy.jsonl")
 	var output bytes.Buffer
-	handled, err := handleInteractiveCommand("/export "+exportPath, current, &runtime.Runner{}, conversation.Link{}, &output)
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/export "+exportPath, current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
 	if err != nil || !handled {
 		t.Fatalf("export handled=%v err=%v", handled, err)
 	}
@@ -200,7 +203,7 @@ func TestInteractiveSessionExportAndImport(t *testing.T) {
 	if _, err := incoming.Append(session.Message{Role: "assistant", Content: "reply"}); err != nil {
 		t.Fatal(err)
 	}
-	handled, err = handleInteractiveCommand("/import "+importSource, current, &runtime.Runner{}, conversation.Link{}, &output)
+	handled, err = handleInteractiveCommand("/import "+importSource, current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
 	if err != nil || !handled || len(current.Messages()) != 2 || current.Messages()[0].Content != "after" {
 		t.Fatalf("import handled=%v err=%v messages=%#v", handled, err, current.Messages())
 	}
@@ -218,13 +221,34 @@ func TestInteractiveCloneCreatesFork(t *testing.T) {
 	}
 	clonePath := filepath.Join(dir, "clone.jsonl")
 	var output bytes.Buffer
-	handled, err := handleInteractiveCommand("/clone "+clonePath, current, &runtime.Runner{}, conversation.Link{}, &output)
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/clone "+clonePath, current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
 	if err != nil || !handled || !strings.Contains(output.String(), clonePath) {
 		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
 	}
 	cloned, err := session.Open(clonePath)
 	if err != nil || len(cloned.Messages()) != 2 {
 		t.Fatalf("clone=%#v err=%v", cloned, err)
+	}
+	if activePath != clonePath || current.Path() != clonePath {
+		t.Fatalf("active path=%q current path=%q", activePath, current.Path())
+	}
+}
+
+func TestInteractiveNewSessionSwitchesActivePath(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "old", ConversationID: "conv-1", CWD: dir})
+	if _, err := current.Append(session.Message{Role: "user", Content: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	activePath := current.Path()
+	var output bytes.Buffer
+	handled, err := handleInteractiveCommand("/new", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || current.Path() == filepath.Join(dir, "session.jsonl") || len(current.Messages()) != 0 || activePath != current.Path() {
+		t.Fatalf("handled=%v err=%v path=%q active=%q messages=%#v", handled, err, current.Path(), activePath, current.Messages())
 	}
 }
 
@@ -234,21 +258,22 @@ func TestInteractiveProviderAndTrustCommands(t *testing.T) {
 	runner := &runtime.Runner{Provider: provider.NewOpenAICompletions("http://fixture", "key", "old-model")}
 	link := conversation.Link{ConversationID: "conv-1", WorkspaceID: dir}
 	var output bytes.Buffer
-	handled, err := handleInteractiveCommand("/model new-model", current, runner, link, &output)
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/model new-model", current, runner, link, &activePath, &output)
 	if err != nil || !handled || providerModel(runner.Provider) != "new-model" {
 		t.Fatalf("model handled=%v err=%v output=%q", handled, err, output.String())
 	}
-	handled, err = handleInteractiveCommand("/thinking high", current, runner, link, &output)
+	handled, err = handleInteractiveCommand("/thinking high", current, runner, link, &activePath, &output)
 	if err != nil || !handled || provider.ThinkingLevel(runner.Provider) != "high" {
 		t.Fatalf("thinking handled=%v err=%v output=%q", handled, err, output.String())
 	}
-	handled, err = handleInteractiveCommand("/retry on", current, runner, link, &output)
+	handled, err = handleInteractiveCommand("/retry on", current, runner, link, &activePath, &output)
 	if err != nil || !handled || !provider.RetryEnabled(runner.Provider) {
 		t.Fatalf("retry handled=%v err=%v output=%q", handled, err, output.String())
 	}
 	t.Setenv("YEN_TRUST_PROJECT", "")
 	t.Setenv("YEN_TRUST_FILE", filepath.Join(dir, "trusted-projects.json"))
-	handled, err = handleInteractiveCommand("/trust", current, runner, link, &output)
+	handled, err = handleInteractiveCommand("/trust", current, runner, link, &activePath, &output)
 	if err != nil || !handled || !settings.IsTrusted(dir) {
 		t.Fatalf("trust handled=%v err=%v output=%q", handled, err, output.String())
 	}
