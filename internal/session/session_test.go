@@ -90,6 +90,18 @@ func TestOpenSessionSkipsMalformedLinesBeforeAndAfterHeader(t *testing.T) {
 	}
 }
 
+func TestOpenSessionRejectsHeaderScanBeyondOneMiB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	header := `{"type":"session","version":3,"id":"session-1"}`
+	data := append([]byte(strings.Repeat("x", 1<<20)+"\n"), []byte(header+"\n")...)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil || !strings.Contains(err.Error(), "header scan limit") {
+		t.Fatalf("Open error=%v, want header scan limit", err)
+	}
+}
+
 func TestContextMessagesNormalizeMissingMessageContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	raw := strings.Join([]string{
@@ -115,18 +127,6 @@ func TestContextMessagesNormalizeMissingMessageContent(t *testing.T) {
 		if !ok || len(parts) != 0 {
 			t.Fatalf("message content=%#v, want empty []ContentPart", message.Content)
 		}
-	}
-}
-
-func TestOpenSessionRejectsHeaderScanBeyondOneMiB(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	header := `{"type":"session","version":3,"id":"session-1"}`
-	data := append([]byte(strings.Repeat("x", 1<<20)+"\n"), []byte(header+"\n")...)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Open(path); err == nil || !strings.Contains(err.Error(), "header scan limit") {
-		t.Fatalf("Open error=%v, want header scan limit", err)
 	}
 }
 
