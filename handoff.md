@@ -382,6 +382,12 @@ links all point to `conv-5955b65fd7cbaf4f869df7af7f6c1fb6`, and dashboard
 new cross-channel prompt/replay acceptance is still required before claiming
 full live session parity.
 
+That acceptance was completed on 2026-09-15 through the authenticated Yen
+dashboard: POSTing the deterministic prompt returned SSE `delta`, `usage`, and
+`done`, with `CROSS_CHANNEL_OK` in the delta; the following GET of the same
+canonical conversation read back the assistant result. This proves dashboard
+write/read continuity; an incoming Telegram replay is still open.
+
 Yen now has `internal/auth`, a mode-0600 atomic JSON credential store with
 serialized per-process mutation, secret-free listing metadata, API-key/OAuth
 record shapes, and explicit `YEN_AUTH_FILE` fallback wiring for provider
