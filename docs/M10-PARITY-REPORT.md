@@ -28,8 +28,9 @@ deferred below.
 ## Accepted and deferred differences
 
 Artifact catalog projection now follows the oracle's live-branch rules: stale
-paths are omitted, repeated paths keep the newest entry, and lines use the
-`label (size bytes): path` shape. TypeScript authority:
+paths are omitted, repeated paths keep the newest entry, blank labels become
+`document`, and lines use the `label (size bytes): path` shape. TypeScript
+authority:
 `packages/coding-agent/src/core/session-manager.ts:1237-1260`; Go evidence:
 `internal/session/session.go` and
 `TestArtifactCatalogUsesLiveNewestUniquePaths`. The focused test and full

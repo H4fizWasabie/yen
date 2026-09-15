@@ -649,6 +649,10 @@ func (s *Session) ArtifactCatalog(maxBytes int) string {
 }
 
 func (s *Session) appendArtifact(artifact Artifact) (string, error) {
+	artifact.Label = strings.TrimSpace(artifact.Label)
+	if artifact.Label == "" {
+		artifact.Label = "document"
+	}
 	id := newEntryID(s.entries)
 	parentID := s.currentParentID()
 	entry := sessionEntry{Type: "artifact", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Label: artifact.Label, Path: artifact.Path, Size: artifact.Size}

@@ -59,3 +59,18 @@ func TestArtifactCatalogUsesLiveNewestUniquePaths(t *testing.T) {
 		t.Fatalf("catalog retained stale artifact entries: %q", catalog)
 	}
 }
+
+func TestAppendArtifactNormalizesBlankLabel(t *testing.T) {
+	dir := t.TempDir()
+	s := New(filepath.Join(dir, "session.jsonl"), Header{ID: "session-1", CWD: dir})
+	livePath := filepath.Join(dir, "live.txt")
+	if err := os.WriteFile(livePath, []byte("live"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.appendArtifact(Artifact{Label: "  ", Path: livePath, Size: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.ArtifactCatalog(1000); !strings.Contains(got, "- document (4 bytes): "+livePath) {
+		t.Fatalf("catalog=%q", got)
+	}
+}
