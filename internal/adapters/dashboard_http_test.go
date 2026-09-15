@@ -149,6 +149,14 @@ func TestDashboardShellRendersParentAwareBranchTree(t *testing.T) {
 	}
 }
 
+func TestDashboardShellSupportsReplyContext(t *testing.T) {
+	for _, want := range []string{"reply-bar", "data-reply", "replyContext", "setReply(null)"} {
+		if !strings.Contains(dashboardHTML, want) {
+			t.Fatalf("dashboard shell does not support %q", want)
+		}
+	}
+}
+
 func TestDashboardHistoryIncludesBashExecution(t *testing.T) {
 	history := dashboardHistory([]session.Message{{Role: "bashExecution", Command: "pwd", Output: "/work", ExcludeFromContext: true}})
 	segments := history[0]["segments"].([]map[string]any)
