@@ -20,7 +20,7 @@ deferred below.
 | Provider | `packages/ai/src/api/openai-completions.ts:699-717`, `packages/ai/src/utils/overflow.ts:39-171` | deterministic SSE, response-body overflow classification, transient exclusion, and live `z-ai/glm-5.3-flash` OpenRouter reply | partial; provider matrix open |
 | Telegram | `packages/telegram/src/index.ts:140-150`, `:183-285`, `:340-385`, `:630-700` | dedicated unit, Unicode chunking and reply-context/target tests, valid token, live reply, owner guard, `/stop` unit test | partial; rich rendering, images, and live long-reply/reply acceptance deferred |
 | Dashboard | `packages/dashboard/src/index.ts:320-400`, `:530-550`, `packages/dashboard/src/public/app.js:417-458` | Go auth unit tests plus isolated local acceptance: health 200, unauthenticated API 401, login 200, cookie 200, Bearer 200; TypeScript-shaped session list/read-back for shared dashboard/Telegram links; SSE delta/tool_call/tool_result/usage/done/error protocol tests; live request routed to canonical conversation | partial; VPS/UI acceptance open |
-| Semantic memory | `packages/coding-agent/src/core/tools/memory.ts:18-59`, `packages/coding-agent/src/core/memory-store.ts:9-19`, `packages/coding-agent/src/core/memory-consolidation.ts:28-70`, `:257-330`, `:401-406`, `:500-525` | conversation-scoped `save_note`/`remember`; live favorite-color and probe read-back; consolidation applies only the pinned closed edge vocabulary; opt-in trigger, 70-message ceiling, 100,000-character tail cap, separate state, failure cooldown, scoped provider retry, required episode timestamps, and optional JSON-object request mode are covered by Go tests | partial; live consolidation acceptance open |
+| Semantic memory | `packages/coding-agent/src/core/tools/memory.ts:18-59`, `packages/coding-agent/src/core/memory-store.ts:9-19`, `packages/coding-agent/src/core/memory-consolidation.ts:28-70`, `:257-330`, `:401-406`, `:500-525` | conversation-scoped `save_note`/`remember`; live favorite-color and probe read-back; consolidation applies only the pinned closed edge vocabulary; opt-in trigger, 70-message ceiling, 100,000-character tail cap, separate state, failure cooldown, scoped provider retry, required episode timestamps, optional JSON-object request mode, and live trigger/checkpoint/episode read-back with the separate Yen provider key | partial; broader consolidation output parity remains open |
 | Session read-back/migration | `packages/coding-agent/src/core/session-manager.ts:31-104`, `:284-355`, `:397-430`, `:986-1022` | Go fixtures migrate v1/v2 JSONL to v3, preserve v2 tree links and extension/message payloads, assign v1 IDs/parents, convert `hookMessage`, project the active parent-linked branch, and read flat v3 compaction entries; 103 Go tests | partial; malformed-line recovery edge cases remain open |
 | Episodic memory | `packages/coding-agent/src/core/episodic-store.ts:85-` | eight live records (`cli`, `telegram`, `dashboard`) in shared SQLite store; restart read-back | partial; historical episodic migration remains explicit-only |
 | Operations | deployed TypeScript systemd units | Go systemd units, health, journald, verified backup, rollback/restore, and isolated installer acceptance with temporary root/fake systemctl | partial; real-host rollout remains separate |
@@ -32,8 +32,9 @@ deferred below.
 - Dashboard rendering, full branch navigation, historical episodic migration,
   the full provider matrix,
   and unported tools remain deferred by scope. Dashboard API authentication is
-  implemented behind `THEOSES_DASHBOARD_TOKEN`, but authenticated live
-  acceptance remains open.
+  implemented behind the Yen dashboard token, but authenticated live
+  acceptance remains open. Live consolidation acceptance is now recorded; the
+  full provider matrix and historical episodic migration remain deferred.
 - A fresh-host installer remains deferred; the side-by-side systemd layout,
   backup, health, journald, and rollback procedure are verified on the pilot
   VPS.

@@ -48,6 +48,12 @@ provider key after the data migration; all four Go/TypeScript units were
 verified active. Auto-consolidation was not enabled for this split-provider
 check.
 
+Auto-consolidation is now enabled through `YEN_AUTO_CONSOLIDATE=1` in
+`/etc/yen/yen.env`. A live `thanks` trigger succeeded using Yen's separate
+provider key; `/var/lib/yen/memory/consolidation-state.json` advanced and the
+SQLite episodic store read back a new current record. This acceptance did not
+modify or restart any TypeScript unit.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
