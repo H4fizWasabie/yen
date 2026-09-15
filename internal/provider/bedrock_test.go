@@ -102,6 +102,21 @@ func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
 	}
 }
 
+func TestBedrockInputRejectsUnsupportedOrInvalidImages(t *testing.T) {
+	for _, image := range []string{
+		"data:image/gif;base64,AQ==",
+		"data:image/png;base64,not-base64",
+		"not-an-image",
+	} {
+		t.Run(image, func(t *testing.T) {
+			_, err := bedrockInput([]agent.Message{{Role: "user", Content: "look", Images: []string{image}}}, nil, "model-1")
+			if err == nil {
+				t.Fatalf("bedrockInput accepted invalid image %q", image)
+			}
+		})
+	}
+}
+
 func TestBedrockListsModelsFromAWSCatalog(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/foundation-models" {

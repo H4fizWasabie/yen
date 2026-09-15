@@ -29,6 +29,14 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+Bedrock image conversion now fails fast for malformed data URLs, invalid
+base64, and unsupported MIME types instead of silently dropping the image.
+This matches `packages/ai/src/api/bedrock-converse-stream.ts:1268-1288`, where
+unknown image types throw during request construction. Go evidence:
+`internal/provider/bedrock.go` and
+`TestBedrockInputRejectsUnsupportedOrInvalidImages`; normal and tool-result
+image paths now share the same error boundary.
+
 The settings boundary now deep-merges nested compaction and retry settings
 from global and project files, migrates the oracle's legacy `queueMode`, and
 applies the shared controls once to every CLI, Telegram, dashboard, and RPC

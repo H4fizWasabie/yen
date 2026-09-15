@@ -266,9 +266,11 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 	if message.ToolCallID != "" {
 		content := []bedrocktypes.ToolResultContentBlock{&bedrocktypes.ToolResultContentBlockMemberText{Value: nonEmpty(message.Content)}}
 		for _, image := range message.Images {
-			if block, ok := bedrockImage(image); ok {
-				content = append(content, &bedrocktypes.ToolResultContentBlockMemberImage{Value: block})
+			block, err := bedrockImage(image)
+			if err != nil {
+				return nil, err
 			}
+			content = append(content, &bedrocktypes.ToolResultContentBlockMemberImage{Value: block})
 		}
 		status := bedrocktypes.ToolResultStatusSuccess
 		if message.ErrorMessage != "" {
@@ -296,9 +298,11 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 		content = append(content, &bedrocktypes.ContentBlockMemberText{Value: message.Content})
 	}
 	for _, image := range message.Images {
-		if block, ok := bedrockImage(image); ok {
-			content = append(content, &bedrocktypes.ContentBlockMemberImage{Value: block})
+		block, err := bedrockImage(image)
+		if err != nil {
+			return nil, err
 		}
+		content = append(content, &bedrocktypes.ContentBlockMemberImage{Value: block})
 	}
 	for _, call := range message.ToolCalls {
 		content = append(content, &bedrocktypes.ContentBlockMemberToolUse{Value: bedrocktypes.ToolUseBlock{
@@ -308,20 +312,20 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 	return content, nil
 }
 
-func bedrockImage(value string) (bedrocktypes.ImageBlock, bool) {
+func bedrockImage(value string) (bedrocktypes.ImageBlock, error) {
 	mime, encoded, ok := parseDataImage(value)
 	if !ok {
-		return bedrocktypes.ImageBlock{}, false
+		return bedrocktypes.ImageBlock{}, errors.New("invalid Bedrock image: expected a data URL")
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return bedrocktypes.ImageBlock{}, false
+		return bedrocktypes.ImageBlock{}, fmt.Errorf("invalid Bedrock image data: %w", err)
 	}
 	format := bedrocktypes.ImageFormat(strings.TrimPrefix(mime, "image/"))
 	if format != bedrocktypes.ImageFormatPng && format != bedrocktypes.ImageFormatJpeg {
-		return bedrocktypes.ImageBlock{}, false
+		return bedrocktypes.ImageBlock{}, fmt.Errorf("unsupported Bedrock image type %q", mime)
 	}
-	return bedrocktypes.ImageBlock{Format: format, Source: &bedrocktypes.ImageSourceMemberBytes{Value: data}}, true
+	return bedrocktypes.ImageBlock{Format: format, Source: &bedrocktypes.ImageSourceMemberBytes{Value: data}}, nil
 }
 
 func nonEmpty(value string) string {
