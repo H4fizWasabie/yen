@@ -10,6 +10,7 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
 )
@@ -208,5 +209,22 @@ func TestSessionStatsAndForkMessagesCommands(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), `"userMessages":1`) || !strings.Contains(output.String(), "choose fork") || !strings.Contains(output.String(), `"total":5`) {
 		t.Fatalf("output=%s", output.String())
+	}
+}
+
+func TestSetModelCommandReplacesConfiguredProvider(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "model", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{ID: "1", Type: "set_model", Provider: "anthropic", Model: "claude-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if name, model := providerpkg.Describe(runner.Provider); name != "anthropic" || model != "claude-test" || !strings.Contains(output.String(), `"success":true`) {
+		t.Fatalf("provider=%q model=%q output=%s", name, model, output.String())
 	}
 }

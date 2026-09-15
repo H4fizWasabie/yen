@@ -14,6 +14,7 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
 )
@@ -39,6 +40,8 @@ type command struct {
 	EntryID           string     `json:"entryId,omitempty"`
 	Name              string     `json:"name,omitempty"`
 	Path              string     `json:"path,omitempty"`
+	Provider          string     `json:"provider,omitempty"`
+	Model             string     `json:"modelId,omitempty"`
 	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 }
@@ -131,6 +134,8 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		return s.response(output, request.ID, request.Type, true, map[string]any{
 			"sessionId": link.ConversationID, "isStreaming": active,
 			"sessionName":  session.SessionName(),
+			"provider":     func() string { name, _ := providerpkg.Describe(s.Runner.Provider); return name }(),
+			"model":        func() string { _, model := providerpkg.Describe(s.Runner.Provider); return model }(),
 			"messageCount": len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
 	case "get_messages":
@@ -246,6 +251,20 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		s.Runner.AutoCompactDisabled = !*request.Enabled
 		return s.response(output, request.ID, request.Type, true, map[string]any{"enabled": *request.Enabled}, nil)
+	case "set_model":
+		if strings.TrimSpace(request.Provider) == "" || strings.TrimSpace(request.Model) == "" {
+			return errors.New("provider and modelId are required")
+		}
+		if _, active := s.Runner.Active(link.ConversationID); active {
+			return errors.New("cannot change model during an active operation")
+		}
+		configured, err := providerpkg.NewConfigured(request.Provider, request.Model)
+		if err != nil {
+			return err
+		}
+		s.Runner.Provider = configured
+		name, model := providerpkg.Describe(configured)
+		return s.response(output, request.ID, request.Type, true, map[string]any{"provider": name, "model": model}, nil)
 	default:
 		return fmt.Errorf("unsupported rpc command %q", request.Type)
 	}

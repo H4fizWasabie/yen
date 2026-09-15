@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -76,6 +77,50 @@ func ConfiguredFromEnv() agent.Provider {
 	}
 	key := firstEnv("YEN_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
 	return NewAnthropicMessages(baseURL, key, model)
+}
+
+func NewConfigured(providerID, model string) (agent.Provider, error) {
+	providerID = strings.ToLower(strings.TrimSpace(providerID))
+	model = strings.TrimSpace(model)
+	if providerID == "anthropic" {
+		if model == "" {
+			model = "claude-sonnet-4-20250514"
+		}
+		baseURL := firstEnv("YEN_ANTHROPIC_BASE_URL", "THEOSES_ANTHROPIC_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://api.anthropic.com/v1"
+		}
+		return NewAnthropicMessages(baseURL, firstEnv("YEN_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"), model), nil
+	}
+	baseURL, ok := providerDefaults[providerID]
+	if !ok {
+		return nil, fmt.Errorf("unsupported provider %q", providerID)
+	}
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
+	key := ""
+	if env := providerKeyEnvs[providerID]; env != "" {
+		key = os.Getenv(env)
+	}
+	if key == "" {
+		key = firstEnv("YEN_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
+	}
+	client := NewOpenAICompletions(baseURL, key, model)
+	client.ProviderName = providerID
+	client.ReasoningEffort = firstEnv("YEN_REASONING_EFFORT", "THEOSES_REASONING_EFFORT")
+	return client, nil
+}
+
+func Describe(p agent.Provider) (string, string) {
+	switch client := p.(type) {
+	case OpenAICompletions:
+		return client.ProviderName, client.Model
+	case AnthropicMessages:
+		return "anthropic", client.Model
+	default:
+		return "", ""
+	}
 }
 
 func firstEnv(names ...string) string {

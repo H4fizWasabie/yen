@@ -23,3 +23,23 @@ func TestNewFromEnvPreservesExplicitLegacyBaseURL(t *testing.T) {
 		t.Fatalf("client=%#v", client)
 	}
 }
+
+func TestNewConfiguredSupportsOpenAICompatibleAndAnthropicProviders(t *testing.T) {
+	t.Setenv("YEN_OPENROUTER_API_KEY", "yen-router")
+	configured, err := NewConfigured("openrouter", "router-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, model := Describe(configured)
+	if name != "openrouter" || model != "router-model" {
+		t.Fatalf("provider=%q model=%q", name, model)
+	}
+	configured, err = NewConfigured("anthropic", "claude-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, model = Describe(configured)
+	if name != "anthropic" || model != "claude-model" {
+		t.Fatalf("provider=%q model=%q", name, model)
+	}
+}
