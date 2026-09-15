@@ -150,7 +150,7 @@ func generateOpenRouter(ctx context.Context, client *http.Client, prompt string)
 }
 
 func generateCloudflare(ctx context.Context, client *http.Client, prompt string) ([]byte, string, string, error) {
-	accountID, token := os.Getenv("CLOUDFLARE_ACCOUNT_ID"), os.Getenv("CLOUDFLARE_API_TOKEN")
+	accountID, token := os.Getenv("YEN_CLOUDFLARE_ACCOUNT_ID"), os.Getenv("YEN_CLOUDFLARE_API_TOKEN")
 	if accountID == "" || token == "" {
 		return nil, "", "", fmt.Errorf("CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN not set")
 	}

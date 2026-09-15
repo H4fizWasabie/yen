@@ -126,7 +126,7 @@ func TestWebSearchFormatsTavilyResults(t *testing.T) {
 		_, _ = w.Write([]byte(`{"answer":"summary","results":[{"title":"Title","url":"https://example.test","content":"snippet"}]}`))
 	}))
 	defer server.Close()
-	t.Setenv("TAVILY_API_KEY", "key")
+	t.Setenv("YEN_TAVILY_API_KEY", "key")
 	tool := webSearchTool{client: server.Client(), endpoint: server.URL}
 	result, err := tool.Execute(context.Background(), map[string]any{"query": "yen"})
 	if err != nil || !strings.Contains(result, "summary") || !strings.Contains(result, "https://example.test") {

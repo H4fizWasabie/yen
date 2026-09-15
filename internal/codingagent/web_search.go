@@ -28,7 +28,11 @@ type tavilyResponse struct {
 }
 
 func NewWebSearchTool() agent.Tool {
-	return webSearchTool{client: http.DefaultClient, endpoint: "https://api.tavily.com/search"}
+	endpoint := os.Getenv("YEN_TAVILY_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "https://api.tavily.com/search"
+	}
+	return webSearchTool{client: http.DefaultClient, endpoint: endpoint}
 }
 
 func (webSearchTool) Name() string { return "web_search" }
@@ -38,7 +42,7 @@ func (t webSearchTool) Execute(ctx context.Context, args map[string]any) (string
 	if !ok || strings.TrimSpace(query) == "" {
 		return "", fmt.Errorf("query is required")
 	}
-	keys := []string{os.Getenv("TAVILY_API_KEY"), os.Getenv("TAVILY_API_KEY_2")}
+	keys := []string{os.Getenv("YEN_TAVILY_API_KEY"), os.Getenv("YEN_TAVILY_API_KEY_2")}
 	var last error
 	for _, key := range keys {
 		if key == "" {
@@ -75,7 +79,7 @@ func (t webSearchTool) Execute(ctx context.Context, args map[string]any) (string
 	if last != nil {
 		return "", last
 	}
-	return "", fmt.Errorf("web_search requires TAVILY_API_KEY (and optionally TAVILY_API_KEY_2) to be set")
+	return "", fmt.Errorf("web_search requires YEN_TAVILY_API_KEY (and optionally YEN_TAVILY_API_KEY_2) to be set")
 }
 
 func formatWebResults(response tavilyResponse) string {
