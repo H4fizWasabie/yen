@@ -138,6 +138,18 @@ func TestGrepToolMatchesRecursiveGlobstarPaths(t *testing.T) {
 	}
 }
 
+func TestGrepToolSkipsBinaryFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "binary.dat"), []byte("needle\x00binary\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle"})
+	if err != nil || got != "No matches found" {
+		t.Fatalf("grep=%q err=%v", got, err)
+	}
+}
+
 func TestGrepToolTruncatesLongMatchingLines(t *testing.T) {
 	dir := t.TempDir()
 	line := "match " + strings.Repeat("x", 600)
