@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 const workingNotePromptPrefix = "<working_note>\nEstablished by earlier turns; verify this note if it contradicts current evidence.\n"
@@ -31,6 +32,10 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 	if err != nil {
 		return agent.Message{}, false
 	}
+	resourceSettings, _ := settings.Load(workspace)
+	if resourceSettings.Trusted != nil && !*resourceSettings.Trusted && os.Getenv("YEN_TRUST_PROJECT") != "1" {
+		return agent.Message{}, false
+	}
 	var dirs []string
 	for dir := workspace; ; dir = filepath.Dir(dir) {
 		dirs = append(dirs, dir)
@@ -52,6 +57,16 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 			}
 		}
 	}
+	for _, configured := range resourceSettings.ContextFiles {
+		path := configured
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(workspace, path)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr == nil && strings.TrimSpace(string(data)) != "" {
+			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+		}
+	}
 	if len(sections) == 0 {
 		return agent.Message{}, false
 	}
@@ -71,6 +86,13 @@ type skillInfo struct {
 
 func SkillsMessage(workspace string) (agent.Message, bool) {
 	paths := []string{filepath.Join(workspace, ".theoses", "skills"), filepath.Join(workspace, ".agents", "skills")}
+	resourceSettings, _ := settings.Load(workspace)
+	for _, configured := range resourceSettings.SkillDirs {
+		if !filepath.IsAbs(configured) {
+			configured = filepath.Join(workspace, configured)
+		}
+		paths = append(paths, configured)
+	}
 	if dir := os.Getenv("YEN_SKILLS_DIR"); dir != "" {
 		paths = append(paths, dir)
 	}
