@@ -125,7 +125,7 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 		data, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
 		return agent.Response{}, fmt.Errorf("radius returned %s: %s", response.Status, strings.TrimSpace(string(data)))
 	}
-	result := agent.Response{Provider: p.providerName(), Model: p.Model}
+	result := agent.Response{Provider: p.providerName(), Model: p.Model, ResponseModel: p.Model}
 	partial := agent.Message{Role: "assistant", Provider: p.providerName(), Model: p.Model}
 	arguments := map[int]string{}
 	toolCalls := map[int]agent.ToolCall{}

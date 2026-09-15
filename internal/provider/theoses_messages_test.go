@@ -44,7 +44,7 @@ func TestTheosesMessagesStreamsTextToolCallAndUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Text != "ok" || result.StopReason != "toolUse" || result.ResponseID != "resp-1" || result.Usage.TotalTokens != 5 {
+	if result.Text != "ok" || result.StopReason != "toolUse" || result.ResponseID != "resp-1" || result.ResponseModel != "auto" || result.Usage.TotalTokens != 5 {
 		t.Fatalf("result=%#v", result)
 	}
 	if len(result.ToolCalls) != 1 || result.ToolCalls[0].Args["path"] != "a.txt" {
