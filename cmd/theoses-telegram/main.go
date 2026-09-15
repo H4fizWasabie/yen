@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dataDir := os.Getenv("THEOSES_DATA_DIR")
+	dataDir := os.Getenv("YEN_DATA_DIR")
 	if dataDir == "" {
 		dataDir = filepath.Join(workspace, ".theoses-go")
 	}
@@ -49,7 +49,7 @@ func main() {
 	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
-	canonicalConversationID := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
+	canonicalConversationID := os.Getenv("YEN_CANONICAL_CONVERSATION_ID")
 	if canonicalConversationID == "" {
 		canonicalConversationID = "yen-primary"
 	}
@@ -62,7 +62,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: canonicalConversationID}, Workspace: workspace}, Token: os.Getenv("THEOSES_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("THEOSES_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("THEOSES_TELEGRAM_API_BASE"), ToolPreferencePath: filepath.Join(dataDir, "telegram-preferences.json"), ArtifactDir: filepath.Join(dataDir, "telegram-artifacts")}
+	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: canonicalConversationID}, Workspace: workspace}, Token: os.Getenv("YEN_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("YEN_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("YEN_TELEGRAM_API_BASE"), ToolPreferencePath: filepath.Join(dataDir, "telegram-preferences.json"), ArtifactDir: filepath.Join(dataDir, "telegram-artifacts")}
 	if err := bot.Run(context.Background()); err != nil {
 		log.Fatal(err)
 	}

@@ -18,9 +18,9 @@ func TestGenerateImageSavesOpenRouterArtifact(t *testing.T) {
 	}))
 	defer server.Close()
 	dir := t.TempDir()
-	t.Setenv("OPENROUTER_API_KEY", "key")
-	t.Setenv("THEOSES_OPENROUTER_IMAGE_ENDPOINT", server.URL)
-	t.Setenv("THEOSES_DATA_DIR", dir)
+	t.Setenv("YEN_OPENROUTER_API_KEY", "key")
+	t.Setenv("YEN_OPENROUTER_IMAGE_ENDPOINT", server.URL)
+	t.Setenv("YEN_DATA_DIR", dir)
 	_, err := (generateImageTool{client: server.Client()}).Execute(context.Background(), map[string]any{"prompt": "a test image"})
 	if err != nil {
 		t.Fatal(err)

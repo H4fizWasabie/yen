@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dataDir := os.Getenv("THEOSES_DATA_DIR")
+	dataDir := os.Getenv("YEN_DATA_DIR")
 	if dataDir == "" {
 		dataDir = filepath.Join(workspace, ".theoses-go")
 	}
@@ -49,7 +49,7 @@ func main() {
 	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
-	canonical := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
+	canonical := os.Getenv("YEN_CANONICAL_CONVERSATION_ID")
 	if canonical == "" {
 		canonical = "yen-primary"
 	}

@@ -34,9 +34,9 @@ func (t generateImageTool) Execute(ctx context.Context, args map[string]any) (st
 	if err != nil {
 		return "", err
 	}
-	dir := os.Getenv("THEOSES_GENERATED_IMAGES_DIR")
+	dir := os.Getenv("YEN_GENERATED_IMAGES_DIR")
 	if dir == "" {
-		dataDir := os.Getenv("THEOSES_DATA_DIR")
+		dataDir := os.Getenv("YEN_DATA_DIR")
 		if dataDir == "" {
 			dataDir = ".theoses-go"
 		}
@@ -103,15 +103,15 @@ func (t generateImageTool) generate(ctx context.Context, prompt string) ([]byte,
 }
 
 func generateOpenRouter(ctx context.Context, client *http.Client, prompt string) ([]byte, string, string, error) {
-	key := os.Getenv("OPENROUTER_API_KEY")
+	key := os.Getenv("YEN_OPENROUTER_API_KEY")
 	if key == "" {
-		return nil, "", "", fmt.Errorf("OPENROUTER_API_KEY not set")
+		return nil, "", "", fmt.Errorf("YEN_OPENROUTER_API_KEY not set")
 	}
-	endpoint := os.Getenv("THEOSES_OPENROUTER_IMAGE_ENDPOINT")
+	endpoint := os.Getenv("YEN_OPENROUTER_IMAGE_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "https://openrouter.ai/api/v1/images"
 	}
-	model := os.Getenv("THEOSES_OPENROUTER_IMAGE_MODEL")
+	model := os.Getenv("YEN_OPENROUTER_IMAGE_MODEL")
 	if model == "" {
 		model = "meta/muse-image"
 	}
@@ -154,7 +154,7 @@ func generateCloudflare(ctx context.Context, client *http.Client, prompt string)
 	if accountID == "" || token == "" {
 		return nil, "", "", fmt.Errorf("CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN not set")
 	}
-	model := os.Getenv("THEOSES_IMAGE_MODEL")
+	model := os.Getenv("YEN_IMAGE_MODEL")
 	if model == "" {
 		model = "@cf/black-forest-labs/flux-1-schnell"
 	}

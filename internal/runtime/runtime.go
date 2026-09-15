@@ -62,7 +62,7 @@ func (r *Runner) SetQueueModes(steering, followUp string) {
 }
 
 func AutoCompactTurnsFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_TURNS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_TURNS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -70,7 +70,7 @@ func AutoCompactTurnsFromEnv() int {
 }
 
 func AutoCompactMaxHistoryTurnsFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_MAX_HISTORY_TURNS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -78,7 +78,7 @@ func AutoCompactMaxHistoryTurnsFromEnv() int {
 }
 
 func AutoCompactKeepRecentTokensFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -86,7 +86,7 @@ func AutoCompactKeepRecentTokensFromEnv() int {
 }
 
 func AutoCompactContextWindowFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_CONTEXT_WINDOW"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -94,7 +94,7 @@ func AutoCompactContextWindowFromEnv() int {
 }
 
 func AutoCompactReserveTokensFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_RESERVE_TOKENS"))
 	if err != nil || value < 1 {
 		return 16384
 	}
@@ -102,17 +102,17 @@ func AutoCompactReserveTokensFromEnv() int {
 }
 
 func AutoCompactOnOverflowFromEnv() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_OVERFLOW")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_AUTO_COMPACT_OVERFLOW")))
 	return value == "1" || value == "true" || value == "yes"
 }
 
 func AutoCompactDisabledFromEnv() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_ENABLED")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_AUTO_COMPACT_ENABLED")))
 	return value == "0" || value == "false" || value == "no" || value == "off"
 }
 
 func AutoConsolidateFromEnv() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_CONSOLIDATE")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_AUTO_CONSOLIDATE")))
 	return value == "1" || value == "true" || value == "yes"
 }
 

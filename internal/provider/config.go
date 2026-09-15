@@ -33,15 +33,15 @@ var providerKeyEnvs = map[string]string{
 }
 
 func NewFromEnv() OpenAICompletions {
-	providerID := strings.ToLower(strings.TrimSpace(firstEnv("YEN_PROVIDER", "THEOSES_PROVIDER")))
-	model := firstEnv("YEN_MODEL", "THEOSES_MODEL")
+	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
+	model := os.Getenv("YEN_MODEL")
 	if strings.Contains(model, "/") && providerID == "" {
 		providerID = "openrouter"
 	}
 	if providerID == "" {
 		providerID = "openai"
 	}
-	baseURL := firstEnv("YEN_OPENAI_BASE_URL", "THEOSES_OPENAI_BASE_URL")
+	baseURL := os.Getenv("YEN_OPENAI_BASE_URL")
 	if baseURL == "" {
 		baseURL = providerDefaults[providerID]
 	}
@@ -56,28 +56,28 @@ func NewFromEnv() OpenAICompletions {
 		key = os.Getenv(env)
 	}
 	if key == "" {
-		key = firstEnv("YEN_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
+		key = os.Getenv("YEN_API_KEY")
 	}
 	client := NewOpenAICompletions(baseURL, key, model)
 	client.ProviderName = providerID
-	client.ReasoningEffort = firstEnv("YEN_REASONING_EFFORT", "THEOSES_REASONING_EFFORT")
+	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
 	return client
 }
 
 func ConfiguredFromEnv() agent.Provider {
-	providerID := strings.ToLower(strings.TrimSpace(firstEnv("YEN_PROVIDER", "THEOSES_PROVIDER")))
+	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
 	if providerID != "anthropic" {
 		return NewFromEnv()
 	}
-	baseURL := firstEnv("YEN_ANTHROPIC_BASE_URL", "THEOSES_ANTHROPIC_BASE_URL")
+	baseURL := os.Getenv("YEN_ANTHROPIC_BASE_URL")
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com/v1"
 	}
-	model := firstEnv("YEN_MODEL", "THEOSES_MODEL")
+	model := os.Getenv("YEN_MODEL")
 	if model == "" {
 		model = "claude-sonnet-4-20250514"
 	}
-	key := firstEnv("YEN_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+	key := os.Getenv("YEN_ANTHROPIC_API_KEY")
 	return NewAnthropicMessages(baseURL, key, model)
 }
 
@@ -88,11 +88,11 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if model == "" {
 			model = "claude-sonnet-4-20250514"
 		}
-		baseURL := firstEnv("YEN_ANTHROPIC_BASE_URL", "THEOSES_ANTHROPIC_BASE_URL")
+		baseURL := os.Getenv("YEN_ANTHROPIC_BASE_URL")
 		if baseURL == "" {
 			baseURL = "https://api.anthropic.com/v1"
 		}
-		return NewAnthropicMessages(baseURL, firstEnv("YEN_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"), model), nil
+		return NewAnthropicMessages(baseURL, os.Getenv("YEN_ANTHROPIC_API_KEY"), model), nil
 	}
 	baseURL, ok := providerDefaults[providerID]
 	if !ok {
@@ -106,11 +106,11 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		key = os.Getenv(env)
 	}
 	if key == "" {
-		key = firstEnv("YEN_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY")
+		key = os.Getenv("YEN_API_KEY")
 	}
 	client := NewOpenAICompletions(baseURL, key, model)
 	client.ProviderName = providerID
-	client.ReasoningEffort = firstEnv("YEN_REASONING_EFFORT", "THEOSES_REASONING_EFFORT")
+	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
 	return client, nil
 }
 
@@ -241,13 +241,4 @@ func RetryEnabled(p agent.Provider) bool {
 	default:
 		return false
 	}
-}
-
-func firstEnv(names ...string) string {
-	for _, name := range names {
-		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
-			return value
-		}
-	}
-	return ""
 }

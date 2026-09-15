@@ -156,9 +156,9 @@ not use the newer checkout as an unqualified oracle.
   the v2-to-v3 role/version migration.
   Assistant provider usage now round-trips through the session log.
   Compaction entries, active-context projection, and provider-backed
-  `Runner.Compact` are supported. Set `THEOSES_AUTO_COMPACT_TURNS` to enable
+  `Runner.Compact` are supported. Set `YEN_AUTO_COMPACT_TURNS` to enable
   the pre-prompt automatic threshold for a deployment; overflow retry and
-  `THEOSES_AUTO_COMPACT_OVERFLOW=1` to enable one bounded overflow
+  `YEN_AUTO_COMPACT_OVERFLOW=1` to enable one bounded overflow
   compact-and-retry attempt. Full TypeScript compaction settings remain
   deferred.
 - `internal/agent`: tool-turn loop and normalized event collection.
@@ -177,7 +177,7 @@ not use the newer checkout as an unqualified oracle.
 - `internal/adapters`: deterministic Telegram message and dashboard HTTP
   adapter seams sharing the canonical registry, runner, and memory engine.
   Dashboard API authentication now supports the TypeScript-compatible Bearer
-  and cookie login boundary when `THEOSES_DASHBOARD_TOKEN` is configured.
+  and cookie login boundary when `YEN_DASHBOARD_TOKEN` is configured.
   Telegram replies now split at the Bot API text limit without breaking
   Unicode runes, preserve capped quoted-message context, and target the
   originating Telegram message when replying.
@@ -222,7 +222,7 @@ Consolidation edge writes now enforce the TypeScript closed relation vocabulary
 (`prefers`, `attributed_to`, `depends_on`, `located_at`, `requires`,
 `supersedes`, `used_in`, `maintains`).
 Opt-in runtime consolidation is now available with
-`THEOSES_AUTO_CONSOLIDATE=1`; it uses a separate consolidation-state file,
+`YEN_AUTO_CONSOLIDATE=1`; it uses a separate consolidation-state file,
 the pinned 70-message trigger ceiling, and a 15-minute failure cooldown so it
 does not overwrite durable turn checkpoints. Its transcript is also capped at
 100,000 characters from the tail, matching the pinned memory-consolidation

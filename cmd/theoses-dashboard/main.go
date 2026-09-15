@@ -24,7 +24,7 @@ func main() {
 		log.Fatal(err)
 	}
 	flag.Parse()
-	dataDir := os.Getenv("THEOSES_DATA_DIR")
+	dataDir := os.Getenv("YEN_DATA_DIR")
 	if dataDir == "" {
 		dataDir = filepath.Join(workspace, ".theoses-go")
 	}
@@ -52,7 +52,7 @@ func main() {
 	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
-	canonicalConversationID := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
+	canonicalConversationID := os.Getenv("YEN_CANONICAL_CONVERSATION_ID")
 	if canonicalConversationID == "" {
 		canonicalConversationID = "yen-primary"
 	}
@@ -69,7 +69,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	handler := adapters.DashboardHTTP{AccessToken: os.Getenv("THEOSES_DASHBOARD_TOKEN"), Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: canonicalConversationID}, Workspace: workspace}}
+	handler := adapters.DashboardHTTP{AccessToken: os.Getenv("YEN_DASHBOARD_TOKEN"), Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: canonicalConversationID}, Workspace: workspace}}
 	log.Printf("theoses dashboard listening on %s", *addr)
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		log.Fatal(err)

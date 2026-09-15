@@ -13,13 +13,14 @@ func TestNewFromEnvPrefersYenProviderCredentials(t *testing.T) {
 	}
 }
 
-func TestNewFromEnvPreservesExplicitLegacyBaseURL(t *testing.T) {
+func TestNewFromEnvUsesOnlyYenOwnedEnvironment(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "")
 	t.Setenv("YEN_MODEL", "")
-	t.Setenv("THEOSES_OPENAI_BASE_URL", "http://fixture/v1")
+	t.Setenv("YEN_API_KEY", "")
+	t.Setenv("YEN_OPENAI_BASE_URL", "http://fixture/v1")
 	t.Setenv("OPENAI_API_KEY", "fixture-key")
 	client := NewFromEnv()
-	if client.BaseURL != "http://fixture/v1" || client.APIKey != "fixture-key" || client.Model != "gpt-4o-mini" {
+	if client.BaseURL != "http://fixture/v1" || client.APIKey != "" || client.Model != "gpt-4o-mini" {
 		t.Fatalf("client=%#v", client)
 	}
 }

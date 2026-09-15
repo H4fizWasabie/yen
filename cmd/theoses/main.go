@@ -52,11 +52,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	sessionPath := os.Getenv("THEOSES_SESSION_FILE")
+	sessionPath := os.Getenv("YEN_SESSION_FILE")
 	if sessionPath == "" {
 		sessionPath = filepath.Join(cwd, ".theoses-go", "session.jsonl")
 	}
-	dataDir := os.Getenv("THEOSES_DATA_DIR")
+	dataDir := os.Getenv("YEN_DATA_DIR")
 	if dataDir == "" {
 		dataDir = filepath.Dir(sessionPath)
 	}
@@ -64,7 +64,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	canonicalConversationID := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
+	canonicalConversationID := os.Getenv("YEN_CANONICAL_CONVERSATION_ID")
 	if canonicalConversationID == "" {
 		canonicalConversationID = "yen-primary"
 	}
