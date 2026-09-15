@@ -565,6 +565,9 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 			}
 			key = os.Getenv("YEN_AZURE_OPENAI_API_KEY")
 		}
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}

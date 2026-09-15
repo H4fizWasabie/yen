@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/auth"
 )
 
 func TestOpenAIResponsesStreamsTextAndFunctionCall(t *testing.T) {
@@ -127,6 +129,25 @@ func TestOpenAIResponsesUsesYenConfiguration(t *testing.T) {
 	configured := ConfiguredFromEnv()
 	client, ok := configured.(OpenAIResponses)
 	if !ok || client.ProviderName != "openai-responses" || client.Model != "responses-model" || client.APIKey != "responses-key" {
+		t.Fatalf("configured=%#v", configured)
+	}
+}
+
+func TestOpenAIResponsesUsesStoredYenCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if _, err := auth.Open(path).Modify("openai-responses", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "oauth", Access: "stored-responses-token"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_OPENAI_API_KEY", "")
+	configured, err := NewConfigured("openai-responses", "gpt-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(OpenAIResponses)
+	if !ok || client.APIKey != "stored-responses-token" {
 		t.Fatalf("configured=%#v", configured)
 	}
 }
