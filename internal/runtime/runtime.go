@@ -388,7 +388,11 @@ func consolidationContent(message session.Message) string {
 		switch part.Type {
 		case "text":
 			if message.Role == "toolResult" {
-				fmt.Fprintf(&content, "OK — %s", truncateConsolidation(part.Text, consolidationToolResultChars))
+				status := "OK"
+				if strings.HasPrefix(part.Text, "Tool error:") || strings.HasPrefix(part.Text, "unknown tool:") || part.Text == "Operation aborted" {
+					status = "FAILED"
+				}
+				fmt.Fprintf(&content, "%s — %s", status, truncateConsolidation(part.Text, consolidationToolResultChars))
 			} else {
 				content.WriteString(part.Text)
 			}

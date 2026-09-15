@@ -627,12 +627,14 @@ func TestToConsolidationTurnsFormatsSpecialEntries(t *testing.T) {
 		{Message: session.Message{Role: "bashExecution", Command: "sleep 10", Cancelled: true}},
 		{Message: session.Message{Role: "branchSummary", Summary: "The branch chose the safer path."}},
 		{Message: session.Message{Role: "compactionSummary", Summary: "Earlier context was compacted."}},
+		{Message: session.Message{Role: "toolResult", Content: []session.ContentPart{{Type: "text", Text: "Tool error: missing file"}}}},
 	})
 	want := []string{
 		"ran `go test ./...` — exit 2: failed",
 		"ran `sleep 10` — cancelled",
 		"The branch chose the safer path.",
 		"Earlier context was compacted.",
+		"FAILED — Tool error: missing file",
 	}
 	for i := range want {
 		if turns[i].Content != want[i] {
