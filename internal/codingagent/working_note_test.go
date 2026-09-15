@@ -34,6 +34,17 @@ func TestSessionToolsOwnWorkingNoteAndOperationalNotes(t *testing.T) {
 			if !strings.Contains(s.WorkingNote(), "ran: printf ok") {
 				t.Fatalf("bash note=%q", s.WorkingNote())
 			}
+			messages := s.Messages()
+			if len(messages) != 1 || messages[0].Role != "bashExecution" || messages[0].Output != "ok" || messages[0].ExitCode == nil || *messages[0].ExitCode != 0 {
+				t.Fatalf("bash execution=%#v", messages)
+			}
+			if _, err := tool.Execute(context.Background(), map[string]any{"command": "printf failed >&2; exit 7", "excludeFromContext": true}); err == nil {
+				t.Fatal("expected failed bash command")
+			}
+			messages = s.Messages()
+			if len(messages) != 2 || messages[1].ExitCode == nil || *messages[1].ExitCode != 7 || messages[1].Output != "failed" || !messages[1].ExcludeFromContext {
+				t.Fatalf("failed bash execution=%#v", messages)
+			}
 		}
 	}
 	if _, err := working.Execute(context.Background(), map[string]any{"note": "remember path"}); err != nil {

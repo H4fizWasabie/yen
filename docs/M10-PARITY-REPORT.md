@@ -29,6 +29,16 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+The coding-agent bash boundary now records both the oracle's bounded automatic
+working-note command log and a durable `bashExecution` session message with
+the full command, output, exit code, cancellation, truncation, and
+`excludeFromContext` fields. TypeScript authority:
+`packages/coding-agent/src/core/agent-session.ts:3182-3253`; Go evidence:
+`internal/tools/bash.go`, `internal/codingagent/bash.go`,
+`internal/session/session.go`, and success/failure tests in
+`internal/codingagent/working_note_test.go`. The full 261-test race/vet/diff
+gate passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

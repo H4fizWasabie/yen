@@ -499,6 +499,17 @@ preserves `YEN_REASONING_EFFORT`, matching the configured provider path used
 by the OpenAI and Responses clients. Provider tests cover Google and
 Anthropic; the full gate is now 261 tests.
 
+## Latest parity evidence
+
+The coding-agent bash boundary now follows the oracle's separate execution
+record contract: each session bash invocation appends a bounded working-note
+command log and a durable `bashExecution` message carrying the full command,
+output, exit code, cancellation, truncation, and `excludeFromContext` fields.
+The implementation is in `internal/tools/bash.go`,
+`internal/codingagent/bash.go`, and `internal/session/session.go`; focused
+success/failure coverage is in `internal/codingagent/working_note_test.go`.
+The full test, race, vet, and diff gates pass (261 tests).
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
