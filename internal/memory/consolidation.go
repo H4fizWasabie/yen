@@ -49,6 +49,10 @@ func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnI
 }
 
 func (e *Engine) consolidate(ctx context.Context, provider agent.Provider, turnID, conversationID, workspaceID, adapter string, turns []ConsolidationTurn) error {
+	return e.consolidateWithCheckpoint(ctx, provider, turnID, conversationID, workspaceID, adapter, turns, true)
+}
+
+func (e *Engine) consolidateWithCheckpoint(ctx context.Context, provider agent.Provider, turnID, conversationID, workspaceID, adapter string, turns []ConsolidationTurn, writeCheckpoint bool) error {
 	if provider == nil {
 		return errors.New("consolidation provider is required")
 	}
@@ -70,7 +74,7 @@ func (e *Engine) consolidate(ctx context.Context, provider agent.Provider, turnI
 	if err != nil {
 		return err
 	}
-	return e.ApplyConsolidation(turnID, conversationID, workspaceID, adapter, result.Facts, result.Edges, result.Episode)
+	return e.applyConsolidationWithCheckpoint(turnID, conversationID, workspaceID, adapter, result.Facts, result.Edges, result.Episode, writeCheckpoint)
 }
 
 func (e *Engine) beginConsolidation(conversationID string) bool {

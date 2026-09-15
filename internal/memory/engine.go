@@ -134,6 +134,10 @@ func (e *Engine) withConversation(conversationID string, fn func() error) error 
 }
 
 func (e *Engine) applyConsolidation(turnID, conversationID, workspaceID, adapter string, facts []ConsolidatedFact, edges []ConsolidatedEdge, episode ConsolidatedEpisode) error {
+	return e.applyConsolidationWithCheckpoint(turnID, conversationID, workspaceID, adapter, facts, edges, episode, true)
+}
+
+func (e *Engine) applyConsolidationWithCheckpoint(turnID, conversationID, workspaceID, adapter string, facts []ConsolidatedFact, edges []ConsolidatedEdge, episode ConsolidatedEpisode, writeCheckpoint bool) error {
 	ids := make(map[string]string, len(facts))
 	nodes := make(map[string]Node, len(facts))
 	for _, fact := range facts {
@@ -206,7 +210,10 @@ func (e *Engine) applyConsolidation(turnID, conversationID, workspaceID, adapter
 	if err := e.Episodic.Record(Episode{ID: "turn-" + turnID, StartedAt: episode.StartedAt, EndedAt: episode.EndedAt, Summary: episode.Summary, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), RelatedSemanticNodeIDs: episode.RelatedSemanticNodeIDs, ConversationID: conversationID, WorkspaceID: workspaceID, Channel: adapter, TurnID: turnID}); err != nil {
 		return err
 	}
-	return e.Checkpoints.Set(conversationID, Checkpoint{LastEntryID: turnID})
+	if writeCheckpoint {
+		return e.Checkpoints.Set(conversationID, Checkpoint{LastEntryID: turnID})
+	}
+	return nil
 }
 
 func appendUniqueEdge(edges []Edge, edge Edge) []Edge {

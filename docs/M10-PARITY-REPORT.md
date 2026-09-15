@@ -68,6 +68,12 @@ The side-by-side installer now forwards Azure resource/API-version settings and
 global-resource boundaries in deployed runtimes. Evidence: `deploy/install-side-by-side.sh`
 and `sh -n deploy/install-side-by-side.sh`.
 
+Historical session-log backfill now reuses the bounded consolidation pipeline
+in sequential chunks of at most 70 messages and leaves the live consolidation
+checkpoint untouched, matching `packages/coding-agent/src/core/memory-consolidation.ts:585-650`.
+Go evidence: `internal/memory/backfill.go` and
+`TestBackfillFromSessionLogUsesBoundedPipelineWithoutLiveCheckpoint`.
+
 The coding-agent bash boundary now records both the oracle's bounded automatic
 working-note command log and a durable `bashExecution` session message with
 the full command, output, exit code, cancellation, truncation, and
