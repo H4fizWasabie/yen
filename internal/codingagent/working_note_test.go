@@ -2,6 +2,7 @@ package codingagent
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -62,4 +63,33 @@ func TestSessionToolsOwnWorkingNoteAndOperationalNotes(t *testing.T) {
 	if s.WorkingNote() != "" || strings.Contains(s.WorkingNote(), "remember") {
 		t.Fatalf("note=%q after clear", s.WorkingNote())
 	}
+}
+
+func TestBashSessionSpillsLargeOutputAndKeepsTailBounded(t *testing.T) {
+	s := session.New(t.TempDir()+"/session.jsonl", session.Header{ID: "large", CWD: t.TempDir()})
+	var bash interface {
+		Name() string
+		Execute(context.Context, map[string]any) (string, error)
+	}
+	for _, candidate := range NewToolsForSession(t.TempDir(), s) {
+		if candidate.Name() == "bash" {
+			bash = candidate
+			break
+		}
+	}
+	if bash == nil {
+		t.Fatal("bash tool missing")
+	}
+	if _, err := bash.Execute(context.Background(), map[string]any{"command": "head -c 20000 /dev/zero | tr '\\0' x"}); err != nil {
+		t.Fatal(err)
+	}
+	messages := s.Messages()
+	if len(messages) != 1 || !messages[0].Truncated || len(messages[0].Output) > 12*1024 || messages[0].FullOutputPath == "" {
+		t.Fatalf("bash message=%#v", messages)
+	}
+	stat, err := os.Stat(messages[0].FullOutputPath)
+	if err != nil || stat.Size() < 20000 {
+		t.Fatalf("full output path=%q stat=%v err=%v", messages[0].FullOutputPath, stat, err)
+	}
+	_ = os.Remove(messages[0].FullOutputPath)
 }

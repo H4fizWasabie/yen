@@ -39,6 +39,15 @@ the full command, output, exit code, cancellation, truncation, and
 `internal/codingagent/working_note_test.go`. The full 261-test race/vet/diff
 gate passes.
 
+Bash capture now also enforces a bounded in-memory tail and spills oversized
+output to a mode-600 temporary artifact, preserving `fullOutputPath` in the
+session record. TypeScript authority:
+`packages/coding-agent/src/core/bash-executor.ts:50-161` and
+`packages/coding-agent/src/core/tools/truncate.ts:15-27,170-238`. Go evidence:
+`internal/tools/bash.go` and
+`internal/codingagent/working_note_test.go`; the full 264-test race/vet/diff
+gate passes.
+
 Provider configuration now recognizes the oracle's OpenCode Zen and OpenCode
 Go provider IDs and their dedicated `OPENCODE_API_KEY` environment boundary,
 using the pinned OpenAI-compatible endpoints. TypeScript authority:

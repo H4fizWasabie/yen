@@ -516,6 +516,11 @@ pinned OpenAI-compatible endpoints. Focused provider tests and the full gate
 pass (263 tests). The model-specific API/catalog metadata is still not claimed
 as complete parity.
 
+Bash capture now keeps only a bounded 12 KiB tail in memory and spills output
+larger than 6 KiB to a mode-600 temporary file, while preserving the path in
+the durable `bashExecution` record. Large-output coverage passes and the full
+gate is now 264 tests plus race/vet/diff.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

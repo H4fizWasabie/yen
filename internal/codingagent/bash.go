@@ -40,6 +40,6 @@ func (t sessionBashTool) log(_ context.Context, args map[string]any, result tool
 		}
 		_, _ = t.session.AppendWorkingNote("ran: " + command)
 		exclude, _ := args["excludeFromContext"].(bool)
-		_, _ = t.session.AppendBashExecution(fullCommand, result.Output, result.ExitCode, result.Cancelled, result.Truncated, exclude)
+		_, _ = t.session.AppendBashExecution(fullCommand, result.Output, result.ExitCode, result.Cancelled, result.Truncated, exclude, result.FullOutputPath)
 	}
 }

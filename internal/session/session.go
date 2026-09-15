@@ -396,10 +396,10 @@ func (s *Session) Append(message Message) (string, error) {
 // AppendBashExecution records a command independently from the tool result.
 // The oracle keeps this execution history so it remains visible to the tree,
 // dashboard, and later context shaping even when the command fails.
-func (s *Session) AppendBashExecution(command string, result string, exitCode *int, cancelled, truncated, excludeFromContext bool) (string, error) {
+func (s *Session) AppendBashExecution(command string, result string, exitCode *int, cancelled, truncated, excludeFromContext bool, fullOutputPath string) (string, error) {
 	return s.Append(Message{
 		Role: "bashExecution", Command: command, Output: result, ExitCode: exitCode,
-		Cancelled: cancelled, Truncated: truncated, ExcludeFromContext: excludeFromContext,
+		Cancelled: cancelled, Truncated: truncated, FullOutputPath: fullOutputPath, ExcludeFromContext: excludeFromContext,
 	})
 }
 
