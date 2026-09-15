@@ -19,6 +19,15 @@ No cutover or TypeScript modification has happened. Local Telegram/dashboard
 adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
+Latest verified checkpoint: branch `feat/m2-first-slice`, PR #2 open, commit
+`d4345c2`, deployed as `/opt/yen/releases/d4345c2`. The latest memory parity
+slice adds TypeScript-compatible structured-output repair for trailing commas,
+raw control characters, and invalid string escapes, plus tolerant per-member
+fact/edge/reference filtering. Full verification reports 135 passing tests,
+including race, vet, builds, and deployment-script syntax. Yen and Theoses2
+units are all active; Yen dashboard health is 200. Yen data was backed up before
+deployment at `20260915T040441Z`.
+
 Provider credentials are intentionally split: Yen must use the separate
 `/etc/yen/yen-provider.env` file. Yen deployment configuration lives under
 `/etc/yen` and `/var/lib/yen`; the existing Theoses provider env is not a Yen
