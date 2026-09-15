@@ -371,6 +371,13 @@ The authorized side-by-side VPS deployment now runs `/opt/yen/releases/45b246e`.
 `active`; Yen `/healthz` returns `{"ok":true}`. The Theoses2 services were not
 restarted or modified.
 
+Yen now has `internal/auth`, a mode-0600 atomic JSON credential store with
+serialized per-process mutation, secret-free listing metadata, API-key/OAuth
+record shapes, and explicit `YEN_AUTH_FILE` fallback wiring for provider
+configuration. This is the storage/auth boundary only; provider-specific
+OAuth login, refresh, and browser/device flows remain open. The full gate is
+239 tests plus race/vet/diff.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future

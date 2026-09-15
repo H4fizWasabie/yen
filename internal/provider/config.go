@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/auth"
 )
 
 var providerDefaults = map[string]string{
@@ -92,6 +93,9 @@ func NewFromEnv() OpenAICompletions {
 	if key == "" {
 		key = os.Getenv("YEN_API_KEY")
 	}
+	if key == "" {
+		key = storedCredentialKey(providerID)
+	}
 	client := NewOpenAICompletions(baseURL, key, model)
 	client.ProviderName = providerID
 	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
@@ -119,6 +123,9 @@ func ConfiguredFromEnv() agent.Provider {
 		if providerID == "azure-openai-responses" {
 			key = os.Getenv("YEN_AZURE_OPENAI_API_KEY")
 		}
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
 		client := NewOpenAIResponses(baseURL, key, model)
 		client.ProviderName = providerID
 		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
@@ -133,7 +140,11 @@ func ConfiguredFromEnv() agent.Provider {
 		if model == "" {
 			model = "gemini-2.5-flash"
 		}
-		return NewGoogleGenerativeAI(baseURL, os.Getenv("YEN_GOOGLE_API_KEY"), model)
+		key := os.Getenv("YEN_GOOGLE_API_KEY")
+		if key == "" {
+			key = storedCredentialKey("google")
+		}
+		return NewGoogleGenerativeAI(baseURL, key, model)
 	}
 	if providerID != "anthropic" {
 		return NewFromEnv()
@@ -147,6 +158,9 @@ func ConfiguredFromEnv() agent.Provider {
 		model = "claude-sonnet-4-20250514"
 	}
 	key := os.Getenv("YEN_ANTHROPIC_API_KEY")
+	if key == "" {
+		key = storedCredentialKey("anthropic")
+	}
 	return NewAnthropicMessages(baseURL, key, model)
 }
 
@@ -184,7 +198,11 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if baseURL == "" {
 			baseURL = "https://generativelanguage.googleapis.com/v1beta"
 		}
-		return NewGoogleGenerativeAI(baseURL, os.Getenv("YEN_GOOGLE_API_KEY"), model), nil
+		key := os.Getenv("YEN_GOOGLE_API_KEY")
+		if key == "" {
+			key = storedCredentialKey("google")
+		}
+		return NewGoogleGenerativeAI(baseURL, key, model), nil
 	}
 	if providerID == "anthropic" {
 		if model == "" {
@@ -194,7 +212,11 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if baseURL == "" {
 			baseURL = "https://api.anthropic.com/v1"
 		}
-		return NewAnthropicMessages(baseURL, os.Getenv("YEN_ANTHROPIC_API_KEY"), model), nil
+		key := os.Getenv("YEN_ANTHROPIC_API_KEY")
+		if key == "" {
+			key = storedCredentialKey("anthropic")
+		}
+		return NewAnthropicMessages(baseURL, key, model), nil
 	}
 	baseURL, ok := providerDefaults[providerID]
 	if !ok {
@@ -210,10 +232,28 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 	if key == "" {
 		key = os.Getenv("YEN_API_KEY")
 	}
+	if key == "" {
+		key = storedCredentialKey(providerID)
+	}
 	client := NewOpenAICompletions(baseURL, key, model)
 	client.ProviderName = providerID
 	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
 	return client, nil
+}
+
+func storedCredentialKey(providerID string) string {
+	path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+	if path == "" {
+		return ""
+	}
+	credential, ok, err := auth.Open(path).Read(providerID)
+	if err != nil || !ok {
+		return ""
+	}
+	if credential.Type == "oauth" {
+		return credential.Access
+	}
+	return credential.Key
 }
 
 func Describe(p agent.Provider) (string, string) {

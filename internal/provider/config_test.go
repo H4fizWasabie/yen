@@ -1,6 +1,11 @@
 package provider
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+
+	"github.com/H4fizWasabie/yen/internal/auth"
+)
 
 func TestNewFromEnvPrefersYenProviderCredentials(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "openrouter")
@@ -76,6 +81,26 @@ func TestNewConfiguredSupportsPinnedOpenAICompatibleProviders(t *testing.T) {
 				t.Fatalf("provider=%#v", configured)
 			}
 		})
+	}
+}
+
+func TestNewConfiguredReadsOnlyExplicitYenAuthFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if _, err := auth.Open(path).Modify("openrouter", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "oauth", Access: "stored-access"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_OPENROUTER_API_KEY", "")
+	t.Setenv("YEN_API_KEY", "")
+	configured, err := NewConfigured("openrouter", "stored-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(OpenAICompletions)
+	if !ok || client.APIKey != "stored-access" {
+		t.Fatalf("client=%#v", configured)
 	}
 }
 
