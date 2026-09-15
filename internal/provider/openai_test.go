@@ -205,6 +205,30 @@ func TestOpenAICompatibleProvidersUseNativeThinkingFields(t *testing.T) {
 	}
 }
 
+func TestBasetenChatTemplateModelsUseEnableThinkingArgument(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			ChatTemplateArgs map[string]any `json:"chat_template_args"`
+			Reasoning        map[string]any `json:"reasoning"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ChatTemplateArgs["enable_thinking"] != true || payload.Reasoning != nil {
+			t.Fatalf("chat_template_args=%#v reasoning=%#v", payload.ChatTemplateArgs, payload.Reasoning)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "", "moonshotai/Kimi-K2.5")
+	client.ProviderName = "baseten"
+	client.ReasoningEffort = "high"
+	if _, err := client.Next(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func payloadJSON(payload map[string]json.RawMessage) string {
 	data, _ := json.Marshal(payload)
 	return string(data)
