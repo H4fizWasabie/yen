@@ -131,12 +131,12 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 		if e := ctx.Err(); e != nil { return e }
 		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") { return filepath.SkipDir }
 		if entry.IsDir() { return nil }
-	rel, err := filepath.Rel(root, path); if err != nil { return err }; rel = filepath.ToSlash(rel)
-	if gitIgnored(ctx, root, rel) { return nil }
-	if glob != "" && !matchFindPattern(glob, rel) { return nil }
-	data, err := os.ReadFile(path); if err != nil { return nil }
-	if bytes.IndexByte(data, 0) >= 0 { return nil }
-	lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", ""), "\n")
+		rel, err := filepath.Rel(root, path); if err != nil { return err }; rel = filepath.ToSlash(rel)
+		if gitIgnored(ctx, root, rel) { return nil }
+		if glob != "" && !matchFindPattern(glob, rel) { return nil }
+		data, err := os.ReadFile(path); if err != nil { return nil }
+		if bytes.IndexByte(data, 0) >= 0 { return nil }
+		lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", ""), "\n")
 		for i, line := range lines {
 			if !re.MatchString(line) { continue }
 			matchCount++
