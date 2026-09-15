@@ -18,6 +18,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 func main() {
@@ -79,6 +80,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return reportError(stderr, err)
 	}
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
+	if current, err := settings.Load(cwd); err == nil {
+		steering, followUp := settings.QueueModes(current)
+		runner.SetQueueModes(steering, followUp)
+	}
 	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
 		return codingagent.NewToolsForSession(workspace, current)
 	}

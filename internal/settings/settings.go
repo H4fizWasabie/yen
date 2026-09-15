@@ -16,6 +16,8 @@ type Settings struct {
 	SkillDirs      []string `json:"skillDirs,omitempty"`
 	Trusted        *bool    `json:"trusted,omitempty"`
 	AutoCompaction *bool    `json:"autoCompaction,omitempty"`
+	SteeringMode   string   `json:"steeringMode,omitempty"`
+	FollowUpMode   string   `json:"followUpMode,omitempty"`
 }
 
 func Load(workspace string) (Settings, error) {
@@ -113,4 +115,21 @@ func merge(target *Settings, source Settings) {
 	if source.AutoCompaction != nil {
 		target.AutoCompaction = source.AutoCompaction
 	}
+	if source.SteeringMode == "all" || source.SteeringMode == "one-at-a-time" {
+		target.SteeringMode = source.SteeringMode
+	}
+	if source.FollowUpMode == "all" || source.FollowUpMode == "one-at-a-time" {
+		target.FollowUpMode = source.FollowUpMode
+	}
+}
+
+func QueueModes(current Settings) (string, string) {
+	steering, followUp := current.SteeringMode, current.FollowUpMode
+	if steering != "all" && steering != "one-at-a-time" {
+		steering = "one-at-a-time"
+	}
+	if followUp != "all" && followUp != "one-at-a-time" {
+		followUp = "one-at-a-time"
+	}
+	return steering, followUp
 }

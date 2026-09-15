@@ -26,6 +26,13 @@ func TestLoadMergesGlobalAndProjectSettings(t *testing.T) {
 	}
 }
 
+func TestQueueModesDefaultAndValidation(t *testing.T) {
+	steering, followUp := QueueModes(Settings{SteeringMode: "invalid", FollowUpMode: "all"})
+	if steering != "one-at-a-time" || followUp != "all" {
+		t.Fatalf("modes=%q,%q", steering, followUp)
+	}
+}
+
 func TestTrustWritesScopedProjectDecision(t *testing.T) {
 	dir := t.TempDir()
 	config := t.TempDir()
