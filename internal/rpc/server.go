@@ -206,13 +206,15 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		steeringMode, followUpMode := s.modes()
 		return s.response(output, request.ID, request.Type, true, map[string]any{
 			"sessionId": link.ConversationID, "isStreaming": active,
+			"isCompacting": s.Runner.IsCompacting(), "sessionFile": session.Path(),
 			"sessionName":   session.SessionName(),
 			"provider":      func() string { name, _ := providerpkg.Describe(s.Runner.Provider); return name }(),
 			"model":         func() string { _, model := providerpkg.Describe(s.Runner.Provider); return model }(),
 			"thinkingLevel": providerpkg.ThinkingLevel(s.Runner.Provider),
 			"autoRetry":     providerpkg.RetryEnabled(s.Runner.Provider),
 			"steeringMode":  steeringMode, "followUpMode": followUpMode,
-			"messageCount": len(session.Messages()), "pendingMessageCount": 0,
+			"autoCompactionEnabled": !s.Runner.AutoCompactDisabled,
+			"messageCount":          len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
 	case "new_session":
 		current, err := s.Runner.OpenSession(link)

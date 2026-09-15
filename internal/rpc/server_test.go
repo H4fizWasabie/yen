@@ -72,6 +72,26 @@ func TestServePromptStateAndMessagesUseJSONLProtocol(t *testing.T) {
 	}
 }
 
+func TestGetStateIncludesSessionAndCompactionFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.jsonl")
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	runner.AutoCompactDisabled = true
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "state", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{Type: "get_state"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"sessionFile":"`+path+`"`) || !strings.Contains(output.String(), `"isCompacting":false`) || !strings.Contains(output.String(), `"autoCompactionEnabled":false`) {
+		t.Fatalf("state=%s", output.String())
+	}
+}
+
 func TestServeRejectsUnknownCommand(t *testing.T) {
 	dir := t.TempDir()
 	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))

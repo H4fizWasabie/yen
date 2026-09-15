@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -41,11 +42,12 @@ type Runner struct {
 	SteeringMode                   string
 	FollowUpMode                   string
 
-	mu      sync.Mutex
-	active  map[string]context.CancelFunc
-	queues  map[string]*agent.MessageQueues
-	pathsMu sync.RWMutex
-	paths   map[string]string
+	mu         sync.Mutex
+	active     map[string]context.CancelFunc
+	queues     map[string]*agent.MessageQueues
+	pathsMu    sync.RWMutex
+	paths      map[string]string
+	compacting atomic.Bool
 }
 
 func New(queue *conversation.Queue, provider agent.Provider, tools func(string) []agent.Tool) *Runner {
@@ -311,7 +313,13 @@ func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentT
 	return r.compactConversation(ctx, conversationID, keepRecentTurns)
 }
 
+func (r *Runner) IsCompacting() bool { return r.compacting.Load() }
+
 func (r *Runner) compactConversation(ctx context.Context, conversationID string, keepRecentTurns int) error {
+	if !r.compacting.CompareAndSwap(false, true) {
+		return errors.New("compaction is already active")
+	}
+	defer r.compacting.Store(false)
 	if r.Provider == nil {
 		return errors.New("compaction provider is required")
 	}
