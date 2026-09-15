@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -72,5 +73,21 @@ func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
 	image, ok := toolResult.Value.Content[1].(*bedrocktypes.ToolResultContentBlockMemberImage)
 	if !ok || len(image.Value.Source.(*bedrocktypes.ImageSourceMemberBytes).Value) != 1 {
 		t.Fatalf("image=%#v", toolResult.Value.Content[1])
+	}
+}
+
+func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString([]byte{1, 2, 3})
+	input, err := bedrockInput([]agent.Message{{Role: "assistant", Thinking: "[Reasoning redacted]", ThinkingSignature: encoded}}, nil, "openai.gpt-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, ok := input.Messages[0].Content[0].(*bedrocktypes.ContentBlockMemberReasoningContent)
+	if !ok {
+		t.Fatalf("content=%#v", input.Messages[0].Content)
+	}
+	redacted, ok := block.Value.(*bedrocktypes.ReasoningContentBlockMemberRedactedContent)
+	if !ok || string(redacted.Value) != string([]byte{1, 2, 3}) {
+		t.Fatalf("reasoning=%#v", block.Value)
 	}
 }

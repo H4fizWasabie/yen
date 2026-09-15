@@ -90,6 +90,7 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	}
 	toolArgs := make(map[int]string)
 	toolCalls := make(map[int]agent.ToolCall)
+	redactedReasoning := make(map[int][]byte)
 	for event := range out.GetStream().Events() {
 		switch event := event.(type) {
 		case *bedrocktypes.ConverseStreamOutputMemberContentBlockStart:
@@ -126,10 +127,11 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 					result.ThinkingSignature += signature.Value
 					partial.ThinkingSignature += signature.Value
 				} else if redacted, ok := delta.Value.(*bedrocktypes.ReasoningContentBlockDeltaMemberRedactedContent); ok {
-					result.Thinking += "[Reasoning redacted]"
-					partial.Thinking += "[Reasoning redacted]"
-					result.ThinkingSignature += base64.StdEncoding.EncodeToString(redacted.Value)
-					partial.ThinkingSignature += base64.StdEncoding.EncodeToString(redacted.Value)
+					redactedReasoning[index] = append(redactedReasoning[index], redacted.Value...)
+					if !strings.Contains(result.Thinking, "[Reasoning redacted]") {
+						result.Thinking += "[Reasoning redacted]"
+						partial.Thinking += "[Reasoning redacted]"
+					}
 					if emit != nil {
 						emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: index, Delta: "[Reasoning redacted]", Partial: partial})
 					}
@@ -147,6 +149,19 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	}
 	if err := out.GetStream().Err(); err != nil {
 		return agent.Response{}, err
+	}
+	if len(redactedReasoning) > 0 {
+		indices := make([]int, 0, len(redactedReasoning))
+		for index := range redactedReasoning {
+			indices = append(indices, index)
+		}
+		sort.Ints(indices)
+		var opaque []byte
+		for _, index := range indices {
+			opaque = append(opaque, redactedReasoning[index]...)
+		}
+		result.ThinkingSignature = base64.StdEncoding.EncodeToString(opaque)
+		partial.ThinkingSignature = result.ThinkingSignature
 	}
 	indices := make([]int, 0, len(toolCalls))
 	for index := range toolCalls {
@@ -237,6 +252,12 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 		}})
 	}
 	if message.Thinking != "" {
+		if strings.HasPrefix(message.Thinking, "[Reasoning redacted]") {
+			if opaque, err := base64.StdEncoding.DecodeString(message.ThinkingSignature); err == nil && len(opaque) > 0 {
+				content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberRedactedContent{Value: opaque}})
+				return content, nil
+			}
+		}
 		thinking := bedrocktypes.ReasoningTextBlock{Text: aws.String(message.Thinking)}
 		if message.ThinkingSignature != "" && strings.Contains(strings.ToLower(model), "claude") {
 			thinking.Signature = aws.String(message.ThinkingSignature)
