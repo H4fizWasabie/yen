@@ -43,6 +43,7 @@ else
 fi
 go build -o "$release_dir/theoses-telegram" "$source_dir/cmd/theoses-telegram"
 go build -o "$release_dir/theoses-dashboard" "$source_dir/cmd/theoses-dashboard"
+go build -o "$release_dir/theoses-rpc" "$source_dir/cmd/theoses-rpc"
 
 cat >"$release_dir/run-telegram" <<EOF
 #!/bin/sh

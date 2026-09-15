@@ -76,7 +76,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := (&rpc.Server{Runner: runner, Link: link}).Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
+	server := &rpc.Server{Runner: runner, Link: link}
+	if socket := os.Getenv("YEN_RPC_UNIX_SOCKET"); socket != "" {
+		if err := rpc.ServeUnix(context.Background(), socket, server); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if err := server.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
 		log.Fatal(err)
 	}
 }
