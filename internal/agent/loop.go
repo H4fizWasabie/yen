@@ -216,6 +216,17 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			if onEvent != nil {
 				onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args})
 			}
+			if response.StopReason == "length" {
+				result.Events = append(result.Events, "tool_execution_start:"+call.ID)
+				content := `Tool call "` + call.Name + `" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`
+				result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
+				result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
+				if onEvent != nil {
+					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true})
+				}
+				result.Events = append(result.Events, "message_end:toolResult")
+				continue
+			}
 			tool, ok := toolMap[call.Name]
 			if !ok {
 				result.Events = append(result.Events, "tool_execution_start:"+call.ID, "tool_execution_end:"+call.ID)

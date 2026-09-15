@@ -222,6 +222,9 @@ ceiling, and its provider call retries up to three times with exponential
 Assistant tool calls, tool results, bash executions, and branch/compaction
 summaries are condensed to bounded transcript summaries matching the pinned
 TypeScript formatter.
+Length-limited assistant responses now refuse to execute potentially truncated
+tool arguments and return the same re-issue guidance shape as the TypeScript
+agent loop.
 When the configured provider supports it, consolidation also requests the
 OpenAI-compatible `response_format: {type: "json_object"}` wire mode; generic
 test providers retain the prompt-only fallback.

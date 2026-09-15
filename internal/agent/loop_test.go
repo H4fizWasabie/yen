@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -72,6 +73,15 @@ func (readTool) Execute(context.Context, map[string]any) (string, error) {
 	return "README contents", nil
 }
 
+type countingTool struct{ calls *int }
+
+func (t countingTool) Name() string { return "read" }
+
+func (t countingTool) Execute(context.Context, map[string]any) (string, error) {
+	*t.calls++
+	return "should not run", nil
+}
+
 type failingTool struct{}
 
 func (failingTool) Name() string { return "read" }
@@ -112,6 +122,27 @@ func TestRunExecutesToolThenContinues(t *testing.T) {
 	}
 	if len(result.Messages) != 4 {
 		t.Fatalf("messages = %d, want user, assistant, tool, assistant", len(result.Messages))
+	}
+}
+
+func TestRunDoesNotExecuteToolCallsFromLengthLimitedResponse(t *testing.T) {
+	calls := 0
+	var events []Event
+	result, err := RunFromWithQueuesAndEvents(context.Background(), &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-1", Name: "read", Args: map[string]any{"path": "README.md"}}}, StopReason: "length"},
+		{Text: "re-issued", StopReason: "stop"},
+	}}, []Tool{countingTool{calls: &calls}}, nil, "read it", nil, nil, func(event Event) { events = append(events, event) })
+	if err != nil || result.FinalText != "re-issued" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if calls != 0 {
+		t.Fatalf("tool calls=%d, want 0", calls)
+	}
+	if len(result.Messages) != 4 || !strings.Contains(result.Messages[2].Content, "arguments may be truncated") {
+		t.Fatalf("messages=%#v", result.Messages)
+	}
+	if len(events) != 4 || events[2].Type != "tool_result" || !events[2].IsError {
+		t.Fatalf("events=%#v", events)
 	}
 }
 
