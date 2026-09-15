@@ -100,6 +100,30 @@ func NewFromEnv() OpenAICompletions {
 
 func ConfiguredFromEnv() agent.Provider {
 	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
+	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
+		baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
+		if baseURL == "" {
+			baseURL = os.Getenv("YEN_OPENAI_BASE_URL")
+		}
+		if providerID == "azure-openai-responses" && baseURL == "" {
+			baseURL = os.Getenv("YEN_AZURE_OPENAI_BASE_URL")
+		}
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gpt-4.1"
+		}
+		key := os.Getenv("YEN_OPENAI_API_KEY")
+		if providerID == "azure-openai-responses" {
+			key = os.Getenv("YEN_AZURE_OPENAI_API_KEY")
+		}
+		client := NewOpenAIResponses(baseURL, key, model)
+		client.ProviderName = providerID
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client
+	}
 	if providerID == "google" {
 		baseURL := os.Getenv("YEN_GOOGLE_BASE_URL")
 		if baseURL == "" {
@@ -129,6 +153,29 @@ func ConfiguredFromEnv() agent.Provider {
 func NewConfigured(providerID, model string) (agent.Provider, error) {
 	providerID = strings.ToLower(strings.TrimSpace(providerID))
 	model = strings.TrimSpace(model)
+	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
+		if model == "" {
+			model = "gpt-4.1"
+		}
+		baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
+		if baseURL == "" {
+			baseURL = os.Getenv("YEN_OPENAI_BASE_URL")
+		}
+		key := os.Getenv("YEN_OPENAI_API_KEY")
+		if providerID == "azure-openai-responses" {
+			if baseURL == "" {
+				baseURL = os.Getenv("YEN_AZURE_OPENAI_BASE_URL")
+			}
+			key = os.Getenv("YEN_AZURE_OPENAI_API_KEY")
+		}
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
+		client := NewOpenAIResponses(baseURL, key, model)
+		client.ProviderName = providerID
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client, nil
+	}
 	if providerID == "google" {
 		if model == "" {
 			model = "gemini-2.5-flash"
@@ -177,6 +224,8 @@ func Describe(p agent.Provider) (string, string) {
 		return "anthropic", client.Model
 	case GoogleGenerativeAI:
 		return "google", client.Model
+	case OpenAIResponses:
+		return client.name(), client.Model
 	default:
 		return "", ""
 	}
@@ -204,6 +253,9 @@ func SetModel(p agent.Provider, model string) (agent.Provider, error) {
 		client.Model = model
 		return client, nil
 	case GoogleGenerativeAI:
+		client.Model = model
+		return client, nil
+	case OpenAIResponses:
 		client.Model = model
 		return client, nil
 	default:
@@ -249,6 +301,9 @@ func SetThinkingLevel(p agent.Provider, level string) (agent.Provider, error) {
 	case GoogleGenerativeAI:
 		client.ThinkingLevel = level
 		return client, nil
+	case OpenAIResponses:
+		client.ThinkingLevel = level
+		return client, nil
 	default:
 		return nil, errors.New("provider does not support thinking levels")
 	}
@@ -267,6 +322,11 @@ func ThinkingLevel(p agent.Provider) string {
 		}
 		return client.ThinkingLevel
 	case GoogleGenerativeAI:
+		if client.ThinkingLevel == "" {
+			return "off"
+		}
+		return client.ThinkingLevel
+	case OpenAIResponses:
 		if client.ThinkingLevel == "" {
 			return "off"
 		}
@@ -303,6 +363,14 @@ func SetRetryEnabled(p agent.Provider, enabled bool) (agent.Provider, error) {
 			client.MaxRetries = 0
 		}
 		return client, nil
+	case OpenAIResponses:
+		if enabled && client.MaxRetries == 0 {
+			client.MaxRetries = defaultRetries
+		}
+		if !enabled {
+			client.MaxRetries = 0
+		}
+		return client, nil
 	default:
 		return nil, errors.New("provider does not support retry control")
 	}
@@ -315,6 +383,8 @@ func RetryEnabled(p agent.Provider) bool {
 	case AnthropicMessages:
 		return client.MaxRetries > 0
 	case GoogleGenerativeAI:
+		return client.MaxRetries > 0
+	case OpenAIResponses:
 		return client.MaxRetries > 0
 	default:
 		return false

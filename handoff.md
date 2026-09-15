@@ -350,6 +350,15 @@ The Gemini adapter also implements the native `/models` catalog and filters to
 models advertising `generateContent`; the current full gate remains 234 tests
 plus race/vet/diff.
 
+Native OpenAI Responses support is now in `internal/provider/responses.go`.
+It covers `/responses` SSE events, text, incremental function-call arguments,
+terminal response usage/status, image input, retries, and
+`openai-responses`/`azure-openai-responses` Yen configuration. The pinned
+source evidence is `packages/ai/src/api/openai-responses-shared.ts:597-750`,
+and `internal/provider/responses_test.go` covers the wire/result contract. The
+full gate is 236 tests plus race/vet/diff; commit and push this work before the
+next gap.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future
