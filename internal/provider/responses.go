@@ -143,6 +143,11 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 					Code    string `json:"code"`
 					Message string `json:"message"`
 				} `json:"error"`
+				Output []struct {
+					Type             string `json:"type"`
+					ID               string `json:"id"`
+					EncryptedContent string `json:"encrypted_content"`
+				} `json:"output"`
 				Usage *struct {
 					InputTokens  int `json:"input_tokens"`
 					OutputTokens int `json:"output_tokens"`
@@ -249,6 +254,20 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 				}
 			}
 		case "response.completed", "response.incomplete":
+			if len(event.Response.Output) > 0 && partial.ThinkingSignature != "" {
+				var signature map[string]any
+				if json.Unmarshal([]byte(partial.ThinkingSignature), &signature) == nil && signature["encrypted_content"] == "" {
+					id, _ := signature["id"].(string)
+					for _, item := range event.Response.Output {
+						if item.Type == "reasoning" && item.ID == id && item.EncryptedContent != "" {
+							signature["encrypted_content"] = item.EncryptedContent
+							encoded, _ := json.Marshal(signature)
+							partial.ThinkingSignature = string(encoded)
+							break
+						}
+					}
+				}
+			}
 			result.ResponseID = event.Response.ID
 			if event.Response.Model != "" {
 				result.ResponseModel = event.Response.Model

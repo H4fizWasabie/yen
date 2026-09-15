@@ -34,6 +34,7 @@ and serialized reasoning-item signature for stateless multi-turn replay, while
 failed responses surface the provider's error. Go evidence:
 `internal/provider/responses.go`,
 `TestOpenAIResponsesPersistsReasoningItemSignature`, and
+`TestOpenAIResponsesBackfillsReasoningSignatureFromTerminalOutput`,
 `TestOpenAIResponsesReturnsResponseFailure`.
 Captionless Telegram document guidance now names `convert_doc`, matching the
 oracle's `noteFor` prompt and the tool intended for stored document artifacts.
