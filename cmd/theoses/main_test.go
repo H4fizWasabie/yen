@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/auth"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
@@ -364,6 +365,37 @@ func TestInteractiveScopedModelsCommandListsProviderCatalog(t *testing.T) {
 	handled, err := handleInteractiveCommand("/scoped-models", current, runner, conversation.Link{}, &activePath, &output)
 	if err != nil || !handled || !strings.Contains(output.String(), `"model-b"`) {
 		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+}
+
+func TestInteractiveLogoutRemovesStoredProviderCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if _, err := auth.Open(path).Modify("openrouter", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "api_key", Key: "secret"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.Open(path).Modify("anthropic", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "oauth", Access: "access"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+
+	current := session.New(filepath.Join(t.TempDir(), "session.jsonl"), session.Header{ID: "session-1"})
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/logout", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || !strings.HasPrefix(output.String(), `[{"providerId":"anthropic"`) {
+		t.Fatalf("list handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	output.Reset()
+	handled, err = handleInteractiveCommand("/logout openrouter", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	if _, ok, err := auth.Open(path).Read("openrouter"); err != nil || ok {
+		t.Fatalf("credential still present: ok=%v err=%v", ok, err)
 	}
 }
 
