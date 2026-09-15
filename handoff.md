@@ -24,6 +24,11 @@ for `delta`, `tool_call`, `tool_result`, `usage`, `done`, and `error`, including
 the TypeScript stream headers. This is covered by the agent event callback test
 and dashboard HTTP stream test; commit `aa7f816`.
 
+Active session context now follows the last leaf through `parentId`, matching
+the pinned TypeScript branch-path behavior. The v2 branch fixture proves that
+an earlier sibling is excluded from the runtime context; the durable read-back
+still retains both siblings.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

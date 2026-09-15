@@ -327,19 +327,20 @@ func (s *Session) Messages() []Message {
 // ContextMessages projects the active leaf context after the latest
 // compaction boundary. Messages() remains the complete durable read-back.
 func (s *Session) ContextMessages() []Message {
+	entries := s.activeEntries()
 	compactionIndex := -1
-	for i, entry := range s.entries {
+	for i, entry := range entries {
 		if entry.Type == "compaction" && entry.Compaction != nil {
 			compactionIndex = i
 		}
 	}
 	if compactionIndex < 0 {
-		return s.Messages()
+		return messagesFromEntries(entries)
 	}
-	compaction := s.entries[compactionIndex].Compaction
+	compaction := entries[compactionIndex].Compaction
 	firstKept := -1
 	for i := 0; i < compactionIndex; i++ {
-		if s.entries[i].ID == compaction.FirstKeptEntryID {
+		if entries[i].ID == compaction.FirstKeptEntryID {
 			firstKept = i
 			break
 		}
@@ -349,16 +350,61 @@ func (s *Session) ContextMessages() []Message {
 	}
 	result := []Message{{Role: "user", Content: "The conversation history before this point was compacted into the following summary:\n\n<summary>\n" + compaction.Summary + "\n</summary>"}}
 	for i := firstKept; i < compactionIndex; i++ {
-		if s.entries[i].Message != nil {
-			result = append(result, *s.entries[i].Message)
+		if entries[i].Message != nil {
+			result = append(result, *entries[i].Message)
 		}
 	}
-	for i := compactionIndex + 1; i < len(s.entries); i++ {
-		if s.entries[i].Message != nil {
-			result = append(result, *s.entries[i].Message)
+	for i := compactionIndex + 1; i < len(entries); i++ {
+		if entries[i].Message != nil {
+			result = append(result, *entries[i].Message)
 		}
 	}
 	return result
+}
+
+func (s *Session) activeEntries() []sessionEntry {
+	if len(s.entries) == 0 {
+		return nil
+	}
+	byID := make(map[string]int, len(s.entries))
+	for i, entry := range s.entries {
+		if entry.ID != "" {
+			byID[entry.ID] = i
+		}
+	}
+	if len(byID) != len(s.entries) {
+		return append([]sessionEntry(nil), s.entries...)
+	}
+	path := make([]sessionEntry, 0, len(s.entries))
+	seen := make(map[string]bool, len(s.entries))
+	index := len(s.entries) - 1
+	for index >= 0 && !seen[s.entries[index].ID] {
+		entry := s.entries[index]
+		path = append(path, entry)
+		seen[entry.ID] = true
+		if entry.ParentID == nil {
+			break
+		}
+		parent, ok := byID[*entry.ParentID]
+		if !ok {
+			break
+		}
+		index = parent
+	}
+	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
+		path[left], path[right] = path[right], path[left]
+	}
+	return path
+}
+
+func messagesFromEntries(entries []sessionEntry) []Message {
+	messages := make([]Message, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Message != nil {
+			messages = append(messages, *entry.Message)
+		}
+	}
+	return messages
 }
 
 func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error) {

@@ -202,6 +202,10 @@ func TestOpenV2MigrationPreservesExistingTreeLinks(t *testing.T) {
 	if opened.Messages()[2].Role != "custom" {
 		t.Fatalf("hook message role=%q", opened.Messages()[2].Role)
 	}
+	context := opened.ContextMessages()
+	if len(context) != 2 || context[0].Content != "root" || context[1].Content != "branch b" {
+		t.Fatalf("active branch context=%#v", context)
+	}
 }
 
 func TestSessionReadbackPreservesToolTurnBoundary(t *testing.T) {
