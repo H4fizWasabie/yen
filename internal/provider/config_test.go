@@ -225,6 +225,26 @@ func TestOpenAICodexUsesAccountAndExperimentalHeaders(t *testing.T) {
 	}
 }
 
+func TestOpenAICodexUsesStoredYenCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	token := "header." + base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-stored"}}`)) + ".signature"
+	if _, err := auth.Open(path).Modify("openai-codex", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "oauth", Access: token}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_OPENAI_CODEX_ACCESS_TOKEN", "")
+	configured, err := NewConfigured("openai-codex", "gpt-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(OpenAIResponses)
+	if !ok || client.APIKey != token || client.Headers["chatgpt-account-id"] != "acct-stored" {
+		t.Fatalf("configured=%#v", configured)
+	}
+}
+
 func TestNewFromEnvPrefersYenProviderCredentials(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "openrouter")
 	t.Setenv("YEN_MODEL", "z-ai/glm-5.3-flash")
