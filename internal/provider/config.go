@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -120,6 +121,52 @@ func Describe(p agent.Provider) (string, string) {
 		return "anthropic", client.Model
 	default:
 		return "", ""
+	}
+}
+
+var ThinkingLevels = []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
+
+func SetThinkingLevel(p agent.Provider, level string) (agent.Provider, error) {
+	level = strings.ToLower(strings.TrimSpace(level))
+	valid := false
+	for _, candidate := range ThinkingLevels {
+		if candidate == level {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return nil, fmt.Errorf("unsupported thinking level %q", level)
+	}
+	switch client := p.(type) {
+	case OpenAICompletions:
+		client.ReasoningEffort = ""
+		if level != "off" {
+			client.ReasoningEffort = level
+		}
+		return client, nil
+	case AnthropicMessages:
+		client.ThinkingLevel = level
+		return client, nil
+	default:
+		return nil, errors.New("provider does not support thinking levels")
+	}
+}
+
+func ThinkingLevel(p agent.Provider) string {
+	switch client := p.(type) {
+	case OpenAICompletions:
+		if client.ReasoningEffort == "" {
+			return "off"
+		}
+		return client.ReasoningEffort
+	case AnthropicMessages:
+		if client.ThinkingLevel == "" {
+			return "off"
+		}
+		return client.ThinkingLevel
+	default:
+		return "off"
 	}
 }
 

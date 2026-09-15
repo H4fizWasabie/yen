@@ -43,3 +43,16 @@ func TestNewConfiguredSupportsOpenAICompatibleAndAnthropicProviders(t *testing.T
 		t.Fatalf("provider=%q model=%q", name, model)
 	}
 }
+
+func TestSetThinkingLevelShapesProviderState(t *testing.T) {
+	openai := NewOpenAICompletions("http://fixture", "key", "model")
+	configured, err := SetThinkingLevel(openai, "high")
+	if err != nil || ThinkingLevel(configured) != "high" {
+		t.Fatalf("provider=%#v err=%v", configured, err)
+	}
+	anthropic := NewAnthropicMessages("http://fixture", "key", "model")
+	configured, err = SetThinkingLevel(anthropic, "medium")
+	if err != nil || ThinkingLevel(configured) != "medium" {
+		t.Fatalf("provider=%#v err=%v", configured, err)
+	}
+}

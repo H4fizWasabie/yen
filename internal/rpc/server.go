@@ -42,6 +42,7 @@ type command struct {
 	Path              string     `json:"path,omitempty"`
 	Provider          string     `json:"provider,omitempty"`
 	Model             string     `json:"modelId,omitempty"`
+	Level             string     `json:"level,omitempty"`
 	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 }
@@ -133,10 +134,11 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		_, active := s.Runner.Active(link.ConversationID)
 		return s.response(output, request.ID, request.Type, true, map[string]any{
 			"sessionId": link.ConversationID, "isStreaming": active,
-			"sessionName":  session.SessionName(),
-			"provider":     func() string { name, _ := providerpkg.Describe(s.Runner.Provider); return name }(),
-			"model":        func() string { _, model := providerpkg.Describe(s.Runner.Provider); return model }(),
-			"messageCount": len(session.Messages()), "pendingMessageCount": 0,
+			"sessionName":   session.SessionName(),
+			"provider":      func() string { name, _ := providerpkg.Describe(s.Runner.Provider); return name }(),
+			"model":         func() string { _, model := providerpkg.Describe(s.Runner.Provider); return model }(),
+			"thinkingLevel": providerpkg.ThinkingLevel(s.Runner.Provider),
+			"messageCount":  len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
 	case "get_messages":
 		session, err := s.Runner.OpenSession(link)
@@ -265,6 +267,33 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		s.Runner.Provider = configured
 		name, model := providerpkg.Describe(configured)
 		return s.response(output, request.ID, request.Type, true, map[string]any{"provider": name, "model": model}, nil)
+	case "set_thinking_level":
+		if _, active := s.Runner.Active(link.ConversationID); active {
+			return errors.New("cannot change thinking level during an active operation")
+		}
+		configured, err := providerpkg.SetThinkingLevel(s.Runner.Provider, request.Level)
+		if err != nil {
+			return err
+		}
+		s.Runner.Provider = configured
+		return s.response(output, request.ID, request.Type, true, map[string]any{"level": providerpkg.ThinkingLevel(configured)}, nil)
+	case "get_available_thinking_levels":
+		return s.response(output, request.ID, request.Type, true, map[string]any{"levels": providerpkg.ThinkingLevels}, nil)
+	case "cycle_thinking_level":
+		current := providerpkg.ThinkingLevel(s.Runner.Provider)
+		index := 0
+		for i, level := range providerpkg.ThinkingLevels {
+			if level == current {
+				index = (i + 1) % len(providerpkg.ThinkingLevels)
+				break
+			}
+		}
+		configured, err := providerpkg.SetThinkingLevel(s.Runner.Provider, providerpkg.ThinkingLevels[index])
+		if err != nil {
+			return err
+		}
+		s.Runner.Provider = configured
+		return s.response(output, request.ID, request.Type, true, map[string]any{"level": providerpkg.ThinkingLevel(configured)}, nil)
 	default:
 		return fmt.Errorf("unsupported rpc command %q", request.Type)
 	}

@@ -228,3 +228,23 @@ func TestSetModelCommandReplacesConfiguredProvider(t *testing.T) {
 		t.Fatalf("provider=%q model=%q output=%s", name, model, output.String())
 	}
 }
+
+func TestThinkingLevelCommandsUpdateState(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, providerpkg.NewOpenAICompletions("http://fixture", "key", "model"), nil)
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "thinking", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{ID: "1", Type: "set_thinking_level", Level: "high"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{ID: "2", Type: "cycle_thinking_level"}); err != nil {
+		t.Fatal(err)
+	}
+	if providerpkg.ThinkingLevel(runner.Provider) != "xhigh" || !strings.Contains(output.String(), `"level":"xhigh"`) {
+		t.Fatalf("level=%q output=%s", providerpkg.ThinkingLevel(runner.Provider), output.String())
+	}
+}

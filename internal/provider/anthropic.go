@@ -16,11 +16,12 @@ import (
 )
 
 type AnthropicMessages struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	Client     *http.Client
-	MaxRetries int
+	BaseURL       string
+	APIKey        string
+	Model         string
+	ThinkingLevel string
+	Client        *http.Client
+	MaxRetries    int
 }
 
 func NewAnthropicMessages(baseURL, apiKey, model string) AnthropicMessages {
@@ -42,6 +43,14 @@ func (p AnthropicMessages) NextWithEvents(ctx context.Context, messages []agent.
 func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent)) (agent.Response, error) {
 	system, converted := convertAnthropicMessages(messages)
 	payload := map[string]any{"model": p.Model, "max_tokens": 8192, "stream": true, "messages": converted}
+	if p.ThinkingLevel != "" && p.ThinkingLevel != "off" {
+		budget := map[string]int{"minimal": 1024, "low": 2048, "medium": 4096, "high": 6144, "xhigh": 7168, "max": 8192}[p.ThinkingLevel]
+		if budget == 0 {
+			budget = 1024
+		}
+		payload["thinking"] = map[string]any{"type": "enabled", "budget_tokens": budget}
+		payload["max_tokens"] = budget + 1024
+	}
 	if system != "" {
 		payload["system"] = system
 	}
