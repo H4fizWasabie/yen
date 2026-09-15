@@ -39,13 +39,15 @@ type Runner struct {
 	AutoCompactOnOverflow          bool
 	AutoConsolidate                bool
 
-	mu     sync.Mutex
-	active map[string]context.CancelFunc
-	queues map[string]*agent.MessageQueues
+	mu      sync.Mutex
+	active  map[string]context.CancelFunc
+	queues  map[string]*agent.MessageQueues
+	pathsMu sync.RWMutex
+	paths   map[string]string
 }
 
 func New(queue *conversation.Queue, provider agent.Provider, tools func(string) []agent.Tool) *Runner {
-	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues)}
+	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues), paths: make(map[string]string)}
 }
 
 func AutoCompactTurnsFromEnv() int {
@@ -268,6 +270,15 @@ func (r *Runner) Active(conversationID string) (conversation.Turn, bool) {
 
 func (r *Runner) OpenSession(link conversation.Link) (*session.Session, error) {
 	return openOrCreate(r.pathFor(conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID}), conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID})
+}
+
+func (r *Runner) SetSessionPath(conversationID, path string) {
+	r.pathsMu.Lock()
+	defer r.pathsMu.Unlock()
+	if r.paths == nil {
+		r.paths = make(map[string]string)
+	}
+	r.paths[conversationID] = path
 }
 
 func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentTurns int) error {
@@ -566,6 +577,12 @@ func truncateConsolidation(text string, max int) string {
 }
 
 func (r *Runner) pathFor(turn conversation.Turn) string {
+	r.pathsMu.RLock()
+	if path := r.paths[turn.ConversationID]; path != "" {
+		r.pathsMu.RUnlock()
+		return path
+	}
+	r.pathsMu.RUnlock()
 	if r.SessionPath != nil {
 		return r.SessionPath(turn)
 	}

@@ -23,6 +23,7 @@ type Server struct {
 	Link   conversation.Link
 
 	writeMu  sync.Mutex
+	linkMu   sync.RWMutex
 	activeMu sync.Mutex
 	active   map[string]conversation.Turn
 	wg       sync.WaitGroup
@@ -81,12 +82,13 @@ func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) e
 }
 
 func (s *Server) handle(ctx context.Context, output io.Writer, request command) error {
+	link := s.currentLink()
 	switch request.Type {
 	case "prompt", "steer", "follow_up":
 		if strings.TrimSpace(request.Message) == "" {
 			return errors.New("message is required")
 		}
-		turn, err := s.Runner.Submit(s.Link, request.Message)
+		turn, err := s.Runner.Submit(link, request.Message)
 		if err != nil {
 			return err
 		}
@@ -113,7 +115,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}()
 		return nil
 	case "abort":
-		turn, ok := s.Runner.Active(s.Link.ConversationID)
+		turn, ok := s.Runner.Active(link.ConversationID)
 		if ok {
 			if err := s.Runner.Cancel(turn.ID); err != nil {
 				return err
@@ -121,24 +123,24 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"active": ok}, nil)
 	case "get_state":
-		session, err := s.Runner.OpenSession(s.Link)
+		session, err := s.Runner.OpenSession(link)
 		if err != nil {
 			return err
 		}
-		_, active := s.Runner.Active(s.Link.ConversationID)
+		_, active := s.Runner.Active(link.ConversationID)
 		return s.response(output, request.ID, request.Type, true, map[string]any{
-			"sessionId": s.Link.ConversationID, "isStreaming": active,
+			"sessionId": link.ConversationID, "isStreaming": active,
 			"sessionName":  session.SessionName(),
 			"messageCount": len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
 	case "get_messages":
-		session, err := s.Runner.OpenSession(s.Link)
+		session, err := s.Runner.OpenSession(link)
 		if err != nil {
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"messages": session.Messages()}, nil)
 	case "get_tree", "get_entries", "get_session_stats", "get_last_assistant_text":
-		session, err := s.Runner.OpenSession(s.Link)
+		session, err := s.Runner.OpenSession(link)
 		if err != nil {
 			return err
 		}
@@ -168,7 +170,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return s.response(output, request.ID, request.Type, true, map[string]any{"messageCount": len(session.Messages()), "leafId": session.LeafID()}, nil)
 		}
 	case "branch":
-		session, err := s.Runner.OpenSession(s.Link)
+		session, err := s.Runner.OpenSession(link)
 		if err != nil {
 			return err
 		}
@@ -177,13 +179,13 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"leafId": session.LeafID()}, nil)
 	case "get_artifacts":
-		session, err := s.Runner.OpenSession(s.Link)
+		session, err := s.Runner.OpenSession(link)
 		if err != nil {
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"artifacts": session.Artifacts()}, nil)
 	case "set_session_name":
-		session, err := s.Runner.OpenSession(s.Link)
+		session, err := s.Runner.OpenSession(link)
 		if err != nil {
 			return err
 		}
@@ -192,7 +194,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"name": session.SessionName()}, nil)
 	case "fork":
-		session, err := s.Runner.OpenSession(s.Link)
+		session, err := s.Runner.OpenSession(link)
 		if err != nil {
 			return err
 		}
@@ -208,26 +210,21 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": forkID, "path": forked.Path(), "leafId": forked.LeafID()}, nil)
-	case "import_session":
+	case "import_session", "switch_session":
 		if strings.TrimSpace(request.Path) == "" {
 			return errors.New("path is required")
 		}
-		current, err := s.Runner.OpenSession(s.Link)
+		imported, err := s.switchSession(request.Path, link)
 		if err != nil {
 			return err
 		}
-		destination := filepath.Join(filepath.Dir(current.Path()), filepath.Base(request.Path))
-		imported, err := session.Import(request.Path, destination)
-		if err != nil {
-			return err
-		}
-		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": imported.Header().ID, "path": imported.Path(), "leafId": imported.LeafID(), "name": imported.SessionName()}, nil)
+		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": imported.Header().ID, "path": imported.Path(), "leafId": imported.LeafID(), "name": imported.SessionName(), "switched": true}, nil)
 	case "compact":
 		keep := request.KeepRecentTurns
 		if keep < 1 {
 			keep = 2
 		}
-		if err := s.Runner.Compact(ctx, s.Link.ConversationID, keep); err != nil {
+		if err := s.Runner.Compact(ctx, link.ConversationID, keep); err != nil {
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"keepRecentTurns": keep}, nil)
@@ -240,6 +237,39 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 	default:
 		return fmt.Errorf("unsupported rpc command %q", request.Type)
 	}
+}
+
+func (s *Server) currentLink() conversation.Link {
+	s.linkMu.RLock()
+	defer s.linkMu.RUnlock()
+	return s.Link
+}
+
+func (s *Server) switchSession(source string, current conversation.Link) (*session.Session, error) {
+	currentSession, err := s.Runner.OpenSession(current)
+	if err != nil {
+		return nil, err
+	}
+	destination := filepath.Join(filepath.Dir(currentSession.Path()), filepath.Base(source))
+	imported, err := session.Import(source, destination)
+	if err != nil {
+		return nil, err
+	}
+	header := imported.Header()
+	conversationID := header.ConversationID
+	if conversationID == "" {
+		conversationID = header.ID
+	}
+	workspaceID := header.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = current.WorkspaceID
+	}
+	s.Runner.SetSessionPath(conversationID, destination)
+	current.ConversationID, current.WorkspaceID = conversationID, workspaceID
+	s.linkMu.Lock()
+	s.Link = current
+	s.linkMu.Unlock()
+	return imported, nil
 }
 
 func (s *Server) runPrompt(ctx context.Context, output io.Writer, turn conversation.Turn, images []string) {

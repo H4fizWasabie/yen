@@ -176,4 +176,8 @@ func TestImportSessionCommandCopiesExternalSession(t *testing.T) {
 	if err != nil || len(imported.Messages()) != 1 || imported.Messages()[0].Content != "external" || !strings.Contains(output.String(), `"success":true`) {
 		t.Fatalf("messages=%#v output=%s err=%v", imported.Messages(), output.String(), err)
 	}
+	active, err := runner.OpenSession(server.currentLink())
+	if err != nil || active.Path() != filepath.Join(dir, "external.jsonl") || active.Messages()[0].Content != "external" {
+		t.Fatalf("active=%#v err=%v", active, err)
+	}
 }
