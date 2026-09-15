@@ -51,8 +51,9 @@ set -eu
 set -a
 . "$provider_env"
 set +a
+api_key="\${OPENAI_API_KEY:-\${OPENROUTER_API_KEY:-}}"
 exec env -i PATH=/usr/bin:/bin HOME=/root \\
-  OPENAI_API_KEY="\${OPENAI_API_KEY:-}" \\
+  OPENAI_API_KEY="\$api_key" \\
   THEOSES_TELEGRAM_BOT_TOKEN="\${THEOSES_TELEGRAM_BOT_TOKEN:-}" \\
   THEOSES_TELEGRAM_CHAT_ID="\${THEOSES_TELEGRAM_CHAT_ID:-}" \\
   THEOSES_CANONICAL_CONVERSATION_ID="\${THEOSES_CANONICAL_CONVERSATION_ID:-}" \\
@@ -62,8 +63,8 @@ exec env -i PATH=/usr/bin:/bin HOME=/root \\
   THEOSES_AUTO_COMPACT_OVERFLOW="\${THEOSES_AUTO_COMPACT_OVERFLOW:-}" \\
   THEOSES_AUTO_CONSOLIDATE="\${THEOSES_AUTO_CONSOLIDATE:-}" \\
   THEOSES_DATA_DIR="$data_dir" \\
-  THEOSES_OPENAI_BASE_URL="\${THEOSES_OPENAI_BASE_URL:-https://api.openai.com/v1}" \\
-  THEOSES_MODEL="\${THEOSES_MODEL:-gpt-4o-mini}" \\
+  THEOSES_OPENAI_BASE_URL="\${THEOSES_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
+  THEOSES_MODEL="\${THEOSES_MODEL:-z-ai/glm-5.3-flash}" \\
   "$release_dir/theoses-telegram"
 EOF
 
@@ -73,16 +74,17 @@ set -eu
 set -a
 . "$provider_env"
 set +a
+api_key="\${OPENAI_API_KEY:-\${OPENROUTER_API_KEY:-}}"
 exec env -i PATH=/usr/bin:/bin HOME=/root \\
-  OPENAI_API_KEY="\${OPENAI_API_KEY:-}" \\
+  OPENAI_API_KEY="\$api_key" \\
   THEOSES_CANONICAL_CONVERSATION_ID="\${THEOSES_CANONICAL_CONVERSATION_ID:-}" \\
   THEOSES_DASHBOARD_TOKEN="\${THEOSES_DASHBOARD_TOKEN:-}" \\
   THEOSES_AUTO_COMPACT_TURNS="\${THEOSES_AUTO_COMPACT_TURNS:-}" \\
   THEOSES_AUTO_COMPACT_OVERFLOW="\${THEOSES_AUTO_COMPACT_OVERFLOW:-}" \\
   THEOSES_AUTO_CONSOLIDATE="\${THEOSES_AUTO_CONSOLIDATE:-}" \\
   THEOSES_DATA_DIR="$data_dir" \\
-  THEOSES_OPENAI_BASE_URL="\${THEOSES_OPENAI_BASE_URL:-https://api.openai.com/v1}" \\
-  THEOSES_MODEL="\${THEOSES_MODEL:-gpt-4o-mini}" \\
+  THEOSES_OPENAI_BASE_URL="\${THEOSES_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
+  THEOSES_MODEL="\${THEOSES_MODEL:-z-ai/glm-5.3-flash}" \\
   "$release_dir/theoses-dashboard" -addr "$dashboard_addr"
 EOF
 chmod 0755 "$release_dir/run-telegram" "$release_dir/run-dashboard"
