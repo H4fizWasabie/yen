@@ -95,12 +95,29 @@ func TestDeferredExternalToolsSearchAndCall(t *testing.T) {
 func TestMCPStdioLoadsAndCallsTools(t *testing.T) {
 	script := `while IFS= read -r line; do case "$line" in *initialize*) echo '{"jsonrpc":"2.0","id":1,"result":{}}' ;; *tools/list*) echo '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"stdio_echo","inputSchema":{"type":"object"}}]}}' ;; *tools/call*) echo '{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"ok"}]}}' ;; esac; done`
 	tools := loadMCPStdio("sh", []string{"-c", script})
+	defer func() { _ = CloseTools(tools) }()
 	if len(tools) != 1 || tools[0].Name() != "stdio_echo" {
 		t.Fatalf("tools=%#v", tools)
 	}
 	result, err := tools[0].Execute(context.Background(), map[string]any{})
 	if err != nil || !strings.Contains(result, "UNTRUSTED EXTERNAL CONTENT") {
 		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+type closeProbe struct{ closed bool }
+
+func (p *closeProbe) Name() string                                            { return "close-probe" }
+func (p *closeProbe) Execute(context.Context, map[string]any) (string, error) { return "", nil }
+func (p *closeProbe) Close() error                                            { p.closed = true; return nil }
+
+func TestCloseToolsReleasesOptionalToolResources(t *testing.T) {
+	probe := &closeProbe{}
+	if err := CloseTools([]agent.Tool{probe}); err != nil {
+		t.Fatal(err)
+	}
+	if !probe.closed {
+		t.Fatal("closable tool was not released")
 	}
 }
 

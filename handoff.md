@@ -382,6 +382,12 @@ configuration. This is the storage/auth boundary only; provider-specific
 OAuth login, refresh, and browser/device flows remain open. The full gate is
 239 tests plus race/vet/diff.
 
+External tool lifecycle is now wired through `codingagent.CloseTools` and a
+runtime defer: MCP stdio tools expose cleanup, failed stdio initialization
+closes its child, and deferred tools close their underlying resources. The
+cleanup seam has a regression test; the full gate is now 240 tests plus
+race/vet/diff.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future

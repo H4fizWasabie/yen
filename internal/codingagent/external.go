@@ -22,12 +22,35 @@ type externalTool struct {
 	description string
 	schema      map[string]any
 	execute     func(context.Context, map[string]any) (string, error)
+	close       func() error
 }
 
 func (t externalTool) Name() string { return t.name }
 
 func (t externalTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	return t.execute(ctx, args)
+}
+
+func (t externalTool) Close() error {
+	if t.close == nil {
+		return nil
+	}
+	return t.close()
+}
+
+// CloseTools releases optional resources owned by external tools. Built-in
+// tools are unaffected; cleanup is best-effort so one failed close does not
+// hide a completed agent turn.
+func CloseTools(tools []agent.Tool) error {
+	var first error
+	for _, tool := range tools {
+		if closer, ok := tool.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil && first == nil {
+				first = err
+			}
+		}
+	}
+	return first
 }
 
 type externalCatalogEntry struct {
@@ -57,6 +80,8 @@ type deferredExternalTool struct {
 }
 
 func (t deferredExternalTool) Name() string { return t.name }
+
+func (t deferredExternalTool) Close() error { return CloseTools(t.tools) }
 
 func (t deferredExternalTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if t.name == "tool_search" {
@@ -226,13 +251,16 @@ func loadMCPStdio(command string, args []string) []agent.Tool {
 		"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
 		"clientInfo": map[string]string{"name": "yen", "version": "0.1"},
 	}); err != nil {
+		_ = client.Close()
 		return nil
 	}
 	if err := client.notify("notifications/initialized", map[string]any{}); err != nil {
+		_ = client.Close()
 		return nil
 	}
 	value, err := client.request(context.Background(), "tools/list", map[string]any{})
 	if err != nil {
+		_ = client.Close()
 		return nil
 	}
 	result := make([]agent.Tool, 0)
@@ -241,7 +269,7 @@ func loadMCPStdio(command string, args []string) []agent.Tool {
 			continue
 		}
 		name := entry.Name
-		result = append(result, externalTool{name: name, description: entry.Description, schema: externalSchema(entry), execute: func(ctx context.Context, args map[string]any) (string, error) {
+		result = append(result, externalTool{name: name, description: entry.Description, schema: externalSchema(entry), close: client.Close, execute: func(ctx context.Context, args map[string]any) (string, error) {
 			value, err := client.request(ctx, "tools/call", map[string]any{"name": name, "arguments": args})
 			if err != nil {
 				return "", err
