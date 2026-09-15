@@ -224,6 +224,24 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err = fmt.Fprintf(stdout, "%s\n", data)
 		return true, err
+	case text == "/login openai-codex":
+		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+		if path == "" {
+			return true, fmt.Errorf("YEN_AUTH_FILE is required for /login")
+		}
+		credential, err := auth.LoginOpenAICodexDevice(context.Background(), func(message string) {
+			_, _ = fmt.Fprintln(stdout, message)
+		})
+		if err != nil {
+			return true, err
+		}
+		if _, err := auth.Open(path).Modify("openai-codex", func(*auth.Credential) (*auth.Credential, error) {
+			return &credential, nil
+		}); err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintln(stdout, "Logged in: openai-codex")
+		return true, err
 	case text == "/logout" || strings.HasPrefix(text, "/logout "):
 		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
 		if path == "" {
