@@ -27,6 +27,13 @@ deferred below.
 
 ## Accepted and deferred differences
 
+The Go `convert_doc` tool now preserves non-empty `markitdown` stderr when the
+conversion command fails, matching the oracle's `execFile` error propagation.
+TypeScript authority: `packages/coding-agent/src/core/tools/convert-doc.ts:18-35`;
+Go evidence: `internal/codingagent/convert_doc.go` and
+`TestConvertDocIncludesMarkitdownStderrOnFailure`. The focused test and full
+363-test race/vet/diff gates pass.
+
 ## Checkpoint update: 2026-09-16
 
 Native OpenAI Responses reasoning output items now preserve their summary text

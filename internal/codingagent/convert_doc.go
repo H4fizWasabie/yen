@@ -1,6 +1,7 @@
 package codingagent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -33,7 +34,8 @@ func (t convertDocTool) Execute(ctx context.Context, args map[string]any) (strin
 	if err != nil {
 		return "", err
 	}
-	command.Stderr = io.Discard
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
 	if err := command.Start(); err != nil {
 		var executableError *exec.Error
 		if errors.As(err, &executableError) {
@@ -52,6 +54,9 @@ func (t convertDocTool) Execute(ctx context.Context, args map[string]any) (strin
 		return "", fmt.Errorf("markitdown failed: %w", readErr)
 	}
 	if err := command.Wait(); err != nil {
+		if message := strings.TrimSpace(stderr.String()); message != "" {
+			return "", fmt.Errorf("markitdown failed: %s: %w", message, err)
+		}
 		return "", fmt.Errorf("markitdown failed: %w", err)
 	}
 	text := strings.TrimSpace(string(output))
