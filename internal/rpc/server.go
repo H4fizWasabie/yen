@@ -99,11 +99,46 @@ func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) e
 }
 
 func (s *Server) handle(ctx context.Context, output io.Writer, request command) error {
+	s.activeMu.Lock()
+	if s.active == nil {
+		s.active = make(map[string]conversation.Turn)
+	}
+	s.activeMu.Unlock()
 	link := s.currentLink()
 	switch request.Type {
-	case "prompt", "steer", "follow_up":
+	case "steer", "follow_up":
 		if strings.TrimSpace(request.Message) == "" {
 			return errors.New("message is required")
+		}
+		active, ok := s.Runner.Active(link.ConversationID)
+		if !ok {
+			return errors.New("no active turn")
+		}
+		var err error
+		if request.Type == "steer" {
+			err = s.Runner.Steer(active.ID, request.Message)
+		} else {
+			err = s.Runner.FollowUp(active.ID, request.Message)
+		}
+		if err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"turnId": active.ID}, nil)
+	case "prompt":
+		if strings.TrimSpace(request.Message) == "" {
+			return errors.New("message is required")
+		}
+		if request.StreamingBehavior == "steer" || request.StreamingBehavior == "followUp" {
+			if active, ok := s.Runner.Active(link.ConversationID); ok {
+				if request.StreamingBehavior == "steer" {
+					if err := s.Runner.Steer(active.ID, request.Message); err != nil {
+						return err
+					}
+				} else if err := s.Runner.FollowUp(active.ID, request.Message); err != nil {
+					return err
+				}
+				return s.response(output, request.ID, request.Type, true, map[string]any{"turnId": active.ID}, nil)
+			}
 		}
 		turn, err := s.Runner.Submit(link, request.Message)
 		if err != nil {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
@@ -20,6 +21,24 @@ type rpcProvider struct{}
 
 func (rpcProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
 	return agent.Response{Text: "rpc reply", StopReason: "stop"}, nil
+}
+
+type blockingRPCProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p blockingRPCProvider) Next(ctx context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	select {
+	case p.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-p.release:
+		return agent.Response{Text: "rpc reply", StopReason: "stop"}, nil
+	case <-ctx.Done():
+		return agent.Response{}, ctx.Err()
+	}
 }
 
 func TestServePromptStateAndMessagesUseJSONLProtocol(t *testing.T) {
@@ -65,6 +84,38 @@ func TestServeRejectsUnknownCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), `"success":false`) || !strings.Contains(output.String(), "unsupported rpc command") {
+		t.Fatalf("output=%s", output.String())
+	}
+}
+
+func TestSteerAndFollowUpRouteToActiveTurn(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := blockingRPCProvider{started: make(chan struct{}, 1), release: make(chan struct{})}
+	runner := runtime.New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "active-rpc", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{Type: "prompt", Message: "start"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-provider.started:
+	case <-time.After(time.Second):
+		t.Fatal("provider did not start")
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "steer", Message: "change direction"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "follow_up", Message: "continue later"}); err != nil {
+		t.Fatal(err)
+	}
+	close(provider.release)
+	server.wg.Wait()
+	if !strings.Contains(output.String(), `"command":"steer"`) || !strings.Contains(output.String(), `"command":"follow_up"`) {
 		t.Fatalf("output=%s", output.String())
 	}
 }
