@@ -121,11 +121,16 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		Stream          bool              `json:"stream"`
 		ResponseFormat  map[string]string `json:"response_format,omitempty"`
 		Reasoning       map[string]string `json:"reasoning,omitempty"`
+		Thinking        map[string]any    `json:"thinking,omitempty"`
+		ToolStream      bool              `json:"tool_stream,omitempty"`
 		ReasoningEffort string            `json:"reasoning_effort,omitempty"`
 	}{Model: p.Model, Messages: converted, Stream: true}
 	if p.ReasoningEffort != "" {
 		if p.ProviderName == "mistral" {
 			payload.ReasoningEffort = p.ReasoningEffort
+		} else if p.ProviderName == "zai" || p.ProviderName == "zai-coding-cn" {
+			payload.Thinking = map[string]any{"type": "enabled", "clear_thinking": false}
+			payload.ToolStream = true
 		} else {
 			payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
 		}

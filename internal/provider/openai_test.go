@@ -157,6 +157,31 @@ func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
 	}
 }
 
+func TestZAIUsesThinkingAndToolStreamFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Reasoning  map[string]string `json:"reasoning"`
+			Thinking   map[string]any    `json:"thinking"`
+			ToolStream bool              `json:"tool_stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Reasoning != nil || payload.Thinking["type"] != "enabled" || payload.Thinking["clear_thinking"] != false || !payload.ToolStream {
+			t.Fatalf("reasoning=%#v thinking=%#v tool_stream=%v", payload.Reasoning, payload.Thinking, payload.ToolStream)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "", "glm-5.3-flash")
+	client.ProviderName = "zai"
+	client.ReasoningEffort = "high"
+	if _, err := client.Next(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMistralParsesThinkingChunksAndNormalizesToolIDs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {

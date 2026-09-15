@@ -167,6 +167,15 @@ persistence. TypeScript authority:
 full 303-test race/vet/diff gate passes. Extension loading, command/rendering
 hooks, and provider interception remain open.
 
+OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
+fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
+instead of the generic `reasoning.effort` field. TypeScript authority:
+`packages/ai/src/api/openai-completions.ts:844-855,1640-1650` and Z.AI model
+compatibility data under `packages/ai/src/providers/data/zai.json`. Go evidence:
+`internal/provider/openai.go` and `TestZAIUsesThinkingAndToolStreamFields`;
+the full gate now passes 307 tests, race, vet, and diff checks. Other
+model-specific OpenAI-compatible thinking formats remain open.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 
