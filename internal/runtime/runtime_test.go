@@ -801,12 +801,12 @@ func TestThinkingRoundTripsThroughSessionContext(t *testing.T) {
 }
 
 func TestAssistantErrorMessageRoundTripsThroughSession(t *testing.T) {
-	stored := toSessionMessage(agent.Message{Role: "assistant", Content: "blocked", StopReason: "error", ErrorMessage: "Provider finish_reason: content_filter"})
+	stored := toSessionMessage(agent.Message{Role: "assistant", Content: "blocked", StopReason: "error", ErrorMessage: "Provider finish_reason: content_filter", ResponseID: "resp-1", ResponseModel: "served-model", RawStopReason: "content_filter"})
 	if stored.ErrorMessage != "Provider finish_reason: content_filter" {
 		t.Fatalf("stored=%#v", stored)
 	}
 	converted := toAgentMessages([]session.Message{stored})
-	if len(converted) != 1 || converted[0].ErrorMessage != stored.ErrorMessage {
+	if len(converted) != 1 || converted[0].ErrorMessage != stored.ErrorMessage || converted[0].ResponseID != "resp-1" || converted[0].ResponseModel != "served-model" || converted[0].RawStopReason != "content_filter" {
 		t.Fatalf("converted=%#v", converted)
 	}
 }

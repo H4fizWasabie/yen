@@ -65,6 +65,9 @@ type Message struct {
 	ToolCallID         string   `json:"toolCallId,omitempty"`
 	StopReason         string   `json:"stopReason,omitempty"`
 	ErrorMessage       string   `json:"errorMessage,omitempty"`
+	ResponseID         string   `json:"responseId,omitempty"`
+	ResponseModel      string   `json:"responseModel,omitempty"`
+	RawStopReason      string   `json:"rawStopReason,omitempty"`
 	Provider           string   `json:"provider,omitempty"`
 	Model              string   `json:"model,omitempty"`
 	Usage              *Usage   `json:"usage,omitempty"`
