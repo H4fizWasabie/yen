@@ -177,6 +177,40 @@ func TestVertexServiceAccountExchangesJWTForBearerToken(t *testing.T) {
 	}
 }
 
+func TestVertexAuthorizedUserRefreshesADCForBearerToken(t *testing.T) {
+	var exchanges atomic.Int32
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		exchanges.Add(1)
+		if err := r.ParseForm(); err != nil || r.Form.Get("grant_type") != "refresh_token" || r.Form.Get("client_id") != "client-id" || r.Form.Get("client_secret") != "client-secret" || r.Form.Get("refresh_token") != "refresh-token" {
+			t.Fatalf("form=%v err=%v", r.Form, err)
+		}
+		_, _ = fmt.Fprint(w, `{"access_token":"adc-access","expires_in":3600}`)
+	}))
+	defer tokenServer.Close()
+
+	credentials, err := json.Marshal(map[string]string{
+		"type": "authorized_user", "client_id": "client-id", "client_secret": "client-secret",
+		"refresh_token": "refresh-token", "token_uri": tokenServer.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "application-default-credentials.json")
+	if err := os.WriteFile(path, credentials, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := vertexServiceAccountSource(path)
+	for i := 0; i < 2; i++ {
+		token, err := source(context.Background())
+		if err != nil || token != "adc-access" {
+			t.Fatalf("token=%q err=%v", token, err)
+		}
+	}
+	if exchanges.Load() != 1 {
+		t.Fatalf("token exchanges=%d, want 1", exchanges.Load())
+	}
+}
+
 func TestGitHubCopilotUsesDynamicHeadersAndYenToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer copilot-token" || r.Header.Get("X-Initiator") != "agent" || r.Header.Get("Openai-Intent") != "conversation-edits" || r.Header.Get("Copilot-Vision-Request") != "true" {

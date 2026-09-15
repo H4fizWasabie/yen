@@ -21,10 +21,13 @@ import (
 )
 
 type vertexServiceAccount struct {
-	Type        string `json:"type"`
-	ClientEmail string `json:"client_email"`
-	PrivateKey  string `json:"private_key"`
-	TokenURI    string `json:"token_uri"`
+	Type         string `json:"type"`
+	ClientEmail  string `json:"client_email"`
+	PrivateKey   string `json:"private_key"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RefreshToken string `json:"refresh_token"`
+	TokenURI     string `json:"token_uri"`
 }
 
 func vertexServiceAccountSource(path string) func(context.Context) (string, error) {
@@ -49,11 +52,57 @@ func vertexServiceAccountSource(path string) func(context.Context) (string, erro
 		if err := json.Unmarshal(data, &credentials); err != nil {
 			return "", fmt.Errorf("vertex credentials: %w", err)
 		}
-		if credentials.Type != "service_account" || credentials.ClientEmail == "" || credentials.PrivateKey == "" {
-			return "", errors.New("vertex credentials are not a service account")
-		}
 		if credentials.TokenURI == "" {
 			credentials.TokenURI = "https://oauth2.googleapis.com/token"
+		}
+		exchange := func(form url.Values) (string, int64, error) {
+			request, err := http.NewRequestWithContext(ctx, http.MethodPost, credentials.TokenURI, strings.NewReader(form.Encode()))
+			if err != nil {
+				return "", 0, err
+			}
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				return "", 0, err
+			}
+			defer response.Body.Close()
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+			if response.StatusCode < 200 || response.StatusCode >= 300 {
+				return "", 0, fmt.Errorf("vertex token exchange returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+			}
+			var token struct {
+				AccessToken string `json:"access_token"`
+				ExpiresIn   int64  `json:"expires_in"`
+			}
+			if err := json.Unmarshal(body, &token); err != nil || token.AccessToken == "" {
+				return "", 0, errors.New("vertex token exchange returned no access token")
+			}
+			return token.AccessToken, token.ExpiresIn, nil
+		}
+		cacheToken := func(value string, expiresIn int64) {
+			cacheMu.Lock()
+			cachedToken = value
+			cachedExpiry = time.Now().Add(time.Duration(expiresIn) * time.Second)
+			cacheMu.Unlock()
+		}
+		if credentials.Type == "authorized_user" {
+			if credentials.ClientID == "" || credentials.ClientSecret == "" || credentials.RefreshToken == "" {
+				return "", errors.New("vertex authorized-user credentials are incomplete")
+			}
+			token, expiresIn, err := exchange(url.Values{
+				"grant_type":    {"refresh_token"},
+				"client_id":     {credentials.ClientID},
+				"client_secret": {credentials.ClientSecret},
+				"refresh_token": {credentials.RefreshToken},
+			})
+			if err != nil {
+				return "", err
+			}
+			cacheToken(token, expiresIn)
+			return token, nil
+		}
+		if credentials.Type != "service_account" || credentials.ClientEmail == "" || credentials.PrivateKey == "" {
+			return "", errors.New("vertex credentials are not a service account")
 		}
 		block, _ := pem.Decode([]byte(credentials.PrivateKey))
 		if block == nil {
@@ -83,31 +132,11 @@ func vertexServiceAccountSource(path string) func(context.Context) (string, erro
 		}
 		assertion := unsigned + "." + base64.RawURLEncoding.EncodeToString(signature)
 		form := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:jwt-bearer"}, "assertion": {assertion}}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, credentials.TokenURI, strings.NewReader(form.Encode()))
+		token, expiresIn, err := exchange(form)
 		if err != nil {
 			return "", err
 		}
-		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			return "", err
-		}
-		defer response.Body.Close()
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			return "", fmt.Errorf("vertex token exchange returned %s: %s", response.Status, strings.TrimSpace(string(body)))
-		}
-		var token struct {
-			AccessToken string `json:"access_token"`
-			ExpiresIn   int64  `json:"expires_in"`
-		}
-		if err := json.Unmarshal(body, &token); err != nil || token.AccessToken == "" {
-			return "", errors.New("vertex token exchange returned no access token")
-		}
-		cacheMu.Lock()
-		cachedToken = token.AccessToken
-		cachedExpiry = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
-		cacheMu.Unlock()
-		return token.AccessToken, nil
+		cacheToken(token, expiresIn)
+		return token, nil
 	}
 }
