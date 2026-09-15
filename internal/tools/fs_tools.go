@@ -129,9 +129,12 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 		}
 		return nil
 	})
+	matchLimitReached := err == errGrepLimit
 	if err != nil && err != errGrepLimit { return "", err }
 	if len(out) == 0 { return "No matches found", nil }
-	return truncateToolOutput(strings.Join(out, "\n")), nil
+	result := truncateToolOutput(strings.Join(out, "\n"))
+	if matchLimitReached { result += fmt.Sprintf("\n\n[%d matches limit reached. Use limit=%d for more, or refine pattern]", limit, limit*2) }
+	return result, nil
 }
 
 var errGrepLimit = fmt.Errorf("grep match limit reached")

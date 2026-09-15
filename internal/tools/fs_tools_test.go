@@ -109,6 +109,20 @@ func TestGrepToolTruncatesLongMatchingLines(t *testing.T) {
 	}
 }
 
+func TestGrepToolReportsMatchLimit(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("match\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "match", "limit": 1})
+	if err != nil || !strings.Contains(got, "1 matches limit reached. Use limit=2 for more, or refine pattern") {
+		t.Fatalf("grep=%q err=%v", got, err)
+	}
+}
+
 func TestFileSearchToolsBoundOutput(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 200; i++ {
