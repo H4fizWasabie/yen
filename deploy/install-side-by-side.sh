@@ -18,7 +18,7 @@ state_dir=$(root_path "${YEN_STATE_DIR:-/opt/yen}")
 data_dir=$(root_path "${YEN_DATA_DIR:-/var/lib/theoses-go-telegram}")
 secrets_dir=$(root_path "${YEN_SECRETS_DIR:-/etc/theoses-go}")
 channel_env=${YEN_CHANNEL_ENV_FILE:-$secrets_dir/telegram.env}
-provider_env=${YEN_PROVIDER_ENV_FILE:-/home/theoses/.theoses/agent/theoses.env}
+provider_env=${YEN_PROVIDER_ENV_FILE:-$secrets_dir/yen-provider.env}
 release_id=${YEN_RELEASE_ID:-$(git -C "$source_dir" rev-parse --short=7 HEAD)}
 dashboard_addr=${YEN_DASHBOARD_ADDR:-127.0.0.1:30146}
 start=${YEN_START:-0}
@@ -30,6 +30,10 @@ if [ ! -f "$channel_env" ]; then
 fi
 if [ ! -f "$provider_env" ]; then
 	echo "missing provider environment file: $provider_env" >&2
+	exit 1
+fi
+if [ "$provider_env" = "/home/theoses/.theoses/agent/theoses.env" ]; then
+	echo "Yen provider environment must be separate from Theoses" >&2
 	exit 1
 fi
 

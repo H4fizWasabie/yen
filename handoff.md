@@ -19,6 +19,11 @@ No cutover or TypeScript modification has happened. Local Telegram/dashboard
 adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
+Provider credentials are intentionally split: Yen must use the separate
+`/etc/theoses-go/yen-provider.env` file. The existing Theoses provider env is
+not a valid Yen deployment input. The Yen pilot is currently stopped until
+that file is provisioned with Yen's own key.
+
 The dashboard SSE seam now emits the TypeScript event names and payload shapes
 for `delta`, `tool_call`, `tool_result`, `usage`, `done`, and `error`, including
 the TypeScript stream headers. This is covered by the agent event callback test

@@ -17,14 +17,15 @@ Required root environment files:
   `THEOSES_AUTO_COMPACT_TURNS`, `THEOSES_AUTO_COMPACT_OVERFLOW`, and optional
   `THEOSES_AUTO_CONSOLIDATE`. Defaults to
   `/etc/theoses-go/telegram.env`.
-- `YEN_PROVIDER_ENV_FILE` — provider credentials and optional model/base URL.
-  Defaults to the existing provider environment file used by the pilot.
+- `YEN_PROVIDER_ENV_FILE` — Yen-only provider credentials and optional model/base
+  URL. Defaults to `/etc/theoses-go/yen-provider.env`; it must not point at the
+  existing Theoses provider environment.
 
 Example on a prepared host:
 
 ```sh
 YEN_SOURCE_DIR=/opt/yen-src \
-YEN_PROVIDER_ENV_FILE=/etc/theoses-go/provider.env \
+YEN_PROVIDER_ENV_FILE=/etc/theoses-go/yen-provider.env \
 YEN_START=0 \
 /opt/yen-src/deploy/install-side-by-side.sh
 ```
