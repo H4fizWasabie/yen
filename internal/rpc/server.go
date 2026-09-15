@@ -16,7 +16,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
-	"github.com/H4fizWasabie/yen/internal/session"
+	sessionpkg "github.com/H4fizWasabie/yen/internal/session"
 )
 
 type Server struct {
@@ -184,7 +184,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			}
 			return s.response(output, request.ID, request.Type, true, map[string]any{"text": ""}, nil)
 		default:
-			return s.response(output, request.ID, request.Type, true, sessionStats(session), nil)
+			return s.response(output, request.ID, request.Type, true, sessionpkg.Stats(session), nil)
 		}
 	case "branch":
 		session, err := s.Runner.OpenSession(link)
@@ -368,13 +368,13 @@ func (s *Server) currentLink() conversation.Link {
 	return s.Link
 }
 
-func (s *Server) switchSession(source string, current conversation.Link) (*session.Session, error) {
+func (s *Server) switchSession(source string, current conversation.Link) (*sessionpkg.Session, error) {
 	currentSession, err := s.Runner.OpenSession(current)
 	if err != nil {
 		return nil, err
 	}
 	destination := filepath.Join(filepath.Dir(currentSession.Path()), filepath.Base(source))
-	imported, err := session.Import(source, destination)
+	imported, err := sessionpkg.Import(source, destination)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +447,7 @@ func contentText(content any) string {
 	if text, ok := content.(string); ok {
 		return text
 	}
-	if parts, ok := content.([]session.ContentPart); ok {
+	if parts, ok := content.([]sessionpkg.ContentPart); ok {
 		var builder strings.Builder
 		for _, part := range parts {
 			if part.Type == "text" {
@@ -457,40 +457,4 @@ func contentText(content any) string {
 		return builder.String()
 	}
 	return fmt.Sprint(content)
-}
-
-func sessionStats(current *session.Session) map[string]any {
-	stats := map[string]any{
-		"sessionFile": current.Path(), "sessionId": current.Header().ID,
-		"userMessages": 0, "assistantMessages": 0, "toolCalls": 0, "toolResults": 0,
-		"totalMessages": 0,
-		"tokens":        map[string]int{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
-	}
-	for _, message := range current.Messages() {
-		stats["totalMessages"] = stats["totalMessages"].(int) + 1
-		switch message.Role {
-		case "user":
-			stats["userMessages"] = stats["userMessages"].(int) + 1
-		case "assistant":
-			stats["assistantMessages"] = stats["assistantMessages"].(int) + 1
-		case "toolResult":
-			stats["toolResults"] = stats["toolResults"].(int) + 1
-		}
-		if message.Usage != nil {
-			tokens := stats["tokens"].(map[string]int)
-			tokens["input"] += message.Usage.Input
-			tokens["output"] += message.Usage.Output
-			tokens["cacheRead"] += message.Usage.CacheRead
-			tokens["cacheWrite"] += message.Usage.CacheWrite
-			tokens["total"] += message.Usage.TotalTokens
-		}
-		if parts, ok := message.Content.([]session.ContentPart); ok {
-			for _, part := range parts {
-				if part.Type == "toolCall" {
-					stats["toolCalls"] = stats["toolCalls"].(int) + 1
-				}
-			}
-		}
-	}
-	return stats
 }

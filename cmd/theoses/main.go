@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -103,6 +104,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	defer runner.Memory.Close()
 	runner.SessionPath = func(conversation.Turn) string { return sessionPath }
+	currentSession, err := runner.OpenSession(link)
+	if err != nil {
+		return reportError(stderr, err)
+	}
 	runPrompt := func(prompt string) error {
 		turn, err := runner.Submit(link, prompt)
 		if err != nil {
@@ -125,6 +130,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 			if strings.TrimSpace(prompt) == "" {
 				continue
 			}
+			handled, err := handleInteractiveCommand(prompt, currentSession, runner, link, stdout)
+			if err != nil {
+				return reportError(stderr, err)
+			}
+			if handled {
+				continue
+			}
 			if err := runPrompt(prompt); err != nil {
 				return reportError(stderr, err)
 			}
@@ -138,6 +150,49 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return reportError(stderr, err)
 	}
 	return 0
+}
+
+func handleInteractiveCommand(input string, current *session.Session, runner *runtime.Runner, link conversation.Link, stdout io.Writer) (bool, error) {
+	text := strings.TrimSpace(input)
+	switch {
+	case text == "/name":
+		if name := current.SessionName(); name != "" {
+			_, err := fmt.Fprintf(stdout, "Session name: %s\n", name)
+			return true, err
+		}
+		_, err := fmt.Fprintln(stdout, "Usage: /name <name>")
+		return true, err
+	case strings.HasPrefix(text, "/name "):
+		name := strings.TrimSpace(strings.TrimPrefix(text, "/name "))
+		if name == "" {
+			_, err := fmt.Fprintln(stdout, "Usage: /name <name>")
+			return true, err
+		}
+		_, err := current.AppendSessionInfo(name)
+		if err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintf(stdout, "Session name set: %s\n", current.SessionName())
+		return true, err
+	case text == "/session":
+		_, err := fmt.Fprintf(stdout, "Session: %s\nPath: %s\n", current.Header().ID, current.Path())
+		return true, err
+	case text == "/stats":
+		data, err := json.Marshal(session.Stats(current))
+		if err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintf(stdout, "%s\n", data)
+		return true, err
+	case text == "/compact" || strings.HasPrefix(text, "/compact "):
+		if err := runner.Compact(context.Background(), link.ConversationID, 2); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintln(stdout, "Session compacted")
+		return true, err
+	default:
+		return false, nil
+	}
 }
 
 func runMigration(stdout, stderr io.Writer, semanticSource, episodicSource, memoryDir, episodesDB, scope, ownerID, workspaceID, conversationID string) int {

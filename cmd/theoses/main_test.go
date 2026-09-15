@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
 )
 
@@ -122,5 +124,22 @@ func TestRunEndToEndToolTurnUsesSharedRunnerAndMemory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dataDir, "conversation-queue.jsonl")); err != nil {
 		t.Fatalf("shared queue missing: %v", err)
+	}
+}
+
+func TestInteractiveSessionCommands(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	current := session.New(path, session.Header{ID: "session-1", ConversationID: "conv-1"})
+	runner := &runtime.Runner{}
+	link := conversation.Link{ConversationID: "conv-1"}
+	var output bytes.Buffer
+	handled, err := handleInteractiveCommand("/name evening", current, runner, link, &output)
+	if err != nil || !handled || current.SessionName() != "evening" {
+		t.Fatalf("name command handled=%v err=%v name=%q", handled, err, current.SessionName())
+	}
+	handled, err = handleInteractiveCommand("/session", current, runner, link, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "session-1") {
+		t.Fatalf("session command handled=%v err=%v output=%q", handled, err, output.String())
 	}
 }
