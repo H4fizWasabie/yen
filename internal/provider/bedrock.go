@@ -325,7 +325,7 @@ func bedrockImage(value string) (bedrocktypes.ImageBlock, error) {
 	if format == bedrocktypes.ImageFormat("jpg") {
 		format = bedrocktypes.ImageFormatJpeg
 	}
-	if format != bedrocktypes.ImageFormatPng && format != bedrocktypes.ImageFormatJpeg {
+	if format != bedrocktypes.ImageFormatPng && format != bedrocktypes.ImageFormatJpeg && format != bedrocktypes.ImageFormatGif && format != bedrocktypes.ImageFormatWebp {
 		return bedrocktypes.ImageBlock{}, fmt.Errorf("unsupported Bedrock image type %q", mime)
 	}
 	return bedrocktypes.ImageBlock{Format: format, Source: &bedrocktypes.ImageSourceMemberBytes{Value: data}}, nil
