@@ -10,6 +10,26 @@ import (
 	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
+// SystemPromptMessage is the stable product-facing instruction layer. Resource
+// files, skills, and working notes remain separate messages so they can be
+// refreshed without changing this baseline prompt.
+func SystemPromptMessage(workspace string, available []agent.Tool) agent.Message {
+	workspace, _ = filepath.Abs(workspace)
+	var builder strings.Builder
+	builder.WriteString("You are Theoses, a blended personal assistant and coding agent operating inside Theoses. Adapt to the user's current task while helping with conversation, research, file reading, command execution, editing, and writing.\n\nAvailable tools:\n")
+	seen := make(map[string]bool, len(available))
+	for _, tool := range available {
+		if tool == nil || seen[tool.Name()] {
+			continue
+		}
+		seen[tool.Name()] = true
+		fmt.Fprintf(&builder, "- %s\n", tool.Name())
+	}
+	builder.WriteString("\nGuidelines:\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nCurrent working directory: ")
+	builder.WriteString(filepath.ToSlash(workspace))
+	return agent.Message{Role: "system", Content: builder.String()}
+}
+
 const workingNotePromptPrefix = "<working_note>\nEstablished by earlier turns; verify this note if it contradicts current evidence.\n"
 
 func WorkingNoteMessage(note string) agent.Message {
