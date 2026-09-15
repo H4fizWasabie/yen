@@ -150,7 +150,9 @@ func ConfiguredFromEnv() agent.Provider {
 		if key == "" {
 			key = storedCredentialKey("google")
 		}
-		return NewGoogleGenerativeAI(baseURL, key, model)
+		client := NewGoogleGenerativeAI(baseURL, key, model)
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client
 	}
 	if providerID == "minimax" || providerID == "minimax-cn" || providerID == "vercel-ai-gateway" {
 		baseURL := providerDefaults[providerID]
@@ -167,6 +169,7 @@ func ConfiguredFromEnv() agent.Provider {
 		}
 		client := NewAnthropicMessages(baseURL, key, model)
 		client.ProviderName = providerID
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 		return client
 	}
 	if providerID != "anthropic" {
@@ -184,7 +187,9 @@ func ConfiguredFromEnv() agent.Provider {
 	if key == "" {
 		key = storedCredentialKey("anthropic")
 	}
-	return NewAnthropicMessages(baseURL, key, model)
+	client := NewAnthropicMessages(baseURL, key, model)
+	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+	return client
 }
 
 func NewConfigured(providerID, model string) (agent.Provider, error) {
@@ -225,7 +230,9 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if key == "" {
 			key = storedCredentialKey("google")
 		}
-		return NewGoogleGenerativeAI(baseURL, key, model), nil
+		client := NewGoogleGenerativeAI(baseURL, key, model)
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client, nil
 	}
 	if providerID == "minimax" || providerID == "minimax-cn" || providerID == "vercel-ai-gateway" {
 		if model == "" {
@@ -240,6 +247,7 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		}
 		client := NewAnthropicMessages(providerDefaults[providerID], key, model)
 		client.ProviderName = providerID
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 		return client, nil
 	}
 	if providerID == "anthropic" {
@@ -254,7 +262,9 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if key == "" {
 			key = storedCredentialKey("anthropic")
 		}
-		return NewAnthropicMessages(baseURL, key, model), nil
+		client := NewAnthropicMessages(baseURL, key, model)
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client, nil
 	}
 	baseURL, ok := providerDefaults[providerID]
 	if !ok {

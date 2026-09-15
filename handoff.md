@@ -494,6 +494,11 @@ GitHub Actions now runs the repository test, race, vet, and diff gates on
 pushes and pull requests. This closes the prior PR-review gap where GitHub
 reported no checks.
 
+Native Google, Anthropic, MiniMax, and Vercel provider construction now
+preserves `YEN_REASONING_EFFORT`, matching the configured provider path used
+by the OpenAI and Responses clients. Provider tests cover Google and
+Anthropic; the full gate is now 261 tests.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

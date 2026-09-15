@@ -151,6 +151,26 @@ func TestSetThinkingLevelShapesProviderState(t *testing.T) {
 	}
 }
 
+func TestConfiguredNativeProvidersLoadReasoningEffort(t *testing.T) {
+	t.Setenv("YEN_REASONING_EFFORT", "high")
+	t.Setenv("YEN_GOOGLE_API_KEY", "google-key")
+	configured, err := NewConfigured("google", "gemini-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ThinkingLevel(configured) != "high" {
+		t.Fatalf("google thinking=%q", ThinkingLevel(configured))
+	}
+	t.Setenv("YEN_ANTHROPIC_API_KEY", "anthropic-key")
+	configured, err = NewConfigured("anthropic", "claude-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ThinkingLevel(configured) != "high" {
+		t.Fatalf("anthropic thinking=%q", ThinkingLevel(configured))
+	}
+}
+
 func TestSetRetryEnabledControlsSupportedProviders(t *testing.T) {
 	configured, err := SetRetryEnabled(NewOpenAICompletions("http://fixture", "key", "model"), true)
 	if err != nil || !RetryEnabled(configured) {
