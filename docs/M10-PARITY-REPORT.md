@@ -405,6 +405,13 @@ Context discovery now stops at the first existing candidate in each directory,
 even when that higher-priority file is empty, matching the oracle's precedence
 rule. Go evidence: `TestContextMessageEmptyHigherPriorityFileShadowsLowerPriority`.
 
+Settings-driven bash execution now applies the oracle's `shellPath` and
+`shellCommandPrefix` to agent tools and CLI `!` commands. TypeScript authority:
+`packages/coding-agent/src/core/settings-manager.ts:968-1005` and
+`packages/coding-agent/src/core/agent-session.ts:3195-3204`. Go evidence:
+`TestBashToolAppliesConfiguredShellPathAndPrefix` and
+`TestSessionToolsLoadShellSettings`.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

@@ -14,11 +14,23 @@ const (
 	bashTailBytes  = 12 * 1024
 )
 
-type BashTool struct{ cwd, name string }
+type BashOptions struct {
+	ShellPath     string
+	CommandPrefix string
+}
+
+type BashTool struct {
+	cwd, name     string
+	shellPath     string
+	commandPrefix string
+}
 
 func NewBashTool(cwd string) BashTool       { return BashTool{cwd: cwd, name: "bash"} }
 func NewPowerShellTool(cwd string) BashTool { return BashTool{cwd: cwd, name: "powershell"} }
-func (t BashTool) Name() string             { return t.name }
+func NewBashToolWithOptions(cwd string, options BashOptions) BashTool {
+	return BashTool{cwd: cwd, name: "bash", shellPath: options.ShellPath, commandPrefix: options.CommandPrefix}
+}
+func (t BashTool) Name() string { return t.name }
 
 type BashResult struct {
 	Output         string
@@ -53,9 +65,15 @@ func (t BashTool) ExecuteResult(ctx context.Context, args map[string]any) (BashR
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(seconds*float64(time.Second)))
 		defer cancel()
 	}
-	shell, flag := "bash", "-lc"
+	shell, flag := t.shellPath, "-lc"
+	if shell == "" {
+		shell = "bash"
+	}
 	if t.name == "powershell" {
 		shell, flag = "powershell", "-Command"
+	}
+	if t.commandPrefix != "" {
+		command = t.commandPrefix + "\n" + command
 	}
 	capture := newBashCapture()
 	cmd := exec.CommandContext(ctx, shell, flag, command)
