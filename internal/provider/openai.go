@@ -547,6 +547,24 @@ func openAIContentDelta(raw json.RawMessage) (text, thinking string) {
 func normalizeMistralMessages(messages []openAIMessage) []openAIMessage {
 	result := append([]openAIMessage(nil), messages...)
 	for i := range result {
+		if result[i].Role == "assistant" {
+			thinking := result[i].ReasoningContent
+			if thinking == "" {
+				thinking = result[i].Reasoning
+			}
+			if thinking == "" {
+				thinking = result[i].ReasoningText
+			}
+			if thinking != "" {
+				content, _ := result[i].Content.(string)
+				chunks := []map[string]any{{"type": "thinking", "thinking": []map[string]string{{"type": "text", "text": thinking}}}}
+				if content != "" {
+					chunks = append(chunks, map[string]any{"type": "text", "text": content})
+				}
+				result[i].Content = chunks
+				result[i].Reasoning, result[i].ReasoningContent, result[i].ReasoningText = "", "", ""
+			}
+		}
 		result[i].ToolCallID = normalizeMistralToolID(result[i].ToolCallID)
 		if len(result[i].ToolCalls) == 0 {
 			continue

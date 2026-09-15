@@ -186,6 +186,8 @@ type Session struct {
 	flushed bool
 }
 
+const maxSessionHeaderScanBytes = 1 << 20
+
 func New(path string, header Header) *Session {
 	return &Session{
 		path: path,
@@ -215,8 +217,15 @@ func Open(path string) (*Session, error) {
 	scanner.Buffer(make([]byte, 64*1024), 4<<20)
 	line := 0
 	headerFound := false
+	headerScanBytes := 0
 	for scanner.Scan() {
 		line++
+		if !headerFound {
+			headerScanBytes += len(scanner.Bytes())
+			if headerScanBytes > maxSessionHeaderScanBytes {
+				return nil, fmt.Errorf("session header scan limit exceeded")
+			}
+		}
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
 			continue
 		}
