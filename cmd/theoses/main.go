@@ -72,7 +72,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	client := provider.NewFromEnv()
+	client := provider.ConfiguredFromEnv()
 	queue, err := conversation.OpenQueue(filepath.Join(dataDir, "conversation-queue.jsonl"))
 	if err != nil {
 		return reportError(stderr, err)

@@ -3,6 +3,8 @@ package provider
 import (
 	"os"
 	"strings"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 var providerDefaults = map[string]string{
@@ -57,6 +59,23 @@ func NewFromEnv() OpenAICompletions {
 	client.ProviderName = providerID
 	client.ReasoningEffort = firstEnv("YEN_REASONING_EFFORT", "THEOSES_REASONING_EFFORT")
 	return client
+}
+
+func ConfiguredFromEnv() agent.Provider {
+	providerID := strings.ToLower(strings.TrimSpace(firstEnv("YEN_PROVIDER", "THEOSES_PROVIDER")))
+	if providerID != "anthropic" {
+		return NewFromEnv()
+	}
+	baseURL := firstEnv("YEN_ANTHROPIC_BASE_URL", "THEOSES_ANTHROPIC_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com/v1"
+	}
+	model := firstEnv("YEN_MODEL", "THEOSES_MODEL")
+	if model == "" {
+		model = "claude-sonnet-4-20250514"
+	}
+	key := firstEnv("YEN_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+	return NewAnthropicMessages(baseURL, key, model)
 }
 
 func firstEnv(names ...string) string {
