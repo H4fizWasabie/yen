@@ -28,11 +28,12 @@ type Header struct {
 }
 
 type ContentPart struct {
-	Type      string `json:"type"`
-	Text      string `json:"text,omitempty"`
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments any    `json:"arguments,omitempty"`
+	Type              string `json:"type"`
+	Text              string `json:"text,omitempty"`
+	ThinkingSignature string `json:"thinkingSignature,omitempty"`
+	ID                string `json:"id,omitempty"`
+	Name              string `json:"name,omitempty"`
+	Arguments         any    `json:"arguments,omitempty"`
 }
 
 type Usage struct {
@@ -64,6 +65,10 @@ type Message struct {
 	Images             []string `json:"images,omitempty"`
 	ToolCallID         string   `json:"toolCallId,omitempty"`
 	StopReason         string   `json:"stopReason,omitempty"`
+	ErrorMessage       string   `json:"errorMessage,omitempty"`
+	ResponseID         string   `json:"responseId,omitempty"`
+	ResponseModel      string   `json:"responseModel,omitempty"`
+	RawStopReason      string   `json:"rawStopReason,omitempty"`
 	Provider           string   `json:"provider,omitempty"`
 	Model              string   `json:"model,omitempty"`
 	Usage              *Usage   `json:"usage,omitempty"`
@@ -489,12 +494,144 @@ func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error)
 	return plan, nil
 }
 
+// PrepareCompactionByTokens keeps the newest context-visible entries within a
+// conservative character-based token budget, matching the oracle's /4
+// estimator and never cutting before a tool result's assistant turn.
+func (s *Session) PrepareCompactionByTokens(keepRecentTokens int) (CompactionPlan, error) {
+	if keepRecentTokens <= 0 {
+		return CompactionPlan{}, fmt.Errorf("keep recent tokens must be positive")
+	}
+	if len(s.entries) > 0 && s.entries[len(s.entries)-1].Type == "compaction" {
+		return CompactionPlan{}, ErrAlreadyCompacted
+	}
+	start, previousSummary := s.compactionStart()
+	cutPoints := make([]int, 0)
+	for i := start; i < len(s.entries); i++ {
+		if s.entries[i].Message != nil && s.entries[i].Message.Role != "toolResult" {
+			cutPoints = append(cutPoints, i)
+		}
+	}
+	if len(cutPoints) == 0 {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	accumulated := 0
+	cut := cutPoints[0]
+	for i := len(s.entries) - 1; i >= start; i-- {
+		if s.entries[i].Message == nil {
+			continue
+		}
+		tokens := estimateMessageTokens(*s.entries[i].Message)
+		if tokens == 0 {
+			continue
+		}
+		accumulated += tokens
+		if accumulated >= keepRecentTokens {
+			for _, candidate := range cutPoints {
+				if candidate >= i {
+					cut = candidate
+					break
+				}
+			}
+			break
+		}
+	}
+	if accumulated < keepRecentTokens {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary}
+	for i := start; i < cut; i++ {
+		if s.entries[i].Message != nil {
+			plan.Messages = append(plan.Messages, *s.entries[i].Message)
+			plan.TokensBefore += estimateMessageTokens(*s.entries[i].Message)
+		}
+	}
+	if len(plan.Messages) == 0 {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	return plan, nil
+}
+
+func (s *Session) compactionStart() (int, string) {
+	start, previousSummary := 0, ""
+	for i := len(s.entries) - 1; i >= 0; i-- {
+		if s.entries[i].Type != "compaction" || s.entries[i].Compaction == nil {
+			continue
+		}
+		previousSummary = s.entries[i].Compaction.Summary
+		for j, entry := range s.entries {
+			if entry.ID == s.entries[i].Compaction.FirstKeptEntryID {
+				start = j
+				break
+			}
+		}
+		break
+	}
+	return start, previousSummary
+}
+
 func estimateMessageTokens(message Message) int {
 	data, err := json.Marshal(message.Content)
 	if err != nil {
 		return 0
 	}
 	return (len(data) + 3) / 4
+}
+
+// EstimateContextTokens uses the same conservative estimate for a context.
+func EstimateContextTokens(messages []Message) int {
+	lastUsage := -1
+	usageTokens := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message.Role != "assistant" || message.Usage == nil || message.StopReason == "error" || message.StopReason == "aborted" {
+			continue
+		}
+		usageTokens = message.Usage.TotalTokens
+		if usageTokens == 0 {
+			usageTokens = message.Usage.Input + message.Usage.Output + message.Usage.CacheRead + message.Usage.CacheWrite
+		}
+		if usageTokens > 0 {
+			lastUsage = i
+			break
+		}
+	}
+	if lastUsage >= 0 {
+		total := usageTokens
+		for _, message := range messages[lastUsage+1:] {
+			total += estimateContextMessageTokens(message)
+		}
+		return total
+	}
+	total := 0
+	for _, message := range messages {
+		total += estimateContextMessageTokens(message)
+	}
+	return total
+}
+
+func estimateContextMessageTokens(message Message) int {
+	chars := 0
+	switch content := message.Content.(type) {
+	case string:
+		chars = len([]rune(content))
+	case []ContentPart:
+		for _, part := range content {
+			switch part.Type {
+			case "text", "thinking":
+				chars += len([]rune(part.Text))
+			case "toolCall":
+				args, _ := json.Marshal(part.Arguments)
+				chars += len([]rune(part.Name)) + len(args)
+			}
+		}
+	default:
+		data, err := json.Marshal(content)
+		if err == nil {
+			chars = len(data)
+		}
+	}
+	chars += len(message.Images) * 4800
+	return (chars + 3) / 4
 }
 
 func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, usage *Usage) (string, error) {

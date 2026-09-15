@@ -20,16 +20,20 @@ import (
 )
 
 type Runner struct {
-	Queue                 *conversation.Queue
-	Provider              agent.Provider
-	ToolFactory           func(workspace string) []agent.Tool
-	SessionPath           func(turn conversation.Turn) string
-	Checkpoints           *memory.Checkpoints
-	Memory                *memory.Engine
-	SharedMemory          bool
-	AutoCompactTurns      int
-	AutoCompactOnOverflow bool
-	AutoConsolidate       bool
+	Queue                       *conversation.Queue
+	Provider                    agent.Provider
+	ToolFactory                 func(workspace string) []agent.Tool
+	SessionPath                 func(turn conversation.Turn) string
+	Checkpoints                 *memory.Checkpoints
+	Memory                      *memory.Engine
+	SharedMemory                bool
+	AutoCompactTurns            int
+	AutoCompactMaxHistoryTurns  int
+	AutoCompactKeepRecentTokens int
+	AutoCompactContextWindow    int
+	AutoCompactReserveTokens    int
+	AutoCompactOnOverflow       bool
+	AutoConsolidate             bool
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -44,6 +48,38 @@ func AutoCompactTurnsFromEnv() int {
 	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_TURNS"))
 	if err != nil || value < 1 {
 		return 0
+	}
+	return value
+}
+
+func AutoCompactMaxHistoryTurnsFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
+}
+
+func AutoCompactKeepRecentTokensFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
+}
+
+func AutoCompactContextWindowFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
+}
+
+func AutoCompactReserveTokensFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS"))
+	if err != nil || value < 1 {
+		return 16384
 	}
 	return value
 }
@@ -243,7 +279,16 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 	if err != nil {
 		return err
 	}
-	plan, err := current.PrepareCompaction(keepRecentTurns)
+	var plan session.CompactionPlan
+	keepRecentTokens := r.AutoCompactKeepRecentTokens
+	if keepRecentTokens < 1 && r.AutoCompactContextWindow > 0 {
+		keepRecentTokens = 20000
+	}
+	if keepRecentTokens > 0 {
+		plan, err = current.PrepareCompactionByTokens(keepRecentTokens)
+	} else {
+		plan, err = current.PrepareCompaction(keepRecentTurns)
+	}
 	if err != nil {
 		return err
 	}
@@ -286,6 +331,25 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	}
 	if r.AutoCompactTurns > 0 {
 		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
+			return agent.Result{}, err
+		}
+		current, err = openOrCreate(path, turn)
+		if err != nil {
+			return agent.Result{}, err
+		}
+	} else if r.AutoCompactContextWindow > 0 {
+		threshold := r.AutoCompactContextWindow - r.AutoCompactReserveTokens
+		if session.EstimateContextTokens(current.ContextMessages()) > threshold {
+			if err := r.compactConversation(ctx, turn.ConversationID, 0); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
+				return agent.Result{}, err
+			}
+			current, err = openOrCreate(path, turn)
+			if err != nil {
+				return agent.Result{}, err
+			}
+		}
+	} else if r.AutoCompactMaxHistoryTurns > 0 {
+		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactMaxHistoryTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
 			return agent.Result{}, err
 		}
 		current, err = openOrCreate(path, turn)
@@ -442,7 +506,7 @@ func openOrCreate(path string, turn conversation.Turn) (*session.Session, error)
 func toAgentMessages(messages []session.Message) []agent.Message {
 	result := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
-		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model}
+		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model}
 		if message.Usage != nil {
 			converted.Usage = &agent.Usage{
 				Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
@@ -493,6 +557,7 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 			}
 			if part.Type == "thinking" {
 				converted.Thinking += part.Text
+				converted.ThinkingSignature = part.ThinkingSignature
 			}
 			if part.Type == "toolCall" {
 				args, _ := part.Arguments.(map[string]any)
@@ -536,7 +601,7 @@ func toSessionMessage(message agent.Message) session.Message {
 	if len(message.ToolCalls) > 0 || message.Thinking != "" {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)
 		if message.Thinking != "" {
-			parts = append(parts, session.ContentPart{Type: "thinking", Text: message.Thinking})
+			parts = append(parts, session.ContentPart{Type: "thinking", Text: message.Thinking, ThinkingSignature: message.ThinkingSignature})
 		}
 		if message.Content != "" {
 			parts = append(parts, session.ContentPart{Type: "text", Text: message.Content})
@@ -544,7 +609,7 @@ func toSessionMessage(message agent.Message) session.Message {
 		for _, call := range message.ToolCalls {
 			parts = append(parts, session.ContentPart{Type: "toolCall", ID: call.ID, Name: call.Name, Arguments: call.Args})
 		}
-		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
+		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
 	}
-	return session.Message{Role: message.Role, Content: message.Content, Images: message.Images, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
+	return session.Message{Role: message.Role, Content: message.Content, Images: message.Images, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
 }

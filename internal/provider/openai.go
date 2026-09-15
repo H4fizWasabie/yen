@@ -15,10 +15,13 @@ import (
 )
 
 type openAIMessage struct {
-	Role       string           `json:"role"`
-	Content    any              `json:"content,omitempty"`
-	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Role             string           `json:"role"`
+	Content          any              `json:"content,omitempty"`
+	Reasoning        string           `json:"reasoning,omitempty"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
+	ReasoningText    string           `json:"reasoning_text,omitempty"`
+	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
 }
 
 type openAIToolCall struct {
@@ -189,6 +192,8 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			break
 		}
 		var event struct {
+			ID    string `json:"id"`
+			Model string `json:"model"`
 			Usage *struct {
 				PromptTokens         int `json:"prompt_tokens"`
 				CachedTokens         int `json:"cached_tokens"`
@@ -217,11 +222,17 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 						} `json:"function"`
 					} `json:"tool_calls"`
 				} `json:"delta"`
-				FinishReason *string `json:"finish_reason"`
+				FinishReason json.RawMessage `json:"finish_reason"`
 			} `json:"choices"`
 		}
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			return agent.Response{}, err
+		}
+		if event.ID != "" {
+			result.ResponseID = event.ID
+		}
+		if event.Model != "" && event.Model != p.Model {
+			result.ResponseModel = event.Model
 		}
 		if event.Usage != nil {
 			result.Usage.Output = event.Usage.CompletionTokens
@@ -248,6 +259,15 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 				reasoning = choice.Delta.ReasoningText
 			}
 			if reasoning != "" {
+				if partial.ThinkingSignature == "" {
+					if choice.Delta.ReasoningContent != "" {
+						partial.ThinkingSignature = "reasoning_content"
+					} else if choice.Delta.Reasoning != "" {
+						partial.ThinkingSignature = "reasoning"
+					} else {
+						partial.ThinkingSignature = "reasoning_text"
+					}
+				}
 				if emit != nil && !startedThinking {
 					startedThinking = true
 					emit(agent.StreamEvent{Type: "thinking_start", ContentIndex: 0, Partial: partial})
@@ -271,8 +291,18 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			if update != nil && choice.Delta.Content != "" {
 				update(choice.Delta.Content)
 			}
-			if choice.FinishReason != nil {
-				result.StopReason = normalizeStopReason(*choice.FinishReason)
+			if len(choice.FinishReason) > 0 {
+				if string(choice.FinishReason) == "null" {
+					result.RawStopReason = ""
+					result.StopReason, result.ErrorMessage = "stop", ""
+				} else {
+					var reason string
+					if err := json.Unmarshal(choice.FinishReason, &reason); err != nil {
+						return agent.Response{}, fmt.Errorf("finish reason: %w", err)
+					}
+					result.RawStopReason = reason
+					result.StopReason, result.ErrorMessage = mapStopReason(reason)
+				}
 			}
 			for _, delta := range choice.Delta.ToolCalls {
 				if update != nil {
@@ -328,6 +358,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		emit(agent.StreamEvent{Type: "thinking_end", ContentIndex: 0, Partial: partial})
 	}
 	result.Thinking = partial.Thinking
+	result.ThinkingSignature = partial.ThinkingSignature
 	result.ToolCalls = toolCalls
 	if len(toolCalls) > 0 && result.StopReason == "" {
 		result.StopReason = "toolUse"
@@ -335,11 +366,19 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	return result, nil
 }
 
-func normalizeStopReason(reason string) string {
-	if reason == "tool_calls" || reason == "function_call" {
-		return "toolUse"
+func mapStopReason(reason string) (string, string) {
+	switch reason {
+	case "stop", "end":
+		return "stop", ""
+	case "length":
+		return "length", ""
+	case "tool_calls", "function_call":
+		return "toolUse", ""
+	case "content_filter", "network_error":
+		return "error", "Provider finish_reason: " + reason
+	default:
+		return "error", "Provider finish_reason: " + reason
 	}
-	return reason
 }
 
 func retryDelay(header http.Header, attempt int) time.Duration {
@@ -364,6 +403,16 @@ func convertMessages(messages []agent.Message) []openAIMessage {
 			content = parts
 		}
 		convertedMessage := openAIMessage{Role: message.Role, Content: content, ToolCallID: message.ToolCallID}
+		if message.Thinking != "" {
+			switch message.ThinkingSignature {
+			case "reasoning":
+				convertedMessage.Reasoning = message.Thinking
+			case "reasoning_text":
+				convertedMessage.ReasoningText = message.Thinking
+			default:
+				convertedMessage.ReasoningContent = message.Thinking
+			}
+		}
 		for _, call := range message.ToolCalls {
 			arguments, _ := json.Marshal(call.Args)
 			toolCall := openAIToolCall{ID: call.ID, Type: "function"}

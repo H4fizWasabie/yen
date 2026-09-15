@@ -40,6 +40,41 @@ func TestOpenAICompletionsReadsTextSSE(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsPreservesResponseMetadataAndFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"id":"resp-1","model":"served-model","choices":[{"delta":{"content":"blocked"},"finish_reason":null}]}`)
+		fmt.Fprintln(w, `data: {"id":"resp-1","model":"served-model","choices":[{"delta":{},"finish_reason":"content_filter"}]}`)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	result, err := NewOpenAICompletions(server.URL, "key", "requested-model").Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResponseID != "resp-1" || result.ResponseModel != "served-model" || result.RawStopReason != "content_filter" {
+		t.Fatalf("metadata=%#v", result)
+	}
+	if result.StopReason != "error" || result.ErrorMessage != "Provider finish_reason: content_filter" {
+		t.Fatalf("finish=%#v", result)
+	}
+}
+
+func TestOpenAICompletionsTreatsNullFinishReasonAsStop(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"done"},"finish_reason":null}]}`)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	result, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, nil)
+	if err != nil || result.StopReason != "stop" || result.Text != "done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestOpenAICompletionsJSONModeSetsResponseFormat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
@@ -178,11 +213,33 @@ func TestOpenAICompletionsEmitsThinkingEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Thinking != "think" || result.Text != "answer" {
+	if result.Thinking != "think" || result.ThinkingSignature != "reasoning_content" || result.Text != "answer" {
 		t.Fatalf("result=%#v", result)
 	}
 	if len(events) != 6 || events[0].Type != "thinking_start" || events[1].Type != "thinking_delta" || events[1].Delta != "think" || events[2].Type != "text_start" || events[3].Type != "text_delta" || events[4].Type != "text_end" || events[5].Type != "thinking_end" || events[5].Partial.Thinking != "think" {
 		t.Fatalf("events=%#v", events)
+	}
+}
+
+func TestOpenAICompletionsReplaysThinkingField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Messages[0]["reasoning"] != "plan" {
+			t.Fatalf("messages=%#v", payload.Messages)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	message := agent.Message{Role: "assistant", Content: "answer", Thinking: "plan", ThinkingSignature: "reasoning"}
+	if _, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), []agent.Message{message}, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 

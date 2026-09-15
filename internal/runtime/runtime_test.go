@@ -314,6 +314,47 @@ func TestRunnerUsesCompactionAwareContext(t *testing.T) {
 	}
 }
 
+func TestAutoCompactKeepRecentTokensFromEnv(t *testing.T) {
+	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "2048")
+	if got := AutoCompactKeepRecentTokensFromEnv(); got != 2048 {
+		t.Fatalf("tokens=%d", got)
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "0")
+	if got := AutoCompactKeepRecentTokensFromEnv(); got != 0 {
+		t.Fatalf("disabled tokens=%d", got)
+	}
+}
+
+func TestAutoCompactContextSettingsFromEnv(t *testing.T) {
+	t.Setenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW", "8192")
+	if got := AutoCompactContextWindowFromEnv(); got != 8192 {
+		t.Fatalf("context window=%d", got)
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS", "4096")
+	if got := AutoCompactReserveTokensFromEnv(); got != 4096 {
+		t.Fatalf("reserve tokens=%d", got)
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW", "0")
+	if got := AutoCompactContextWindowFromEnv(); got != 0 {
+		t.Fatalf("disabled context window=%d", got)
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS", "0")
+	if got := AutoCompactReserveTokensFromEnv(); got != 16384 {
+		t.Fatalf("default reserve tokens=%d", got)
+	}
+}
+
+func TestAutoCompactMaxHistoryTurnsFromEnv(t *testing.T) {
+	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "3")
+	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 3 {
+		t.Fatalf("max history turns=%d", got)
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "0")
+	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 0 {
+		t.Fatalf("disabled max history turns=%d", got)
+	}
+}
+
 func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conv-compact.jsonl")
@@ -400,7 +441,7 @@ func TestRunnerAutoCompactsBeforePrompt(t *testing.T) {
 	}
 	provider := &autoCompactionProvider{}
 	runner := New(queue, provider, nil)
-	runner.AutoCompactTurns = 2
+	runner.AutoCompactMaxHistoryTurns = 2
 	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
 	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-auto", WorkspaceID: dir}
 	if _, err := runner.Submit(link, "four"); err != nil {
@@ -418,6 +459,41 @@ func TestRunnerAutoCompactsBeforePrompt(t *testing.T) {
 	}
 	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "automatic summary") {
 		t.Fatalf("context=%#v", reopened.ContextMessages())
+	}
+}
+
+func TestRunnerAutoCompactsBeforePromptAtContextThreshold(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-auto-context.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-auto-context", ConversationID: "conv-auto-context", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &autoCompactionProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactContextWindow = 20
+	runner.AutoCompactReserveTokens = 10
+	runner.AutoCompactKeepRecentTokens = 4
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-auto-context", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "four"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "continued" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if provider.calls != 2 || len(provider.seen[1]) == 0 || provider.seen[1][0].Content == "one" {
+		t.Fatalf("provider calls=%d messages=%#v", provider.calls, provider.seen)
 	}
 }
 
@@ -724,13 +800,24 @@ func TestToAgentMessagesConvertsPersistedSpecialMessages(t *testing.T) {
 }
 
 func TestThinkingRoundTripsThroughSessionContext(t *testing.T) {
-	stored := toSessionMessage(agent.Message{Role: "assistant", Thinking: "plan first", Content: "answer"})
+	stored := toSessionMessage(agent.Message{Role: "assistant", Thinking: "plan first", ThinkingSignature: "reasoning_content", Content: "answer"})
 	parts, ok := stored.Content.([]session.ContentPart)
-	if !ok || len(parts) != 2 || parts[0].Type != "thinking" || parts[0].Text != "plan first" || parts[1].Type != "text" || parts[1].Text != "answer" {
+	if !ok || len(parts) != 2 || parts[0].Type != "thinking" || parts[0].Text != "plan first" || parts[0].ThinkingSignature != "reasoning_content" || parts[1].Type != "text" || parts[1].Text != "answer" {
 		t.Fatalf("stored content=%#v", stored.Content)
 	}
 	converted := toAgentMessages([]session.Message{stored})
-	if len(converted) != 1 || converted[0].Thinking != "plan first" || converted[0].Content != "answer" {
+	if len(converted) != 1 || converted[0].Thinking != "plan first" || converted[0].ThinkingSignature != "reasoning_content" || converted[0].Content != "answer" {
+		t.Fatalf("converted=%#v", converted)
+	}
+}
+
+func TestAssistantErrorMessageRoundTripsThroughSession(t *testing.T) {
+	stored := toSessionMessage(agent.Message{Role: "assistant", Content: "blocked", StopReason: "error", ErrorMessage: "Provider finish_reason: content_filter", ResponseID: "resp-1", ResponseModel: "served-model", RawStopReason: "content_filter"})
+	if stored.ErrorMessage != "Provider finish_reason: content_filter" {
+		t.Fatalf("stored=%#v", stored)
+	}
+	converted := toAgentMessages([]session.Message{stored})
+	if len(converted) != 1 || converted[0].ErrorMessage != stored.ErrorMessage || converted[0].ResponseID != "resp-1" || converted[0].ResponseModel != "served-model" || converted[0].RawStopReason != "content_filter" {
 		t.Fatalf("converted=%#v", converted)
 	}
 }
