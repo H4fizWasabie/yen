@@ -46,3 +46,31 @@ func TestNewConfiguredSupportsAmazonBedrock(t *testing.T) {
 		t.Fatalf("provider=%q model=%q", name, model)
 	}
 }
+
+func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
+	input, err := bedrockInput([]agent.Message{
+		{Role: "assistant", ToolCalls: []agent.ToolCall{{ID: "call-1", Name: "read", Args: map[string]any{"path": "x"}}}, Thinking: "inspect", ThinkingSignature: "sig"},
+		{Role: "tool", ToolCallID: "call-1", Content: "contents", Images: []string{"data:image/png;base64,AQ=="}},
+	}, nil, "anthropic.claude-3-7-sonnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Messages) != 2 {
+		t.Fatalf("messages=%#v", input.Messages)
+	}
+	assistantTool, ok := input.Messages[0].Content[0].(*bedrocktypes.ContentBlockMemberToolUse)
+	if !ok || assistantTool.Value.ToolUseId == nil || *assistantTool.Value.ToolUseId != "call-1" {
+		t.Fatalf("assistant content=%#v", input.Messages[0].Content)
+	}
+	if _, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberReasoningContent); !ok {
+		t.Fatalf("reasoning content=%#v", input.Messages[0].Content)
+	}
+	toolResult, ok := input.Messages[1].Content[0].(*bedrocktypes.ContentBlockMemberToolResult)
+	if !ok || toolResult.Value.ToolUseId == nil || *toolResult.Value.ToolUseId != "call-1" || len(toolResult.Value.Content) != 2 {
+		t.Fatalf("tool result=%#v", input.Messages[1].Content)
+	}
+	image, ok := toolResult.Value.Content[1].(*bedrocktypes.ToolResultContentBlockMemberImage)
+	if !ok || len(image.Value.Source.(*bedrocktypes.ImageSourceMemberBytes).Value) != 1 {
+		t.Fatalf("image=%#v", toolResult.Value.Content[1])
+	}
+}

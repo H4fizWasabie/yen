@@ -2,10 +2,12 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -120,6 +122,17 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 					if emit != nil {
 						emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: index, Delta: text.Value, Partial: partial})
 					}
+				} else if signature, ok := delta.Value.(*bedrocktypes.ReasoningContentBlockDeltaMemberSignature); ok {
+					result.ThinkingSignature += signature.Value
+					partial.ThinkingSignature += signature.Value
+				} else if redacted, ok := delta.Value.(*bedrocktypes.ReasoningContentBlockDeltaMemberRedactedContent); ok {
+					result.Thinking += "[Reasoning redacted]"
+					partial.Thinking += "[Reasoning redacted]"
+					result.ThinkingSignature += base64.StdEncoding.EncodeToString(redacted.Value)
+					partial.ThinkingSignature += base64.StdEncoding.EncodeToString(redacted.Value)
+					if emit != nil {
+						emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: index, Delta: "[Reasoning redacted]", Partial: partial})
+					}
 				}
 			}
 		case *bedrocktypes.ConverseStreamOutputMemberMessageStop:
@@ -135,7 +148,13 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	if err := out.GetStream().Err(); err != nil {
 		return agent.Response{}, err
 	}
-	for index, call := range toolCalls {
+	indices := make([]int, 0, len(toolCalls))
+	for index := range toolCalls {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	for _, index := range indices {
+		call := toolCalls[index]
 		if err := json.Unmarshal([]byte(toolArgs[index]), &call.Args); err != nil {
 			return agent.Response{}, fmt.Errorf("bedrock tool %s arguments: %w", call.Name, err)
 		}
@@ -167,10 +186,14 @@ func bedrockInput(messages []agent.Message, toolNames []string, model string) (*
 		if message.Role == "assistant" {
 			role = "assistant"
 		}
-		if strings.TrimSpace(message.Content) == "" {
+		content, err := bedrockMessageContent(message, model)
+		if err != nil {
+			return nil, err
+		}
+		if len(content) == 0 {
 			continue
 		}
-		input.Messages = append(input.Messages, bedrocktypes.Message{Role: bedrocktypes.ConversationRole(role), Content: []bedrocktypes.ContentBlock{&bedrocktypes.ContentBlockMemberText{Value: message.Content}}})
+		input.Messages = append(input.Messages, bedrocktypes.Message{Role: bedrocktypes.ConversationRole(role), Content: content})
 	}
 	if len(input.Messages) == 0 {
 		return nil, errors.New("amazon bedrock requires a user message")
@@ -182,6 +205,68 @@ func bedrockInput(messages []agent.Message, toolNames []string, model string) (*
 		}
 	}
 	return input, nil
+}
+
+func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.ContentBlock, error) {
+	if message.ToolCallID != "" {
+		content := []bedrocktypes.ToolResultContentBlock{&bedrocktypes.ToolResultContentBlockMemberText{Value: nonEmpty(message.Content)}}
+		for _, image := range message.Images {
+			if block, ok := bedrockImage(image); ok {
+				content = append(content, &bedrocktypes.ToolResultContentBlockMemberImage{Value: block})
+			}
+		}
+		status := bedrocktypes.ToolResultStatusSuccess
+		if message.ErrorMessage != "" {
+			status = bedrocktypes.ToolResultStatusError
+			content[0] = &bedrocktypes.ToolResultContentBlockMemberText{Value: nonEmpty(message.ErrorMessage)}
+		}
+		return []bedrocktypes.ContentBlock{&bedrocktypes.ContentBlockMemberToolResult{Value: bedrocktypes.ToolResultBlock{ToolUseId: aws.String(message.ToolCallID), Status: status, Content: content}}}, nil
+	}
+	content := make([]bedrocktypes.ContentBlock, 0, 1+len(message.Images)+len(message.ToolCalls))
+	if strings.TrimSpace(message.Content) != "" {
+		content = append(content, &bedrocktypes.ContentBlockMemberText{Value: message.Content})
+	}
+	for _, image := range message.Images {
+		if block, ok := bedrockImage(image); ok {
+			content = append(content, &bedrocktypes.ContentBlockMemberImage{Value: block})
+		}
+	}
+	for _, call := range message.ToolCalls {
+		content = append(content, &bedrocktypes.ContentBlockMemberToolUse{Value: bedrocktypes.ToolUseBlock{
+			ToolUseId: aws.String(call.ID), Name: aws.String(call.Name), Input: bedrockdocument.NewLazyDocument(call.Args),
+		}})
+	}
+	if message.Thinking != "" {
+		thinking := bedrocktypes.ReasoningTextBlock{Text: aws.String(message.Thinking)}
+		if message.ThinkingSignature != "" && strings.Contains(strings.ToLower(model), "claude") {
+			thinking.Signature = aws.String(message.ThinkingSignature)
+		}
+		content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberReasoningText{Value: thinking}})
+	}
+	return content, nil
+}
+
+func bedrockImage(value string) (bedrocktypes.ImageBlock, bool) {
+	mime, encoded, ok := parseDataImage(value)
+	if !ok {
+		return bedrocktypes.ImageBlock{}, false
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return bedrocktypes.ImageBlock{}, false
+	}
+	format := bedrocktypes.ImageFormat(strings.TrimPrefix(mime, "image/"))
+	if format != bedrocktypes.ImageFormatPng && format != bedrocktypes.ImageFormatJpeg {
+		return bedrocktypes.ImageBlock{}, false
+	}
+	return bedrocktypes.ImageBlock{Format: format, Source: &bedrocktypes.ImageSourceMemberBytes{Value: data}}, true
+}
+
+func nonEmpty(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "<empty>"
+	}
+	return value
 }
 
 func stringValue(value *string) string {
