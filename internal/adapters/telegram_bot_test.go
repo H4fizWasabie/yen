@@ -458,6 +458,32 @@ func TestTelegramBotStoresDocumentAttachmentForReadTool(t *testing.T) {
 	}
 }
 
+func TestTelegramBotAttachmentNoteIncludesDocumentMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottoken/getFile":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_path":"documents/report.txt"}}`))
+		case "/file/bottoken/documents/report.txt":
+			_, _ = w.Write([]byte("attachment contents"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	bot := &TelegramBot{Token: "token", APIBase: server.URL, ArtifactDir: t.TempDir()}
+	note, err := bot.storeAttachment(context.Background(), &telegramMessage{Document: &telegramFile{
+		FileID: "file-1", FileName: "report.txt", MimeType: "text/plain",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `User sent a document without a caption: "report.txt" (mime type text/plain, 19 bytes). `
+	if !strings.Contains(note, want) {
+		t.Fatalf("note=%q, want substring %q", note, want)
+	}
+}
+
 func TestTelegramBotPassesPhotoToProviderAsImageContent(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
