@@ -272,6 +272,10 @@ func TestOpenV2MigrationPreservesExistingTreeLinks(t *testing.T) {
 	if len(context) != 2 || context[0].Content != "root" || context[1].Content != "branch b" {
 		t.Fatalf("active branch context=%#v", context)
 	}
+	timed := opened.TimedMessages()
+	if len(timed) != 2 || timed[0].Content != "root" || timed[1].Content != "branch b" || timed[1].Timestamp != "2026-01-01T00:00:03Z" {
+		t.Fatalf("active timed messages=%#v", timed)
+	}
 }
 
 func TestSessionReadbackPreservesToolTurnBoundary(t *testing.T) {

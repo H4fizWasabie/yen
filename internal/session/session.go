@@ -343,8 +343,9 @@ func (s *Session) Messages() []Message {
 }
 
 func (s *Session) TimedMessages() []TimedMessage {
-	messages := make([]TimedMessage, 0, len(s.entries))
-	for _, entry := range s.entries {
+	entries := s.activeEntries()
+	messages := make([]TimedMessage, 0, len(entries))
+	for _, entry := range entries {
 		if entry.Message != nil {
 			messages = append(messages, TimedMessage{Message: *entry.Message, Timestamp: entry.Timestamp})
 		}
