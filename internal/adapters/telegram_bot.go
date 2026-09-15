@@ -29,10 +29,12 @@ type telegramUpdate struct {
 	Message  *telegramMessage `json:"message,omitempty"`
 }
 type telegramMessage struct {
-	Chat struct {
+	MessageID int64 `json:"message_id"`
+	Chat      struct {
 		ID int64 `json:"id"`
 	} `json:"chat"`
-	Text string `json:"text"`
+	Text           string           `json:"text"`
+	ReplyToMessage *telegramMessage `json:"reply_to_message,omitempty"`
 }
 type telegramResponse struct {
 	OK          bool            `json:"ok"`
@@ -82,18 +84,22 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		if link, linked := b.Adapter.Service.Registry.Get("telegram", chatID); linked {
 			if turn, ok := b.Adapter.Service.Runner.Active(link.ConversationID); ok {
 				if err := b.Adapter.Service.Runner.Cancel(turn.ID); err != nil {
-					return b.sendMessage(ctx, chatID, "Error: "+err.Error())
+					return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 				}
-				return b.sendMessage(ctx, chatID, "Stopped.")
+				return b.sendMessage(ctx, chatID, "Stopped.", messageReplyID(update.Message.MessageID))
 			}
 		}
-		return b.sendMessage(ctx, chatID, "No active turn.")
+		return b.sendMessage(ctx, chatID, "No active turn.", messageReplyID(update.Message.MessageID))
 	}
-	result, err := b.Adapter.HandleMessage(ctx, chatID, text)
+	replyContext := ""
+	if update.Message.ReplyToMessage != nil {
+		replyContext = update.Message.ReplyToMessage.Text
+	}
+	result, err := b.Adapter.HandleMessageWithReply(ctx, chatID, text, replyContext)
 	if err != nil {
-		return b.sendMessage(ctx, chatID, "Error: "+err.Error())
+		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
-	return b.sendMessage(ctx, chatID, result.FinalText)
+	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
 }
 
 func (b *TelegramBot) getUpdates(ctx context.Context) ([]telegramUpdate, error) {
@@ -127,13 +133,17 @@ func (b *TelegramBot) getUpdates(ctx context.Context) ([]telegramUpdate, error) 
 	return result.Result, nil
 }
 
-func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string) error {
+func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string, replyTo *int64) error {
 	client := b.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
 	for _, chunk := range chunkTelegramText(text) {
-		payload, err := json.Marshal(map[string]string{"chat_id": chatID, "text": chunk})
+		payloadValues := map[string]string{"chat_id": chatID, "text": chunk}
+		if replyTo != nil {
+			payloadValues["reply_to_message_id"] = strconv.FormatInt(*replyTo, 10)
+		}
+		payload, err := json.Marshal(payloadValues)
 		if err != nil {
 			return err
 		}
@@ -153,6 +163,13 @@ func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string) erro
 		}
 	}
 	return nil
+}
+
+func messageReplyID(messageID int64) *int64 {
+	if messageID == 0 {
+		return nil
+	}
+	return &messageID
 }
 
 func chunkTelegramText(text string) []string {

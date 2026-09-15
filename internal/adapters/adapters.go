@@ -49,6 +49,16 @@ type Telegram struct {
 }
 
 func (a Telegram) HandleMessage(ctx context.Context, chatID, text string) (agent.Result, error) {
+	return a.HandleMessageWithReply(ctx, chatID, text, "")
+}
+
+func (a Telegram) HandleMessageWithReply(ctx context.Context, chatID, text, replyContext string) (agent.Result, error) {
+	if replyContext != "" {
+		if len([]rune(replyContext)) > 2000 {
+			replyContext = string([]rune(replyContext)[:2000])
+		}
+		text = "[Quoted message context]\n" + replyContext + "\n[/Quoted message context]\n\n" + text
+	}
 	_, result, err := a.Service.Send(ctx, "telegram", chatID, a.Workspace, text)
 	return result, err
 }

@@ -22,6 +22,15 @@ func (longTelegramProvider) Next(context.Context, []agent.Message, []string) (ag
 	return agent.Response{Text: strings.Repeat("界", 5000), StopReason: "stop"}, nil
 }
 
+type replyCaptureProvider struct {
+	seen string
+}
+
+func (p *replyCaptureProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.seen = messages[len(messages)-1].Content
+	return agent.Response{Text: "reply answer", StopReason: "stop"}, nil
+}
+
 func TestTelegramBotOwnerGuardAndSendMessage(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
@@ -107,6 +116,42 @@ func TestTelegramBotChunksLongReplies(t *testing.T) {
 		if len([]rune(chunk)) > telegramMessageLimit {
 			t.Fatalf("chunk length=%d", len([]rune(chunk)))
 		}
+	}
+}
+
+func TestTelegramBotCarriesReplyContextAndReplyTarget(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &replyCaptureProvider{}
+	runner := runtime.New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	var replyTarget string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		replyTarget = payload["reply_to_message_id"]
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	update := telegramUpdate{Message: &telegramMessage{MessageID: 9, Text: "answer this"}}
+	update.Message.Chat.ID = 42
+	update.Message.ReplyToMessage = &telegramMessage{MessageID: 8, Text: "quoted source"}
+	if err := bot.HandleUpdate(context.Background(), update); err != nil {
+		t.Fatal(err)
+	}
+	want := "[Quoted message context]\nquoted source\n[/Quoted message context]\n\nanswer this"
+	if provider.seen != want || replyTarget != "9" {
+		t.Fatalf("prompt=%q replyTarget=%q", provider.seen, replyTarget)
 	}
 }
 
