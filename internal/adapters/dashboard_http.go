@@ -148,21 +148,23 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache, no-store")
+			w.Header().Set("Connection", "keep-alive")
+			w.Header().Set("X-Accel-Buffering", "no")
 			w.WriteHeader(http.StatusOK)
 			flush, _ := w.(http.Flusher)
-			result, runErr := h.Dashboard.SendStream(r.Context(), id, input.Message, func(text string) {
+			_, runErr := h.Dashboard.SendStream(r.Context(), id, input.Message, func(text string) {
 				_, _ = io.WriteString(w, "event: delta\ndata: "+mustJSON(map[string]string{"text": text})+"\n\n")
 				if flush != nil {
 					flush.Flush()
 				}
 			})
 			if runErr != nil {
-				_, _ = io.WriteString(w, "event: error\ndata: "+mustJSON(map[string]string{"error": runErr.Error()})+"\n\n")
+				_, _ = io.WriteString(w, "event: error\ndata: "+mustJSON(map[string]string{"message": runErr.Error()})+"\n\n")
 				return
 			}
-			_, _ = io.WriteString(w, "event: done\ndata: "+mustJSON(map[string]string{"text": result.FinalText})+"\n\n")
+			_, _ = io.WriteString(w, "event: done\ndata: {}\n\n")
 			if flush != nil {
 				flush.Flush()
 			}

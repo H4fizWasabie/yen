@@ -171,4 +171,10 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusOK || !bytes.Contains(streamBody, []byte("event: delta")) || !bytes.Contains(streamBody, []byte("event: done")) {
 		t.Fatalf("stream=%q status=%d", streamBody, response.StatusCode)
 	}
+	if response.Header.Get("Content-Type") != "text/event-stream; charset=utf-8" || response.Header.Get("X-Accel-Buffering") != "no" {
+		t.Fatalf("stream headers=%v", response.Header)
+	}
+	if !bytes.Contains(streamBody, []byte("event: done\ndata: {}\n\n")) {
+		t.Fatalf("done event=%q", streamBody)
+	}
 }
