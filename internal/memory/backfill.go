@@ -40,7 +40,7 @@ func (e *Engine) BackfillFromSessionLog(ctx context.Context, provider agent.Prov
 	timed := legacy.TimedMessages()
 	turns := make([]ConsolidationTurn, 0, len(timed))
 	for _, message := range timed {
-		content := historicalMessageText(message.Message.Content)
+		content := historicalTurnText(message.Message)
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
@@ -71,6 +71,20 @@ func backfillChunkID(path string, start int) string {
 	return "backfill-" + hex.EncodeToString(digest[:8])
 }
 
+func historicalTurnText(message session.Message) string {
+	if message.Role == "bashExecution" {
+		status := fmt.Sprintf("exit %v", message.ExitCode)
+		if message.Cancelled {
+			status = "cancelled"
+		}
+		return fmt.Sprintf("ran `%s` — %s: %s", message.Command, status, message.Output)
+	}
+	if message.Role == "branchSummary" || message.Role == "compactionSummary" {
+		return message.Summary
+	}
+	return historicalMessageText(message.Content)
+}
+
 func historicalMessageText(content any) string {
 	switch value := content.(type) {
 	case string:
@@ -78,15 +92,23 @@ func historicalMessageText(content any) string {
 	case []session.ContentPart:
 		var text strings.Builder
 		for _, part := range value {
-			text.WriteString(part.Text)
+			if part.Type == "toolCall" {
+				fmt.Fprintf(&text, "called %s(%v)", part.Name, part.Arguments)
+			} else if part.Type != "thinking" {
+				text.WriteString(part.Text)
+			}
 		}
 		return text.String()
 	case []any:
 		var text strings.Builder
 		for _, item := range value {
 			if part, ok := item.(map[string]any); ok {
-				if value, ok := part["text"].(string); ok {
-					text.WriteString(value)
+				if part["type"] == "toolCall" {
+					fmt.Fprintf(&text, "called %v(%v)", part["name"], part["arguments"])
+				} else if part["type"] != "thinking" {
+					if value, ok := part["text"].(string); ok {
+						text.WriteString(value)
+					}
 				}
 			}
 		}
