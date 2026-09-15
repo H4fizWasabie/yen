@@ -11,6 +11,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/runtime"
+	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 type rpcProvider struct{}
@@ -63,5 +64,36 @@ func TestServeRejectsUnknownCommand(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), `"success":false`) || !strings.Contains(output.String(), "unsupported rpc command") {
 		t.Fatalf("output=%s", output.String())
+	}
+}
+
+func TestBranchCommandPersistsActiveLeaf(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-rpc.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-rpc", ConversationID: "conv-rpc", CWD: dir})
+	if _, err := saved.Append(session.Message{Role: "user", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	entryID, err := saved.Append(session.Message{Role: "assistant", Content: "reply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "conv-rpc", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{ID: "1", Type: "branch", EntryID: entryID}); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened.LeafID() == entryID || !strings.Contains(output.String(), `"success":true`) {
+		t.Fatalf("leaf=%q output=%s", opened.LeafID(), output.String())
 	}
 }

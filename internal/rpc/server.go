@@ -34,6 +34,7 @@ type command struct {
 	Images            []rpcImage `json:"images,omitempty"`
 	StreamingBehavior string     `json:"streamingBehavior,omitempty"`
 	Since             string     `json:"since,omitempty"`
+	EntryID           string     `json:"entryId,omitempty"`
 	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 }
@@ -162,6 +163,21 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		default:
 			return s.response(output, request.ID, request.Type, true, map[string]any{"messageCount": len(session.Messages()), "leafId": session.LeafID()}, nil)
 		}
+	case "branch":
+		session, err := s.Runner.OpenSession(s.Link)
+		if err != nil {
+			return err
+		}
+		if err := session.Branch(request.EntryID); err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"leafId": session.LeafID()}, nil)
+	case "get_artifacts":
+		session, err := s.Runner.OpenSession(s.Link)
+		if err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"artifacts": session.Artifacts()}, nil)
 	case "compact":
 		keep := request.KeepRecentTurns
 		if keep < 1 {
