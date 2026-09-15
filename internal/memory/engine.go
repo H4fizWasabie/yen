@@ -20,6 +20,7 @@ type Engine struct {
 	ConversationScoped       bool
 	mu                       sync.Mutex
 	active                   map[string]bool
+	inFlight                 map[string]bool
 }
 
 type ConsolidatedFact struct {
@@ -67,7 +68,7 @@ func OpenEngine(dir string) (*Engine, error) {
 }
 
 func NewEngine(semantic *Store, episodic *EpisodicStore, checkpoints *Checkpoints) *Engine {
-	return &Engine{Semantic: semantic, Episodic: episodic, Checkpoints: checkpoints, active: make(map[string]bool)}
+	return &Engine{Semantic: semantic, Episodic: episodic, Checkpoints: checkpoints, active: make(map[string]bool), inFlight: make(map[string]bool)}
 }
 
 func (e *Engine) SaveNote(text string, ctx Context) (Node, error) {

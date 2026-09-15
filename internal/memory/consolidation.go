@@ -41,6 +41,14 @@ type jsonConsolidationProvider interface {
 }
 
 func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnID, conversationID, workspaceID, adapter string, turns []ConsolidationTurn) error {
+	if !e.beginConsolidation(conversationID) {
+		return errors.New("consolidation already active")
+	}
+	defer e.endConsolidation(conversationID)
+	return e.consolidate(ctx, provider, turnID, conversationID, workspaceID, adapter, turns)
+}
+
+func (e *Engine) consolidate(ctx context.Context, provider agent.Provider, turnID, conversationID, workspaceID, adapter string, turns []ConsolidationTurn) error {
 	if provider == nil {
 		return errors.New("consolidation provider is required")
 	}
@@ -63,6 +71,25 @@ func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnI
 		return err
 	}
 	return e.ApplyConsolidation(turnID, conversationID, workspaceID, adapter, result.Facts, result.Edges, result.Episode)
+}
+
+func (e *Engine) beginConsolidation(conversationID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.inFlight == nil {
+		e.inFlight = make(map[string]bool)
+	}
+	if e.inFlight[conversationID] {
+		return false
+	}
+	e.inFlight[conversationID] = true
+	return true
+}
+
+func (e *Engine) endConsolidation(conversationID string) {
+	e.mu.Lock()
+	delete(e.inFlight, conversationID)
+	e.mu.Unlock()
 }
 
 func retryConsolidationCall(ctx context.Context, provider agent.Provider, messages []agent.Message) (agent.Response, error) {
@@ -106,10 +133,14 @@ func (e *Engine) ConsolidateIfTriggered(ctx context.Context, provider agent.Prov
 	if !ShouldTriggerConsolidation(userMessage, len(turns)) {
 		return false, nil
 	}
+	if !e.beginConsolidation(conversationID) {
+		return false, nil
+	}
+	defer e.endConsolidation(conversationID)
 	if len(turns) > ConsolidationTurnCeiling {
 		turns = turns[len(turns)-ConsolidationTurnCeiling:]
 	}
-	if err := e.Consolidate(ctx, provider, turnID, conversationID, workspaceID, adapter, turns); err != nil {
+	if err := e.consolidate(ctx, provider, turnID, conversationID, workspaceID, adapter, turns); err != nil {
 		_ = e.ConsolidationCheckpoints.Set(conversationID, Checkpoint{LastEntryID: checkpoint.LastEntryID, LastFailureAt: time.Now().UTC().Format(time.RFC3339Nano)})
 		return true, err
 	}

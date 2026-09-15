@@ -13,6 +13,17 @@ type consolidationProvider struct {
 	text string
 }
 
+type blockingConsolidationProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *blockingConsolidationProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	close(p.started)
+	<-p.release
+	return agent.Response{Text: `{"episode":{"summary":"done","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
+}
+
 func (p consolidationProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
 	return agent.Response{Text: p.text, StopReason: "stop"}, nil
 }
@@ -68,6 +79,27 @@ func TestEngineConsolidateParsesAndAppliesStructuredResult(t *testing.T) {
 	}
 	if got := engine.Checkpoints.Get("conv-c").LastEntryID; got != "turn-c" {
 		t.Fatalf("checkpoint=%q", got)
+	}
+}
+
+func TestEngineDoesNotOverlapConsolidationProviderCalls(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	provider := &blockingConsolidationProvider{started: make(chan struct{}), release: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		done <- engine.Consolidate(context.Background(), provider, "turn-1", "conv-overlap", "work", "telegram", []ConsolidationTurn{{Role: "user", Content: "hello"}})
+	}()
+	<-provider.started
+	if err := engine.Consolidate(context.Background(), provider, "turn-2", "conv-overlap", "work", "telegram", []ConsolidationTurn{{Role: "user", Content: "again"}}); err == nil || !strings.Contains(err.Error(), "already active") {
+		t.Fatalf("overlap error=%v", err)
+	}
+	close(provider.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
