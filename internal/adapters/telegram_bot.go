@@ -203,34 +203,80 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 }
 
 func (b *TelegramBot) sendResultImages(ctx context.Context, chatID string, result agent.Result, replyTo *int64) error {
+	var images []string
 	for _, message := range result.Messages {
 		if message.Role != "tool" {
 			continue
 		}
-		for _, image := range message.Images {
-			if err := b.sendPhoto(ctx, chatID, image, replyTo); err != nil {
-				return err
-			}
+		images = append(images, message.Images...)
+	}
+	if len(images) > 1 {
+		return b.sendMediaGroup(ctx, chatID, images)
+	}
+	for _, image := range images {
+		if err := b.sendPhoto(ctx, chatID, image, replyTo); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func (b *TelegramBot) sendPhoto(ctx context.Context, chatID, dataURL string, replyTo *int64) error {
-	comma := strings.IndexByte(dataURL, ',')
-	if !strings.HasPrefix(dataURL, "data:image/") || comma < 0 {
-		return fmt.Errorf("unsupported image result")
+func (b *TelegramBot) sendMediaGroup(ctx context.Context, chatID string, dataURLs []string) error {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", chatID); err != nil {
+		return err
 	}
-	header := dataURL[:comma]
-	data, err := base64.StdEncoding.DecodeString(dataURL[comma+1:])
+	media := make([]map[string]string, 0, len(dataURLs))
+	for index, dataURL := range dataURLs {
+		data, extension, err := decodeTelegramImage(dataURL)
+		if err != nil {
+			return err
+		}
+		field := fmt.Sprintf("file%d", index)
+		part, err := writer.CreateFormFile(field, "generated"+extension)
+		if err != nil {
+			return err
+		}
+		if _, err := part.Write(data); err != nil {
+			return err
+		}
+		media = append(media, map[string]string{"type": "photo", "media": "attach://" + field})
+	}
+	encoded, err := json.Marshal(media)
 	if err != nil {
 		return err
 	}
-	extension := ".jpg"
-	if strings.Contains(header, "png") {
-		extension = ".png"
-	} else if strings.Contains(header, "webp") {
-		extension = ".webp"
+	if err := writer.WriteField("media", string(encoded)); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendMediaGroup", &body)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	client := b.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("telegram sendMediaGroup returned %s", response.Status)
+	}
+	return nil
+}
+
+func (b *TelegramBot) sendPhoto(ctx context.Context, chatID, dataURL string, replyTo *int64) error {
+	data, extension, err := decodeTelegramImage(dataURL)
+	if err != nil {
+		return err
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -270,6 +316,27 @@ func (b *TelegramBot) sendPhoto(ctx context.Context, chatID, dataURL string, rep
 		return fmt.Errorf("telegram sendPhoto returned %s", response.Status)
 	}
 	return nil
+}
+
+func decodeTelegramImage(dataURL string) ([]byte, string, error) {
+	comma := strings.IndexByte(dataURL, ',')
+	if !strings.HasPrefix(dataURL, "data:image/") || comma < 0 {
+		return nil, "", fmt.Errorf("unsupported image result")
+	}
+	header := dataURL[:comma]
+	data, err := base64.StdEncoding.DecodeString(dataURL[comma+1:])
+	if err != nil {
+		return nil, "", err
+	}
+	extension := ".jpg"
+	if strings.Contains(header, "png") {
+		extension = ".png"
+	} else if strings.Contains(header, "webp") {
+		extension = ".webp"
+	} else if strings.Contains(header, "gif") {
+		extension = ".gif"
+	}
+	return data, extension, nil
 }
 
 func (b *TelegramBot) setToolDetail(enabled bool) {
