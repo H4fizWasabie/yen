@@ -71,6 +71,43 @@ func TestNewConfiguredSupportsAmazonBedrock(t *testing.T) {
 	}
 }
 
+func TestBedrockBearerAuthUsesYenTokenAndBearerScheme(t *testing.T) {
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("YEN_AWS_BEARER_TOKEN_BEDROCK", "yen-bearer")
+	configured, err := NewConfigured("amazon-bedrock", "model-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := configured.(BedrockConverse)
+	cfg, err := client.awsConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.AuthSchemePreference) != 1 || cfg.AuthSchemePreference[0] != "httpBearerAuth" {
+		t.Fatalf("auth schemes=%v", cfg.AuthSchemePreference)
+	}
+	if cfg.BearerAuthTokenProvider == nil {
+		t.Fatal("bearer token provider is nil")
+	}
+	token, err := cfg.BearerAuthTokenProvider.RetrieveBearerToken(context.Background())
+	if err != nil || token.Value != "yen-bearer" {
+		t.Fatalf("token=%q err=%v", token.Value, err)
+	}
+}
+
+func TestBedrockSkipAuthUsesDummyCredentials(t *testing.T) {
+	client := BedrockConverse{Region: "us-east-1", SkipAuth: true}
+	cfg, err := client.awsConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := cfg.Credentials.Retrieve(context.Background())
+	if err != nil || credentials.AccessKeyID != "dummy-access-key" || credentials.SecretAccessKey != "dummy-secret-key" {
+		t.Fatalf("credentials=%#v err=%v", credentials, err)
+	}
+}
+
 func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
 	input, err := bedrockInput([]agent.Message{
 		{Role: "assistant", ToolCalls: []agent.ToolCall{{ID: "call-1", Name: "read", Args: map[string]any{"path": "x"}}}, Thinking: "inspect", ThinkingSignature: "sig"},
