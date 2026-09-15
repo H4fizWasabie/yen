@@ -1,6 +1,10 @@
 package provider
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
+)
 
 func TestIsContextOverflowErrorMatchesProviderPatterns(t *testing.T) {
 	for _, message := range []string{
@@ -37,5 +41,46 @@ func TestIsContextOverflowErrorRejectsTransientErrors(t *testing.T) {
 		if IsContextOverflowError(message) {
 			t.Fatalf("incorrectly matched transient message %q", message)
 		}
+	}
+}
+
+func TestIsContextOverflowResponseDetectsSilentProviderOverflow(t *testing.T) {
+	tests := []struct {
+		name    string
+		message agent.Message
+		window  int
+		want    bool
+	}{
+		{
+			name:    "successful input over context",
+			message: agent.Message{StopReason: "stop", Usage: &agent.Usage{Input: 190, CacheRead: 11}},
+			window:  200,
+			want:    true,
+		},
+		{
+			name:    "length stop fills context with no output",
+			message: agent.Message{StopReason: "length", Usage: &agent.Usage{Input: 198, Output: 0}},
+			window:  200,
+			want:    true,
+		},
+		{
+			name:    "length stop leaves output room",
+			message: agent.Message{StopReason: "length", Usage: &agent.Usage{Input: 150, Output: 0}},
+			window:  200,
+			want:    false,
+		},
+		{
+			name:    "disabled without context window",
+			message: agent.Message{StopReason: "stop", Usage: &agent.Usage{Input: 1000}},
+			window:  0,
+			want:    false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := IsContextOverflowMessage(test.message, test.window); got != test.want {
+				t.Fatalf("overflow=%v, want %v", got, test.want)
+			}
+		})
 	}
 }

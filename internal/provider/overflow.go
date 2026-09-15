@@ -3,6 +3,8 @@ package provider
 import (
 	"regexp"
 	"strings"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 var contextOverflowPatterns = []*regexp.Regexp{
@@ -43,4 +45,20 @@ func IsContextOverflowError(message string) bool {
 		}
 	}
 	return false
+}
+
+// IsContextOverflowMessage detects providers that accept an oversized prompt
+// but report the overflow only through usage or a zero-output length stop.
+func IsContextOverflowMessage(message agent.Message, contextWindow int) bool {
+	if contextWindow < 1 {
+		return false
+	}
+	if message.Usage == nil {
+		return false
+	}
+	inputTokens := message.Usage.Input + message.Usage.CacheRead + message.Usage.CacheWrite
+	if message.StopReason == "stop" && inputTokens > contextWindow {
+		return true
+	}
+	return message.StopReason == "length" && message.Usage.Output == 0 && float64(inputTokens) >= float64(contextWindow)*0.99
 }
