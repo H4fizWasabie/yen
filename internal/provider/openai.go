@@ -3,6 +3,8 @@ package provider
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -109,6 +111,10 @@ func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Messag
 }
 
 func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
+	converted := convertMessages(messages)
+	if p.ProviderName == "mistral" {
+		converted = normalizeMistralMessages(converted)
+	}
 	payload := struct {
 		Model           string            `json:"model"`
 		Messages        []openAIMessage   `json:"messages"`
@@ -117,7 +123,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		ResponseFormat  map[string]string `json:"response_format,omitempty"`
 		Reasoning       map[string]string `json:"reasoning,omitempty"`
 		ReasoningEffort string            `json:"reasoning_effort,omitempty"`
-	}{Model: p.Model, Messages: convertMessages(messages), Stream: true}
+	}{Model: p.Model, Messages: converted, Stream: true}
 	if p.ReasoningEffort != "" {
 		if p.ProviderName == "mistral" {
 			payload.ReasoningEffort = p.ReasoningEffort
@@ -240,7 +246,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			} `json:"usage"`
 			Choices []struct {
 				Delta struct {
-					Content          string            `json:"content"`
+					Content          json.RawMessage   `json:"content"`
 					Reasoning        string            `json:"reasoning"`
 					ReasoningContent string            `json:"reasoning_content"`
 					ReasoningText    string            `json:"reasoning_text"`
@@ -325,19 +331,33 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 					partial.ThinkingSignature = string(encoded)
 				}
 			}
-			result.Text += choice.Delta.Content
-			if choice.Delta.Content != "" {
+			text, reasoningChunk := openAIContentDelta(choice.Delta.Content)
+			if reasoningChunk != "" {
+				if partial.ThinkingSignature == "" {
+					partial.ThinkingSignature = "reasoning"
+				}
+				if emit != nil && !startedThinking {
+					startedThinking = true
+					emit(agent.StreamEvent{Type: "thinking_start", ContentIndex: 0, Partial: partial})
+				}
+				partial.Thinking += reasoningChunk
+				if emit != nil {
+					emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: 0, Delta: reasoningChunk, Partial: partial})
+				}
+			}
+			result.Text += text
+			if text != "" {
 				if emit != nil && !startedText {
 					startedText = true
 					emit(agent.StreamEvent{Type: "text_start", ContentIndex: 0, Partial: partial})
 				}
-				partial.Content += choice.Delta.Content
+				partial.Content += text
 				if emit != nil {
-					emit(agent.StreamEvent{Type: "text_delta", ContentIndex: 0, Delta: choice.Delta.Content, Partial: partial})
+					emit(agent.StreamEvent{Type: "text_delta", ContentIndex: 0, Delta: text, Partial: partial})
 				}
 			}
-			if update != nil && choice.Delta.Content != "" {
-				update(choice.Delta.Content)
+			if update != nil && text != "" {
+				update(text)
 			}
 			if len(choice.FinishReason) > 0 {
 				if string(choice.FinishReason) == "null" {
@@ -428,6 +448,68 @@ func hasMessageImages(messages []agent.Message) bool {
 		}
 	}
 	return false
+}
+
+func openAIContentDelta(raw json.RawMessage) (text, thinking string) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", ""
+	}
+	if json.Unmarshal(raw, &text) == nil {
+		return text, ""
+	}
+	var chunks []struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Thinking []struct {
+			Text string `json:"text"`
+		} `json:"thinking"`
+	}
+	if json.Unmarshal(raw, &chunks) != nil {
+		return "", ""
+	}
+	for _, chunk := range chunks {
+		if chunk.Type == "thinking" {
+			for _, part := range chunk.Thinking {
+				thinking += part.Text
+			}
+		} else {
+			text += chunk.Text
+		}
+	}
+	return text, thinking
+}
+
+func normalizeMistralMessages(messages []openAIMessage) []openAIMessage {
+	result := append([]openAIMessage(nil), messages...)
+	for i := range result {
+		result[i].ToolCallID = normalizeMistralToolID(result[i].ToolCallID)
+		if len(result[i].ToolCalls) == 0 {
+			continue
+		}
+		result[i].ToolCalls = append([]openAIToolCall(nil), result[i].ToolCalls...)
+		for j := range result[i].ToolCalls {
+			result[i].ToolCalls[j].ID = normalizeMistralToolID(result[i].ToolCalls[j].ID)
+		}
+	}
+	return result
+}
+
+func normalizeMistralToolID(id string) string {
+	if id == "" {
+		return id
+	}
+	var normalized strings.Builder
+	for _, r := range id {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			normalized.WriteRune(r)
+		}
+	}
+	value := normalized.String()
+	if len(value) == 9 {
+		return value
+	}
+	digest := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(digest[:])[:9]
 }
 
 func toolParameters(name string) map[string]any {
