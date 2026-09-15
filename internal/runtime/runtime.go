@@ -542,8 +542,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			keepRecentTurns = 2
 		}
 		if compactErr := r.compactConversation(ctx, turn.ConversationID, keepRecentTurns); compactErr == nil {
-			current, err = openOrCreate(path, turn)
-			if err != nil {
+			if err := current.Reload(); err != nil {
 				return result, err
 			}
 			history = toAgentMessages(current.ContextMessages())
