@@ -451,3 +451,20 @@ func TestSessionPreparesCompactionFromRecentTokenBudget(t *testing.T) {
 		t.Fatalf("plan metadata=%#v", plan)
 	}
 }
+
+func TestImportCopiesValidatedSession(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.jsonl")
+	destination := filepath.Join(dir, "imported.jsonl")
+	created := New(source, Header{ID: "source", CWD: dir})
+	if _, err := created.Append(Message{Role: "assistant", Content: "import me"}); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := Import(source, destination)
+	if err != nil || imported.Path() != destination || len(imported.Messages()) != 1 {
+		t.Fatalf("imported=%#v err=%v", imported, err)
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("source was not preserved: %v", err)
+	}
+}

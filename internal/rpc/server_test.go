@@ -147,3 +147,33 @@ func TestForkCommandCreatesDurableSessionCopy(t *testing.T) {
 		t.Fatalf("messages=%#v output=%s err=%v", forked.Messages(), output.String(), err)
 	}
 }
+
+func TestImportSessionCommandCopiesExternalSession(t *testing.T) {
+	dir := t.TempDir()
+	currentPath := filepath.Join(dir, "current.jsonl")
+	current := session.New(currentPath, session.Header{ID: "current", ConversationID: "current", CWD: dir})
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "current"}); err != nil {
+		t.Fatal(err)
+	}
+	sourceDir := t.TempDir()
+	sourcePath := filepath.Join(sourceDir, "external.jsonl")
+	external := session.New(sourcePath, session.Header{ID: "external", ConversationID: "external", CWD: sourceDir})
+	if _, err := external.Append(session.Message{Role: "assistant", Content: "external"}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(conversation.Turn) string { return currentPath }
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "current", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{ID: "1", Type: "import_session", Path: sourcePath}); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := session.Open(filepath.Join(dir, "external.jsonl"))
+	if err != nil || len(imported.Messages()) != 1 || imported.Messages()[0].Content != "external" || !strings.Contains(output.String(), `"success":true`) {
+		t.Fatalf("messages=%#v output=%s err=%v", imported.Messages(), output.String(), err)
+	}
+}

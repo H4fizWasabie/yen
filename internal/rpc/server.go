@@ -208,6 +208,20 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": forkID, "path": forked.Path(), "leafId": forked.LeafID()}, nil)
+	case "import_session":
+		if strings.TrimSpace(request.Path) == "" {
+			return errors.New("path is required")
+		}
+		current, err := s.Runner.OpenSession(s.Link)
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(filepath.Dir(current.Path()), filepath.Base(request.Path))
+		imported, err := session.Import(request.Path, destination)
+		if err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": imported.Header().ID, "path": imported.Path(), "leafId": imported.LeafID(), "name": imported.SessionName()}, nil)
 	case "compact":
 		keep := request.KeepRecentTurns
 		if keep < 1 {

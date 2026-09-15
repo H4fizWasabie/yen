@@ -257,6 +257,34 @@ func Open(path string) (*Session, error) {
 	return s, nil
 }
 
+// Import validates a JSONL session and copies it into destination. The source
+// remains untouched by the copy; callers can reopen the returned session.
+func Import(source, destination string) (*Session, error) {
+	if strings.TrimSpace(source) == "" {
+		return nil, errors.New("source session path is required")
+	}
+	if strings.TrimSpace(destination) == "" {
+		return nil, errors.New("destination session path is required")
+	}
+	if filepath.Clean(source) == filepath.Clean(destination) {
+		return Open(source)
+	}
+	if _, err := Open(source); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(destination, data, 0o600); err != nil {
+		return nil, err
+	}
+	return Open(destination)
+}
+
 func migrateSession(s *Session) bool {
 	version := s.header.Version
 	if version == 0 {
