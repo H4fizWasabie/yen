@@ -355,6 +355,17 @@ func TestAutoCompactMaxHistoryTurnsFromEnv(t *testing.T) {
 	}
 }
 
+func TestAutoCompactDisabledFromEnv(t *testing.T) {
+	t.Setenv("THEOSES_AUTO_COMPACT_ENABLED", "false")
+	if !AutoCompactDisabledFromEnv() {
+		t.Fatal("expected automatic compaction to be disabled")
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_ENABLED", "true")
+	if AutoCompactDisabledFromEnv() {
+		t.Fatal("expected automatic compaction to be enabled")
+	}
+}
+
 func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conv-compact.jsonl")
@@ -494,6 +505,40 @@ func TestRunnerAutoCompactsBeforePromptAtContextThreshold(t *testing.T) {
 	}
 	if provider.calls != 2 || len(provider.seen[1]) == 0 || provider.seen[1][0].Content == "one" {
 		t.Fatalf("provider calls=%d messages=%#v", provider.calls, provider.seen)
+	}
+}
+
+func TestRunnerCanDisableAutomaticCompaction(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-no-auto.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-no-auto", ConversationID: "conv-no-auto", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &contextCaptureProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactDisabled = true
+	runner.AutoCompactMaxHistoryTurns = 2
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-no-auto", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "four"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.messages) == 0 || provider.messages[0].Content != "one" {
+		t.Fatalf("automatic compaction was not disabled: %#v", provider.messages)
 	}
 }
 

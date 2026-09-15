@@ -32,6 +32,7 @@ type Runner struct {
 	AutoCompactKeepRecentTokens int
 	AutoCompactContextWindow    int
 	AutoCompactReserveTokens    int
+	AutoCompactDisabled         bool
 	AutoCompactOnOverflow       bool
 	AutoConsolidate             bool
 
@@ -87,6 +88,11 @@ func AutoCompactReserveTokensFromEnv() int {
 func AutoCompactOnOverflowFromEnv() bool {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_OVERFLOW")))
 	return value == "1" || value == "true" || value == "yes"
+}
+
+func AutoCompactDisabledFromEnv() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_ENABLED")))
+	return value == "0" || value == "false" || value == "no" || value == "off"
 }
 
 func AutoConsolidateFromEnv() bool {
@@ -329,7 +335,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	if err != nil {
 		return agent.Result{}, err
 	}
-	if r.AutoCompactTurns > 0 {
+	if !r.AutoCompactDisabled && r.AutoCompactTurns > 0 {
 		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
 			return agent.Result{}, err
 		}
@@ -337,7 +343,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		if err != nil {
 			return agent.Result{}, err
 		}
-	} else if r.AutoCompactContextWindow > 0 {
+	} else if !r.AutoCompactDisabled && r.AutoCompactContextWindow > 0 {
 		threshold := r.AutoCompactContextWindow - r.AutoCompactReserveTokens
 		if session.EstimateContextTokens(current.ContextMessages()) > threshold {
 			if err := r.compactConversation(ctx, turn.ConversationID, 0); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
@@ -348,7 +354,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 				return agent.Result{}, err
 			}
 		}
-	} else if r.AutoCompactMaxHistoryTurns > 0 {
+	} else if !r.AutoCompactDisabled && r.AutoCompactMaxHistoryTurns > 0 {
 		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactMaxHistoryTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
 			return agent.Result{}, err
 		}
@@ -369,7 +375,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	}
 	tools = append(tools, recallTurnsTool{history: history})
 	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
-	if r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && recoverableLengthStop(result)) {
+	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && recoverableLengthStop(result)) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
 			keepRecentTurns = 2
