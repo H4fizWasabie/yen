@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
@@ -44,6 +47,8 @@ type command struct {
 	EntryID            string     `json:"entryId,omitempty"`
 	Name               string     `json:"name,omitempty"`
 	Path               string     `json:"path,omitempty"`
+	OutputPath         string     `json:"outputPath,omitempty"`
+	ParentSession      string     `json:"parentSession,omitempty"`
 	Provider           string     `json:"provider,omitempty"`
 	Model              string     `json:"modelId,omitempty"`
 	Level              string     `json:"level,omitempty"`
@@ -180,6 +185,24 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			"steeringMode":  steeringMode, "followUpMode": followUpMode,
 			"messageCount": len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
+	case "new_session":
+		current, err := s.Runner.OpenSession(link)
+		if err != nil {
+			return err
+		}
+		id := fmt.Sprintf("session-%d", time.Now().UnixNano())
+		path := filepath.Join(filepath.Dir(current.Path()), id+".jsonl")
+		header := current.Header()
+		header.ID, header.ConversationID = id, id
+		if request.ParentSession != "" {
+			header.ParentSession = request.ParentSession
+		}
+		created := sessionpkg.New(path, header)
+		if _, err := created.AppendSessionInfo(""); err != nil {
+			return err
+		}
+		s.activateSession(link, id, path)
+		return s.response(output, request.ID, request.Type, true, map[string]any{"cancelled": false, "sessionId": id, "path": created.Path()}, nil)
 	case "get_messages":
 		session, err := s.Runner.OpenSession(link)
 		if err != nil {
@@ -231,6 +254,19 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"artifacts": session.Artifacts()}, nil)
+	case "export_html":
+		current, err := s.Runner.OpenSession(link)
+		if err != nil {
+			return err
+		}
+		path := request.OutputPath
+		if path == "" {
+			path = current.Path() + ".html"
+		}
+		if err := os.WriteFile(path, []byte(sessionHTML(current)), 0o600); err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"path": path}, nil)
 	case "get_fork_messages":
 		session, err := s.Runner.OpenSession(link)
 		if err != nil {
@@ -269,6 +305,20 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": forkID, "path": forked.Path(), "leafId": forked.LeafID()}, nil)
+	case "clone":
+		current, err := s.Runner.OpenSession(link)
+		if err != nil {
+			return err
+		}
+		cloneID := fmt.Sprintf("clone-%d", time.Now().UnixNano())
+		header := current.Header()
+		header.ID = cloneID
+		path := filepath.Join(filepath.Dir(current.Path()), cloneID+".jsonl")
+		clone, err := current.Fork(path, current.LeafID(), header)
+		if err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": cloneID, "path": clone.Path(), "leafId": clone.LeafID()}, nil)
 	case "import_session", "switch_session":
 		if strings.TrimSpace(request.Path) == "" {
 			return errors.New("path is required")
@@ -457,12 +507,31 @@ func (s *Server) switchSession(source string, current conversation.Link) (*sessi
 	if workspaceID == "" {
 		workspaceID = current.WorkspaceID
 	}
-	s.Runner.SetSessionPath(conversationID, destination)
-	current.ConversationID, current.WorkspaceID = conversationID, workspaceID
-	s.linkMu.Lock()
-	s.Link = current
-	s.linkMu.Unlock()
+	current.WorkspaceID = workspaceID
+	s.activateSession(current, conversationID, destination)
 	return imported, nil
+}
+
+func (s *Server) activateSession(link conversation.Link, conversationID, path string) {
+	s.Runner.SetSessionPath(conversationID, path)
+	link.ConversationID = conversationID
+	s.linkMu.Lock()
+	s.Link = link
+	s.linkMu.Unlock()
+}
+
+func sessionHTML(current *sessionpkg.Session) string {
+	var builder strings.Builder
+	builder.WriteString("<!doctype html><meta charset=\"utf-8\"><title>Yen session</title><main>")
+	for _, message := range current.Messages() {
+		builder.WriteString("<section><h2>")
+		builder.WriteString(html.EscapeString(message.Role))
+		builder.WriteString("</h2><pre>")
+		builder.WriteString(html.EscapeString(contentText(message.Content)))
+		builder.WriteString("</pre></section>")
+	}
+	builder.WriteString("</main>")
+	return builder.String()
 }
 
 func (s *Server) runPrompt(ctx context.Context, output io.Writer, turn conversation.Turn, images []string) {

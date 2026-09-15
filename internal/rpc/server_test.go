@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -316,5 +317,49 @@ func TestBashCommandReturnsOutputAndLogsWorkingNote(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), `"output":"hello"`) || !strings.Contains(opened.WorkingNote(), "ran: printf hello") {
 		t.Fatalf("output=%s note=%q", output.String(), opened.WorkingNote())
+	}
+}
+
+func TestSessionLifecycleCommandsCreateCloneAndExport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	created := session.New(path, session.Header{ID: "root", ConversationID: "root", CWD: dir})
+	if _, err := created.Append(session.Message{Role: "user", Content: "<hello>"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := created.Append(session.Message{Role: "assistant", Content: "world"}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string {
+		if turn.ConversationID == "root" {
+			return path
+		}
+		return filepath.Join(dir, turn.ConversationID+".jsonl")
+	}
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "root", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{Type: "clone"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "export_html", OutputPath: filepath.Join(dir, "session.html")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "new_session"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "get_state"}); err != nil {
+		t.Fatal(err)
+	}
+	exported, err := os.ReadFile(filepath.Join(dir, "session.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(exported), "&lt;hello&gt;") || !strings.Contains(output.String(), `"success":true`) {
+		t.Fatalf("export/output=%s html=%s", output.String(), exported)
 	}
 }
