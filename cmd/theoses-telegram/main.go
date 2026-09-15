@@ -58,7 +58,11 @@ func main() {
 	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
-	runner.SharedMemory = os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID") != ""
+	canonicalConversationID := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
+	if canonicalConversationID == "" {
+		canonicalConversationID = "yen-primary"
+	}
+	runner.SharedMemory = true
 	runner.SessionPath = func(turn conversation.Turn) string {
 		return filepath.Join(dataDir, "sessions", turn.ConversationID+".jsonl")
 	}
@@ -67,7 +71,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")}, Workspace: workspace}, Token: os.Getenv("THEOSES_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("THEOSES_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("THEOSES_TELEGRAM_API_BASE"), ToolPreferencePath: filepath.Join(dataDir, "telegram-preferences.json"), ArtifactDir: filepath.Join(dataDir, "telegram-artifacts")}
+	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: canonicalConversationID}, Workspace: workspace}, Token: os.Getenv("THEOSES_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("THEOSES_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("THEOSES_TELEGRAM_API_BASE"), ToolPreferencePath: filepath.Join(dataDir, "telegram-preferences.json"), ArtifactDir: filepath.Join(dataDir, "telegram-artifacts")}
 	if err := bot.Run(context.Background()); err != nil {
 		log.Fatal(err)
 	}

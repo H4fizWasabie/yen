@@ -64,12 +64,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return reportError(stderr, err)
 	}
 	canonicalConversationID := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
-	var link conversation.Link
-	if canonicalConversationID != "" {
-		link, err = registry.ResolveShared("cli", cwd, cwd, canonicalConversationID)
-	} else {
-		link, err = registry.Resolve("cli", cwd, cwd)
+	if canonicalConversationID == "" {
+		canonicalConversationID = "yen-primary"
 	}
+	var link conversation.Link
+	link, err = registry.ResolveShared("cli", cwd, cwd, canonicalConversationID)
 	if err != nil {
 		return reportError(stderr, err)
 	}

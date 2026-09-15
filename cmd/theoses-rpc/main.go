@@ -58,7 +58,11 @@ func main() {
 	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
-	runner.SharedMemory = os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID") != ""
+	canonical := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
+	if canonical == "" {
+		canonical = "yen-primary"
+	}
+	runner.SharedMemory = true
 	runner.SessionPath = func(turn conversation.Turn) string {
 		return filepath.Join(dataDir, "sessions", turn.ConversationID+".jsonl")
 	}
@@ -67,13 +71,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	canonical := os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")
 	var link conversation.Link
-	if canonical != "" {
-		link, err = registry.ResolveShared("rpc", workspace, workspace, canonical)
-	} else {
-		link, err = registry.Resolve("rpc", workspace, workspace)
-	}
+	link, err = registry.ResolveShared("rpc", workspace, workspace, canonical)
 	if err != nil {
 		log.Fatal(err)
 	}

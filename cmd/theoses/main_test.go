@@ -50,6 +50,7 @@ func TestRunPersistsProviderErrorAndReturnsFailure(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	t.Setenv("THEOSES_SESSION_FILE", path)
+	t.Setenv("THEOSES_CANONICAL_CONVERSATION_ID", "conv-test")
 	t.Setenv("THEOSES_OPENAI_BASE_URL", server.URL)
 
 	var stderr bytes.Buffer
@@ -100,6 +101,7 @@ func TestRunEndToEndToolTurnUsesSharedRunnerAndMemory(t *testing.T) {
 	path := filepath.Join(dataDir, "sessions", "session.jsonl")
 	t.Setenv("THEOSES_SESSION_FILE", path)
 	t.Setenv("THEOSES_DATA_DIR", dataDir)
+	t.Setenv("THEOSES_CANONICAL_CONVERSATION_ID", "conv-test")
 	t.Setenv("THEOSES_OPENAI_BASE_URL", server.URL)
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"-p", "read README"}, &stdout, &stderr); code != 0 {
