@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/auth"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
@@ -220,6 +222,31 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 			return true, err
 		}
 		_, err = fmt.Fprintf(stdout, "%s\n", data)
+		return true, err
+	case text == "/logout" || strings.HasPrefix(text, "/logout "):
+		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+		if path == "" {
+			return true, fmt.Errorf("YEN_AUTH_FILE is required for /logout")
+		}
+		store := auth.Open(path)
+		providerID := strings.TrimSpace(strings.TrimPrefix(text, "/logout"))
+		if providerID == "" {
+			credentials, err := store.List()
+			if err != nil {
+				return true, err
+			}
+			sort.Slice(credentials, func(i, j int) bool { return credentials[i].Provider < credentials[j].Provider })
+			data, err := json.Marshal(credentials)
+			if err != nil {
+				return true, err
+			}
+			_, err = fmt.Fprintf(stdout, "%s\n", data)
+			return true, err
+		}
+		if err := store.Delete(providerID); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintf(stdout, "Logged out: %s\n", providerID)
 		return true, err
 	case text == "/thinking" || strings.HasPrefix(text, "/thinking "):
 		level := strings.TrimSpace(strings.TrimPrefix(text, "/thinking"))
