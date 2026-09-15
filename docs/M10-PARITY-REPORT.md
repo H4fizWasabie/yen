@@ -49,7 +49,7 @@ and `TestAzureResponsesUsesAzureRouteAndAPIKeyHeader`; full AWS Bedrock
 SigV4/credential-chain support remains open.
 
 Resource context now also loads the configurable user agent directory and
-`THEOSES.md` persona before repository context, matching the oracle's global
+`YEN.md` persona before repository context, matching Yen's global
 resource pass. TypeScript authority:
 `packages/coding-agent/src/core/resource-loader.ts:220-260` and
 `packages/coding-agent/src/config.ts:517-523`. Go evidence:
