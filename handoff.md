@@ -114,6 +114,7 @@ Telegram photos/documents and common media now download through bounded Bot API
 calls into `/var/lib/yen/telegram-artifacts`; the prompt points the existing
 read tool at the saved file. Photos also survive into OpenAI-compatible image
 content parts; live attachment acceptance still requires an incoming user file.
+Image MIME types and persisted image metadata now round-trip through sessions.
 See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md),
 [docs/M9-OPERATIONS.md](docs/M9-OPERATIONS.md), and
 [docs/M10-PARITY-REPORT.md](docs/M10-PARITY-REPORT.md).

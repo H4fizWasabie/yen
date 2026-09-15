@@ -69,13 +69,6 @@ type telegramFile struct {
 	MimeType string `json:"mime_type"`
 }
 
-func (m *telegramMessage) DocumentMimeType() string {
-	if m != nil && m.Document != nil {
-		return m.Document.MimeType
-	}
-	return ""
-}
-
 type telegramResponse struct {
 	OK          bool            `json:"ok"`
 	Result      json.RawMessage `json:"result"`
@@ -246,9 +239,9 @@ func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *tel
 	if b.ArtifactDir == "" {
 		return "", "", nil
 	}
-	fileID, name, kind := "", "attachment", "media"
+	fileID, name, kind, mime := "", "attachment", "media", ""
 	if len(message.Photo) > 0 {
-		fileID, name, kind = message.Photo[len(message.Photo)-1].FileID, "photo.jpg", "photo"
+		fileID, name, kind, mime = message.Photo[len(message.Photo)-1].FileID, "photo.jpg", "photo", "image/jpeg"
 	} else {
 		file := message.Document
 		if file == nil {
@@ -268,6 +261,7 @@ func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *tel
 		}
 		if file != nil {
 			fileID, name = file.FileID, file.FileName
+			mime = file.MimeType
 			if name == "" {
 				name = "media"
 			}
@@ -281,8 +275,11 @@ func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *tel
 		return "", "", err
 	}
 	image := ""
-	if kind == "photo" || strings.HasPrefix(message.DocumentMimeType(), "image/") {
-		image = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(data)
+	if kind == "photo" || strings.HasPrefix(mime, "image/") {
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		image = "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 	}
 	return fmt.Sprintf("User sent a %s; it was stored at `%s`. Use the read tool if needed.", kind, path), image, nil
 }

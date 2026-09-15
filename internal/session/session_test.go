@@ -109,6 +109,26 @@ func TestOpenSessionReadsLargeJSONLMessageWithinBound(t *testing.T) {
 	}
 }
 
+func TestSessionRoundTripsImageContentMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	s := New(path, Header{ID: "session-image", CWD: "/workspace", Channel: "telegram", ChannelSessionID: "42"})
+	if _, err := s.Append(Message{Role: "user", Content: "inspect", Images: []string{"data:image/png;base64,AA=="}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(Message{Role: "assistant", Content: "seen"}); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := opened.Messages()
+	if len(messages) != 2 || len(messages[0].Images) != 1 || messages[0].Images[0] != "data:image/png;base64,AA==" {
+		t.Fatalf("messages=%#v", messages)
+	}
+}
+
 func TestOpenSessionContinuesParentChain(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
