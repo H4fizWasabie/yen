@@ -482,6 +482,9 @@ func TestTelegramBotAttachmentNoteIncludesDocumentMetadata(t *testing.T) {
 	if !strings.Contains(note, want) {
 		t.Fatalf("note=%q, want substring %q", note, want)
 	}
+	if !strings.Contains(note, "Use convert_doc to read it if needed") {
+		t.Fatalf("note=%q, missing convert_doc guidance", note)
+	}
 }
 
 func TestTelegramBotCaptionlessPhotoUsesPhotoPrompt(t *testing.T) {
