@@ -107,6 +107,16 @@ TypeScript authority: `packages/telegram/src/index.ts:536-542`; Go evidence:
 `TestTelegramBotAttachmentNoteIncludesDocumentMetadata`. The focused test and
 full 362-test race/vet/diff gates pass.
 
+Telegram non-image documents and media now enter the canonical session artifact
+log before the agent turn, so the same artifact catalog is visible to Telegram,
+dashboard, and CLI consumers. This matches the pinned Telegram source at
+`packages/telegram/src/index.ts:550-560,575-585`, where
+`session.sessionManager.storeArtifact("telegram document", ...)` is used for
+documents and other media. Go evidence is `internal/adapters/telegram_bot.go`
+and `TestTelegramBotRecordsDocumentInSharedSessionArtifacts`; the focused test
+and full 363-test race/vet/diff gates pass. Live incoming-file acceptance
+remains open.
+
 ## Checkpoint update: 2026-09-15
 
 Resource context loading now includes the oracle's `THEOSES.md` persona at the
