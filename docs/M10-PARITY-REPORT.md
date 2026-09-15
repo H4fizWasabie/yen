@@ -56,6 +56,11 @@ resource pass. TypeScript authority:
 `internal/codingagent/prompt.go` and
 `TestContextMessageLoadsConfiguredAgentPersonaFirst`.
 
+The built-in `read` tool now returns supported local images as rich data-image
+content while preserving its existing bounded text path. TypeScript authority:
+`packages/coding-agent/src/core/tools/read.ts`; Go evidence:
+`internal/tools/read.go` and `TestReadToolReturnsImagesThroughRichResults`.
+
 Settings-selected provider/model/thinking values now configure the live shared
 runner when no explicit `YEN_*` override is present; explicit environment
 configuration wins. This closes the prior read-but-not-applied settings bug.
