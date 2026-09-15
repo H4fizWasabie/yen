@@ -12,6 +12,7 @@ import (
 )
 
 const ConsolidationTurnCeiling = 70
+const MaxConsolidationTranscriptChars = 100000
 const consolidationFailureCooldown = 15 * time.Minute
 
 var consolidationTriggerPhrases = []string{"thanks", "thank you", "great job", "good work", "nice work", "perfect", "awesome", "that's all", "all done"}
@@ -103,7 +104,8 @@ func (e *Engine) consolidationPrompt(turns []ConsolidationTurn, ctx Context) (st
 	if transcript.Len() == 0 {
 		return "", errors.New("consolidation turns are empty")
 	}
-	existingNodes, err := e.Semantic.Remember(transcript.String(), ctx)
+	transcriptText := capConsolidationTranscript(transcript.String())
+	existingNodes, err := e.Semantic.Remember(transcriptText, ctx)
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +118,15 @@ func (e *Engine) consolidationPrompt(turns []ConsolidationTurn, ctx Context) (st
 	}
 	return "You are a memory consolidation pass. Extract durable facts from the conversation and return only JSON with this shape: " +
 		`{"facts":[{"id":"f1","subject":"...","body":"..."}],"edges":[{"from":"f1","to":"f2","rel":"depends_on"}],"episode":{"summary":"...","startedAt":"ISO-8601","endedAt":"ISO-8601","relatedFactIds":["f1"]}}` +
-		". Existing nodes:\n" + existing.String() + "Conversation:\n" + transcript.String(), nil
+		". Existing nodes:\n" + existing.String() + "Conversation:\n" + transcriptText, nil
+}
+
+func capConsolidationTranscript(text string) string {
+	runes := []rune(text)
+	if len(runes) <= MaxConsolidationTranscriptChars {
+		return text
+	}
+	return string(runes[len(runes)-MaxConsolidationTranscriptChars:])
 }
 
 func parseConsolidationResponse(raw string) (struct {

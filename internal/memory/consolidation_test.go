@@ -108,3 +108,19 @@ func TestEngineConsolidationCapsTriggeredWindow(t *testing.T) {
 		t.Fatalf("prompt turns=%d, want %d", got, ConsolidationTurnCeiling)
 	}
 }
+
+func TestConsolidationPromptCapsTranscriptCharacters(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	provider := &captureConsolidationProvider{text: `{"episode":{"summary":"window"}}`}
+	turns := []ConsolidationTurn{{Role: "user", Content: strings.Repeat("x", MaxConsolidationTranscriptChars+1000)}}
+	if err := engine.Consolidate(context.Background(), provider, "turn-size", "conv-size", "work", "cli", turns); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.seen) > MaxConsolidationTranscriptChars+2000 || !strings.Contains(provider.seen, strings.Repeat("x", 100)) {
+		t.Fatalf("consolidation prompt length=%d", len(provider.seen))
+	}
+}
