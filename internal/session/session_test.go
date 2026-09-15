@@ -90,6 +90,34 @@ func TestOpenSessionSkipsMalformedLinesBeforeAndAfterHeader(t *testing.T) {
 	}
 }
 
+func TestContextMessagesNormalizeMissingMessageContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	raw := strings.Join([]string{
+		`{"type":"session","version":3,"id":"session-1"}`,
+		`{"type":"message","id":"user-1","parentId":null,"message":{"role":"user"}}`,
+		`{"type":"message","id":"assistant-1","parentId":"user-1","message":{"role":"assistant"}}`,
+		`{"type":"message","id":"tool-1","parentId":"assistant-1","message":{"role":"toolResult"}}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := opened.ContextMessages()
+	if len(messages) != 3 {
+		t.Fatalf("context messages=%#v", messages)
+	}
+	for _, message := range messages {
+		parts, ok := message.Content.([]ContentPart)
+		if !ok || len(parts) != 0 {
+			t.Fatalf("message content=%#v, want empty []ContentPart", message.Content)
+		}
+	}
+}
+
 func TestOpenSessionReadsLargeJSONLMessageWithinBound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
