@@ -243,7 +243,7 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "active": true, "turnId": turn.ID})
 	case len(parts) == 1 && r.Method == http.MethodGet:
-		link, ok := h.Dashboard.Service.Registry.FindConversationFor("dashboard", id)
+		link, ok := findDashboardConversation(h.Dashboard.Service.Registry, id)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
 			return

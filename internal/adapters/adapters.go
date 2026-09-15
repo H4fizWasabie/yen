@@ -117,7 +117,7 @@ func (a Dashboard) SendStreamWithEvents(ctx context.Context, conversationID, tex
 }
 
 func (a Dashboard) send(ctx context.Context, conversationID, text string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
-	link, ok := a.Service.Registry.FindConversationFor("dashboard", conversationID)
+	link, ok := findDashboardConversation(a.Service.Registry, conversationID)
 	if !ok {
 		return agent.Result{}, errors.New("dashboard conversation not found")
 	}
@@ -127,6 +127,14 @@ func (a Dashboard) send(ctx context.Context, conversationID, text string, onUpda
 	}
 	_, result, err := a.Service.Runner.RunSubmittedWithEvents(ctx, turn, onUpdate, onEvent)
 	return result, err
+}
+
+func findDashboardConversation(registry *conversation.Registry, conversationID string) (conversation.Link, bool) {
+	link, ok := registry.FindConversationFor("dashboard", conversationID)
+	if !ok {
+		link, ok = registry.FindConversationFor("telegram", conversationID)
+	}
+	return link, ok
 }
 
 func randomKey(prefix string) (string, error) {

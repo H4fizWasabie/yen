@@ -247,6 +247,8 @@ count and last-entry timestamp instead of placeholder values.
 Visible dashboard sessions are sorted newest-first like the TypeScript dashboard.
 Dashboard session titles now use the first user message, capped at 80 runes,
 with the conversation ID as fallback.
+Dashboard send/read-back now falls back to a Telegram registry link for a shared
+conversation when no dashboard-specific link exists.
 Consolidation timestamped messages now follow the active parent-linked branch,
 excluding inactive sibling entries.
 When the configured provider supports it, consolidation also requests the

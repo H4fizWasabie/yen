@@ -18,7 +18,7 @@ func (provider) Next(context.Context, []agent.Message, []string) (agent.Response
 	return agent.Response{Text: "shared response", StopReason: "stop"}, nil
 }
 
-func TestTelegramAndDashboardUseOneCanonicalConversationWhenLinked(t *testing.T) {
+func TestTelegramAndDashboardUseOneConversationWhenOnlyTelegramLinkExists(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
 	if err != nil {
@@ -38,9 +38,6 @@ func TestTelegramAndDashboardUseOneCanonicalConversationWhenLinked(t *testing.T)
 	link, ok := registry.Get("telegram", "chat-1")
 	if !ok || !linkOK(link, "telegram") {
 		t.Fatalf("telegram link = %#v, %v", link, ok)
-	}
-	if _, err := registry.Link("dashboard", "tab-1", link.ConversationID, dir); err != nil {
-		t.Fatal(err)
 	}
 	dashboard := Dashboard{Service: service, Workspace: dir}
 	if result, err := dashboard.Send(context.Background(), link.ConversationID, "again"); err != nil || result.FinalText != "shared response" {
