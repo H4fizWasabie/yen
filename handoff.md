@@ -369,7 +369,7 @@ CLI inspection now also exposes `/tree` and `/artifacts`, backed by the
 durable session tree and artifact catalog. Full TUI rendering, selectors, and
 session-picker flows remain open.
 
-The authorized side-by-side VPS deployment now runs `/opt/yen/releases/45b246e`.
+The authorized side-by-side VPS deployment now runs `/opt/yen/releases/0f97e38`.
 `yen-telegram-pilot.service`, `yen-dashboard-pilot.service`,
 `theoses2-telegram.service`, and `theoses2-dashboard.service` all read back
 `active`; Yen `/healthz` returns `{"ok":true}`. The Theoses2 services were not
