@@ -90,6 +90,25 @@ func TestOpenSessionSkipsMalformedLinesBeforeAndAfterHeader(t *testing.T) {
 	}
 }
 
+func TestOpenSessionReadsLargeJSONLMessageWithinBound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	s := New(path, Header{ID: "session-large", CWD: "/workspace", Channel: "cli", ChannelSessionID: "/workspace"})
+	if _, err := s.Append(Message{Role: "user", Content: strings.Repeat("x", 128*1024)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(Message{Role: "assistant", Content: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(opened.Messages()); got != 2 {
+		t.Fatalf("messages=%d, want 2", got)
+	}
+}
+
 func TestOpenSessionContinuesParentChain(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")

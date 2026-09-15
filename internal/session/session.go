@@ -168,6 +168,7 @@ func Open(path string) (*Session, error) {
 	defer file.Close()
 	s := &Session{path: path, flushed: true}
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4<<20)
 	line := 0
 	headerFound := false
 	for scanner.Scan() {
