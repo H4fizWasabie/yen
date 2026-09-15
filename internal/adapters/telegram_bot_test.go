@@ -22,6 +22,59 @@ func (longTelegramProvider) Next(context.Context, []agent.Message, []string) (ag
 	return agent.Response{Text: strings.Repeat("界", 5000), StopReason: "stop"}, nil
 }
 
+type blockingTelegramProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p blockingTelegramProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	close(p.started)
+	<-p.release
+	return agent.Response{Text: "done", StopReason: "stop"}, nil
+}
+
+func TestTelegramBotSendsTypingActionDuringTurn(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := blockingTelegramProvider{started: make(chan struct{}), release: make(chan struct{})}
+	runner := runtime.New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	typing := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/sendChatAction" {
+			typing <- struct{}{}
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	message := &telegramMessage{Text: "hello"}
+	message.Chat.ID = 42
+	done := make(chan error, 1)
+	go func() { done <- bot.HandleUpdate(context.Background(), telegramUpdate{Message: message}) }()
+	select {
+	case <-provider.started:
+	case <-time.After(time.Second):
+		t.Fatal("provider did not start")
+	}
+	select {
+	case <-typing:
+	case <-time.After(time.Second):
+		t.Fatal("typing action was not sent")
+	}
+	close(provider.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 type replyCaptureProvider struct {
 	seen string
 }

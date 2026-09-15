@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type TelegramBot struct {
@@ -23,6 +24,7 @@ type TelegramBot struct {
 }
 
 const telegramMessageLimit = 4096
+const telegramTypingInterval = 4 * time.Second
 
 type telegramUpdate struct {
 	UpdateID int64            `json:"update_id"`
@@ -95,11 +97,32 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	if update.Message.ReplyToMessage != nil {
 		replyContext = update.Message.ReplyToMessage.Text
 	}
+	stopTyping := b.startTyping(ctx, chatID)
 	result, err := b.Adapter.HandleMessageWithReply(ctx, chatID, text, replyContext)
+	stopTyping()
 	if err != nil {
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
+}
+
+func (b *TelegramBot) startTyping(ctx context.Context, chatID string) func() {
+	typingCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		tick := func() { _ = b.sendChatAction(typingCtx, chatID) }
+		tick()
+		ticker := time.NewTicker(telegramTypingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				tick()
+			}
+		}
+	}()
+	return cancel
 }
 
 func (b *TelegramBot) getUpdates(ctx context.Context) ([]telegramUpdate, error) {
@@ -161,6 +184,31 @@ func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string, repl
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return fmt.Errorf("telegram sendMessage returned %s", response.Status)
 		}
+	}
+	return nil
+}
+
+func (b *TelegramBot) sendChatAction(ctx context.Context, chatID string) error {
+	payload, err := json.Marshal(map[string]string{"chat_id": chatID, "action": "typing"})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendChatAction", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := b.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("telegram sendChatAction returned %s", response.Status)
 	}
 	return nil
 }

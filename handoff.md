@@ -59,6 +59,11 @@ The provider wrapper now maps `YEN_REASONING_EFFORT` to the OpenRouter
 and release `39cb375` passed a real dashboard request after restart. The
 request-shape contract is covered by `TestOpenAICompletionsSendsReasoningEffort`.
 
+Telegram now sends the Bot API `typing` action immediately and every four
+seconds while a turn runs, stopping it when the turn completes. Errors from
+the indicator are intentionally non-fatal, matching the pinned TypeScript
+behavior; `TestTelegramBotSendsTypingActionDuringTurn` covers the lifecycle.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
