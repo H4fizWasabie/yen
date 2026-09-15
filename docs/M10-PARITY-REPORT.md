@@ -29,6 +29,17 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+Assistant calls now retry bounded transient provider failures independently of
+provider HTTP retries, using the oracle's default three attempts and
+exponential two-second base delay. Context-overflow, quota, and billing errors
+remain on their dedicated paths. TypeScript authority:
+`packages/ai/src/utils/retry.ts:146-250` and
+`packages/coding-agent/src/core/agent-session.ts:3054-3135`. Go evidence:
+`internal/provider/retry.go`, `internal/runtime/runtime.go`, and
+`TestRunnerRetriesTransientAssistantFailure`; retry settings now include
+`baseDelayMs`. The remaining retry gap is UI-specific cancellation/control
+surfaces on channels that do not expose the generic event callback.
+
 External HTTP/MCP tools are now initialized once by each Yen runtime and kept
 open across turns, while turn-scoped built-ins are still closed after each
 operation; process shutdown closes the persistent resources. This matches the
