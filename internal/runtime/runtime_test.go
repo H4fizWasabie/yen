@@ -646,10 +646,10 @@ func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	provider := &summaryProvider{response: agent.Response{Text: "structured summary", StopReason: "stop", Usage: agent.Usage{Input: 12, Output: 4, TotalTokens: 16}}}
 	runner := New(queue, provider, nil)
 	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
-	if err := runner.Compact(context.Background(), "conv-compact", 2); err != nil {
+	if err := runner.Compact(context.Background(), "conv-compact", 2, "Keep the user's exact command names."); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.seen) != 1 || !strings.Contains(provider.seen[0].Content, "one reply") {
+	if len(provider.seen) != 1 || !strings.Contains(provider.seen[0].Content, "one reply") || !strings.Contains(provider.seen[0].Content, "Keep the user's exact command names.") {
 		t.Fatalf("summary prompt=%#v", provider.seen)
 	}
 	reopened, err := session.Open(path)

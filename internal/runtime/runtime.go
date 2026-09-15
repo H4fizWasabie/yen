@@ -382,19 +382,19 @@ func (r *Runner) SetSessionPath(conversationID, path string) {
 	r.paths[conversationID] = path
 }
 
-func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentTurns int) error {
+func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentTurns int, instructions ...string) error {
 	if r.Provider == nil {
 		return errors.New("compaction provider is required")
 	}
 	if _, active := r.Active(conversationID); active {
 		return errors.New("cannot compact an active conversation")
 	}
-	return r.compactConversation(ctx, conversationID, keepRecentTurns)
+	return r.compactConversation(ctx, conversationID, keepRecentTurns, instructions...)
 }
 
 func (r *Runner) IsCompacting() bool { return r.compacting.Load() }
 
-func (r *Runner) compactConversation(ctx context.Context, conversationID string, keepRecentTurns int) error {
+func (r *Runner) compactConversation(ctx context.Context, conversationID string, keepRecentTurns int, instructions ...string) error {
 	if !r.compacting.CompareAndSwap(false, true) {
 		return errors.New("compaction is already active")
 	}
@@ -432,7 +432,12 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		transcript.WriteString(fmt.Sprint(message.Content))
 		transcript.WriteByte('\n')
 	}
-	transcript.WriteString("</conversation>\n\nSummarize the conversation for a later agent. Preserve goals, constraints, decisions, progress, and next steps. Return only the summary.")
+	transcript.WriteString("</conversation>\n\nSummarize the conversation for a later agent. Preserve goals, constraints, decisions, progress, and next steps.")
+	if len(instructions) > 0 && strings.TrimSpace(instructions[0]) != "" {
+		transcript.WriteString("\n\nAdditional summarization instructions:\n")
+		transcript.WriteString(strings.TrimSpace(instructions[0]))
+	}
+	transcript.WriteString("\nReturn only the summary.")
 	response, err := r.Provider.Next(ctx, []agent.Message{{Role: "user", Content: transcript.String()}}, nil)
 	if err != nil {
 		return err

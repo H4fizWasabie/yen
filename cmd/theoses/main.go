@@ -468,7 +468,8 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		_, err = fmt.Fprintf(stdout, "%s\n", data)
 		return true, err
 	case text == "/compact" || strings.HasPrefix(text, "/compact "):
-		if err := runner.Compact(context.Background(), link.ConversationID, 2); err != nil {
+		instructions := strings.TrimSpace(strings.TrimPrefix(text, "/compact"))
+		if err := runner.Compact(context.Background(), link.ConversationID, 2, instructions); err != nil {
 			return true, err
 		}
 		_, err := fmt.Fprintln(stdout, "Session compacted")
