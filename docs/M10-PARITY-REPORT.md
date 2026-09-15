@@ -34,6 +34,15 @@ Go evidence: `internal/codingagent/convert_doc.go` and
 `TestConvertDocIncludesMarkitdownStderrOnFailure`. The focused test and full
 363-test race/vet/diff gates pass.
 
+Explorer runs now enforce the oracle's input-token ceilings in addition to
+turn ceilings: 200,000 tokens for `quick-scan` and 400,000 for `deep-map`.
+The loop stops at the completed assistant/tool turn that consumes the budget,
+matching `packages/coding-agent/src/core/explorer.ts:37-38,280-296` and its
+`shouldStopAfterTurn` boundary. Go evidence is
+`internal/codingagent/explore.go`, `internal/agent/loop.go`, and
+`TestExploreStopsAfterBudgetedToolTurn`; 368 tests, race, vet, and diff gates
+pass.
+
 ## Checkpoint update: 2026-09-16
 
 Bedrock Converse usage now preserves cache-read and cache-write token
@@ -377,7 +386,7 @@ implementations and committed tests:
 | Built-in web search | `packages/coding-agent/src/core/tools/web-search.ts:17-71` | `internal/codingagent/web_search.go` posts Tavily's `{query,max_results:5}` request, tries filtered keys in order, formats answer/results, and snapshots the Yen key list at construction; `web_search_test.go` covers fallback and post-construction environment changes | accepted for the current Tavily contract; richer provider/resource interception remains open |
 | Context resource discovery | `packages/coding-agent/src/core/resource-loader.ts:89-96` | `internal/codingagent/prompt.go` discovers `AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, and `CONTEXT.md` through the workspace ancestor chain; `prompt_test.go` covers the added names | partial; full resource-loader precedence, diagnostics, and extension discovery remain open |
 | Dashboard authentication safety | `packages/dashboard/src/index.ts:82-90` | `internal/adapters/dashboard_http.go:89-103` now returns 503 when no access token is configured and 401 for invalid credentials; `dashboard_http_test.go` covers the unconfigured-token boundary | accepted for token-gated API access |
-| Explorer turn budget | `packages/coding-agent/src/core/explorer.ts:42-49`, `:270-286` | `internal/codingagent/explore.go` enforces 8 quick-scan or 15 deep-map provider calls, returns an explicit `INCOMPLETE` answer at the ceiling, and preserves the read-only tool set; `explore_test.go` covers the hard stop | partial; pinned explorer model/catalog resolution, footer accounting, and provider interception remain open |
+| Explorer turn budget | `packages/coding-agent/src/core/explorer.ts:37-38`, `:270-296` | `internal/codingagent/explore.go` enforces 8 quick-scan or 15 deep-map provider calls plus 200K/400K input-token ceilings, returns an explicit `INCOMPLETE` answer at the ceiling, and preserves the read-only tool set; `internal/agent/loop.go` stops after the completed budgeted tool turn; `explore_test.go` covers both hard stops | partial; pinned explorer catalog hydration, footer accounting, and provider interception remain open |
 | Installer provider environment | `packages/ai/src/utils/provider-env.ts`, provider registrations under `packages/ai/src/providers/` | `deploy/install-side-by-side.sh` now forwards the complete Yen provider-key registry and native provider/auth settings through both `env -i` wrappers; `sh -n` and the full Go gate pass | accepted for environment forwarding; provider protocol/catalog parity remains partial |
 | GitHub verification gate | repository `package.json` scripts and CI expectations | `.github/workflows/go.yml` runs `go test ./...`, race, vet, and PR/push diff checks; local equivalents pass | accepted for automated Go verification |
 | Native-provider reasoning configuration | `packages/ai/src/api/google-generative-ai.ts`, `packages/ai/src/api/anthropic-messages.ts`, and provider option construction | `internal/provider/config.go` now carries `YEN_REASONING_EFFORT` into Google, Anthropic, MiniMax, and Vercel clients created by both configuration paths; `config_test.go` covers native providers | accepted for environment-driven reasoning configuration |
