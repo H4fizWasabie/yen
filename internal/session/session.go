@@ -6,10 +6,16 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+)
+
+var (
+	ErrNothingToCompact = errors.New("nothing to compact")
+	ErrAlreadyCompacted = errors.New("already compacted")
 )
 
 type Header struct {
@@ -256,7 +262,7 @@ func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error)
 		return CompactionPlan{}, fmt.Errorf("keep recent turns must be positive")
 	}
 	if len(s.entries) > 0 && s.entries[len(s.entries)-1].Type == "compaction" {
-		return CompactionPlan{}, fmt.Errorf("already compacted")
+		return CompactionPlan{}, ErrAlreadyCompacted
 	}
 	start := 0
 	previousSummary := ""
@@ -280,7 +286,7 @@ func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error)
 		}
 	}
 	if len(userEntries) <= keepRecentTurns {
-		return CompactionPlan{}, fmt.Errorf("nothing to compact")
+		return CompactionPlan{}, ErrNothingToCompact
 	}
 	cut := userEntries[len(userEntries)-keepRecentTurns]
 	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary}
@@ -291,7 +297,7 @@ func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error)
 		}
 	}
 	if len(plan.Messages) == 0 {
-		return CompactionPlan{}, fmt.Errorf("nothing to compact")
+		return CompactionPlan{}, ErrNothingToCompact
 	}
 	return plan, nil
 }

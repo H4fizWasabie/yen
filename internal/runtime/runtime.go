@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,13 +19,14 @@ import (
 )
 
 type Runner struct {
-	Queue        *conversation.Queue
-	Provider     agent.Provider
-	ToolFactory  func(workspace string) []agent.Tool
-	SessionPath  func(turn conversation.Turn) string
-	Checkpoints  *memory.Checkpoints
-	Memory       *memory.Engine
-	SharedMemory bool
+	Queue            *conversation.Queue
+	Provider         agent.Provider
+	ToolFactory      func(workspace string) []agent.Tool
+	SessionPath      func(turn conversation.Turn) string
+	Checkpoints      *memory.Checkpoints
+	Memory           *memory.Engine
+	SharedMemory     bool
+	AutoCompactTurns int
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -33,6 +35,14 @@ type Runner struct {
 
 func New(queue *conversation.Queue, provider agent.Provider, tools func(string) []agent.Tool) *Runner {
 	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues)}
+}
+
+func AutoCompactTurnsFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_TURNS"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
 }
 
 func (r *Runner) Submit(link conversation.Link, prompt string) (conversation.Turn, error) {
@@ -197,6 +207,13 @@ func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentT
 	if _, active := r.Active(conversationID); active {
 		return errors.New("cannot compact an active conversation")
 	}
+	return r.compactConversation(ctx, conversationID, keepRecentTurns)
+}
+
+func (r *Runner) compactConversation(ctx context.Context, conversationID string, keepRecentTurns int) error {
+	if r.Provider == nil {
+		return errors.New("compaction provider is required")
+	}
 	current, err := openOrCreate(r.pathFor(conversation.Turn{ConversationID: conversationID}), conversation.Turn{ConversationID: conversationID})
 	if err != nil {
 		return err
@@ -241,6 +258,15 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 	current, err := openOrCreate(path, turn)
 	if err != nil {
 		return agent.Result{}, err
+	}
+	if r.AutoCompactTurns > 0 {
+		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
+			return agent.Result{}, err
+		}
+		current, err = openOrCreate(path, turn)
+		if err != nil {
+			return agent.Result{}, err
+		}
 	}
 	history := toAgentMessages(current.ContextMessages())
 	var tools []agent.Tool

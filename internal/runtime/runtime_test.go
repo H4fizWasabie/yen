@@ -40,6 +40,20 @@ func (p *summaryProvider) Next(_ context.Context, messages []agent.Message, _ []
 	return p.response, nil
 }
 
+type autoCompactionProvider struct {
+	calls int
+	seen  [][]agent.Message
+}
+
+func (p *autoCompactionProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	p.seen = append(p.seen, append([]agent.Message(nil), messages...))
+	if p.calls == 1 {
+		return agent.Response{Text: "automatic summary", StopReason: "stop", Usage: agent.Usage{Input: 8, Output: 3, TotalTokens: 11}}, nil
+	}
+	return agent.Response{Text: "continued", StopReason: "stop"}, nil
+}
+
 type slowProvider struct {
 	mu      sync.Mutex
 	seen    []string
@@ -280,6 +294,46 @@ func TestRunnerCompactionDoesNotPersistInvalidSummary(t *testing.T) {
 	}
 	if len(reopened.ContextMessages()) != 4 {
 		t.Fatalf("context changed after failed compaction: %#v", reopened.ContextMessages())
+	}
+}
+
+func TestRunnerAutoCompactsBeforePrompt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-auto.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-auto", ConversationID: "conv-auto", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &autoCompactionProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactTurns = 2
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-auto", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "four"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "continued" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if provider.calls != 2 || len(provider.seen[1]) == 0 || provider.seen[1][0].Content == "one" {
+		t.Fatalf("provider calls=%d messages=%#v", provider.calls, provider.seen)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "automatic summary") {
+		t.Fatalf("context=%#v", reopened.ContextMessages())
 	}
 }
 
