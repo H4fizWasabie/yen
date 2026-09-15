@@ -34,6 +34,15 @@ Go evidence: `internal/codingagent/convert_doc.go` and
 `TestConvertDocIncludesMarkitdownStderrOnFailure`. The focused test and full
 363-test race/vet/diff gates pass.
 
+Explorer runs now enforce the oracle's input-token ceilings in addition to
+turn ceilings: 200,000 tokens for `quick-scan` and 400,000 for `deep-map`.
+The loop stops at the completed assistant/tool turn that consumes the budget,
+matching `packages/coding-agent/src/core/explorer.ts:37-38,280-296` and its
+`shouldStopAfterTurn` boundary. Go evidence is
+`internal/codingagent/explore.go`, `internal/agent/loop.go`, and
+`TestExploreStopsAfterBudgetedToolTurn`; 368 tests, race, vet, and diff gates
+pass.
+
 ## Checkpoint update: 2026-09-16
 
 Native OpenAI Responses reasoning output items now preserve their summary text

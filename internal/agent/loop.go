@@ -58,6 +58,13 @@ type Provider interface {
 	Next(ctx context.Context, messages []Message, tools []string) (Response, error)
 }
 
+// TurnStopper lets a provider-specific budget stop the loop after the current
+// assistant/tool turn, matching runtimes that evaluate budgets at the turn
+// boundary rather than starting another provider call.
+type TurnStopper interface {
+	StopAfterTurn(response Response, toolResults []Message) bool
+}
+
 type StreamingProvider interface {
 	NextWithUpdates(ctx context.Context, messages []Message, tools []string, update func(string)) (Response, error)
 }
@@ -331,6 +338,14 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		}
 
 		if len(response.ToolCalls) == 0 {
+			if stopper, ok := provider.(TurnStopper); ok && stopper.StopAfterTurn(response, nil) {
+				result.FinalText = response.Text
+				result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
+				emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant})
+				emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+				emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
+				return result, nil
+			}
 			queued := queues.drainSteering()
 			if len(queued) == 0 {
 				queued = queues.drainFollowUp()
@@ -357,8 +372,15 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 				return result, err
 			}
-			result.Events = append(result.Events, "turn_end", "turn_start")
+			result.Events = append(result.Events, "turn_end")
 			emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
+			if stopper, ok := provider.(TurnStopper); ok && stopper.StopAfterTurn(response, toolResults) {
+				result.Events = append(result.Events, "agent_end", "agent_settled")
+				emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+				emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
+				return result, nil
+			}
+			result.Events = append(result.Events, "turn_start")
 			continue
 		}
 
@@ -483,6 +505,12 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		}
 		result.Events = append(result.Events, "turn_end")
 		emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
+		if stopper, ok := provider.(TurnStopper); ok && stopper.StopAfterTurn(response, toolResults) {
+			result.Events = append(result.Events, "agent_end", "agent_settled")
+			emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
+			return result, nil
+		}
 		result.Events = append(result.Events, "turn_start")
 	}
 }
