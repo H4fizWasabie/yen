@@ -24,8 +24,11 @@ func TestExploreIsReadOnlyAndCapsQuickScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lines := len(strings.Split(answer, "\n")); lines > 31 {
+	if lines := len(strings.Split(answer, "\n")); lines > 32 {
 		t.Fatalf("lines=%d answer=%q", lines, answer)
+	}
+	if !strings.Contains(answer, "1/8 turns") {
+		t.Fatalf("missing budget footer: %q", answer)
 	}
 	for _, name := range provider.tools {
 		if name != "read" && name != "grep" && name != "find" && name != "ls" {

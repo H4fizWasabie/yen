@@ -53,9 +53,11 @@ type OpenAICompletions struct {
 	BaseURL         string
 	APIKey          string
 	Headers         map[string]string
+	ProviderRouting map[string]any
 	Model           string
 	ProviderName    string
 	ReasoningEffort string
+	MaxTokens       int
 	Client          *http.Client
 	MaxRetries      int
 	MaxRetryDelay   time.Duration
@@ -129,18 +131,22 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		converted = normalizeMistralMessages(converted)
 	}
 	payload := struct {
-		Model            string            `json:"model"`
-		Messages         []openAIMessage   `json:"messages"`
-		Tools            []map[string]any  `json:"tools,omitempty"`
-		Stream           bool              `json:"stream"`
-		ResponseFormat   map[string]string `json:"response_format,omitempty"`
-		Reasoning        map[string]any    `json:"reasoning,omitempty"`
-		Thinking         map[string]any    `json:"thinking,omitempty"`
-		EnableThinking   *bool             `json:"enable_thinking,omitempty"`
-		ToolStream       bool              `json:"tool_stream,omitempty"`
-		ChatTemplateArgs map[string]any    `json:"chat_template_args,omitempty"`
-		ReasoningEffort  string            `json:"reasoning_effort,omitempty"`
+		Model               string            `json:"model"`
+		Messages            []openAIMessage   `json:"messages"`
+		Tools               []map[string]any  `json:"tools,omitempty"`
+		Stream              bool              `json:"stream"`
+		ResponseFormat      map[string]string `json:"response_format,omitempty"`
+		Reasoning           map[string]any    `json:"reasoning,omitempty"`
+		Thinking            map[string]any    `json:"thinking,omitempty"`
+		EnableThinking      *bool             `json:"enable_thinking,omitempty"`
+		ToolStream          bool              `json:"tool_stream,omitempty"`
+		ChatTemplateArgs    map[string]any    `json:"chat_template_args,omitempty"`
+		ReasoningEffort     string            `json:"reasoning_effort,omitempty"`
+		ProviderRouting     map[string]any    `json:"provider,omitempty"`
+		MaxCompletionTokens int               `json:"max_completion_tokens,omitempty"`
 	}{Model: p.Model, Messages: converted, Stream: true}
+	payload.ProviderRouting = p.ProviderRouting
+	payload.MaxCompletionTokens = p.MaxTokens
 	if p.ReasoningEffort != "" {
 		if p.ProviderName == "mistral" {
 			payload.ReasoningEffort = p.ReasoningEffort
