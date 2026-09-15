@@ -38,6 +38,7 @@ type OpenAICompletions struct {
 	BaseURL         string
 	APIKey          string
 	Model           string
+	ProviderName    string
 	ReasoningEffort string
 	Client          *http.Client
 	MaxRetries      int
@@ -144,7 +145,10 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	defer response.Body.Close()
 
 	var result agent.Response
-	result.Provider = "openai-completions"
+	result.Provider = p.ProviderName
+	if result.Provider == "" {
+		result.Provider = "openai-completions"
+	}
 	result.Model = p.Model
 	var toolCalls []agent.ToolCall
 	arguments := map[string]string{}

@@ -36,17 +36,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	baseURL := os.Getenv("THEOSES_OPENAI_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
-	}
-	model := os.Getenv("THEOSES_MODEL")
-	if model == "" {
-		model = "gpt-4o-mini"
-	}
-	provider := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
-	provider.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
-	runner := runtime.New(queue, provider, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
+	client := provider.NewFromEnv()
+	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
 	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
 		return codingagent.NewToolsForSession(workspace, current)
 	}

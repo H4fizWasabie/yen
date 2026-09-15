@@ -72,16 +72,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	baseURL := os.Getenv("THEOSES_OPENAI_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
-	}
-	model := os.Getenv("THEOSES_MODEL")
-	if model == "" {
-		model = "gpt-4o-mini"
-	}
-	client := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
-	client.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
+	client := provider.NewFromEnv()
 	queue, err := conversation.OpenQueue(filepath.Join(dataDir, "conversation-queue.jsonl"))
 	if err != nil {
 		return reportError(stderr, err)
