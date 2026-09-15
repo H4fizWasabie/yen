@@ -70,6 +70,28 @@ func TestSkillPromptExpansionLoadsBodyAndArguments(t *testing.T) {
 	}
 }
 
+func TestSkillPromptExpansionUsesConfiguredSkillDirs(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, "custom-skills", "release")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, ".theoses"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, ".theoses", "settings.json"), []byte(`{"skillDirs":["custom-skills"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("---\nname: release\ndescription: Release safely\n---\nRun configured skill."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ExpandPrompt(workspace, "/skill:release")
+	if !strings.Contains(got, "Run configured skill.") {
+		t.Fatalf("expanded=%q", got)
+	}
+}
+
 func TestPromptTemplateSubstitutionSupportsQuotedArgsDefaultsAndSlices(t *testing.T) {
 	got := substitutePromptArgs("$1|$10|$@|${3:-fallback}|${@:2:2}|${@:3}", []string{"one", "two words", "three", "four", "five", "six", "seven", "eight", "nine", "ten"})
 	want := "one|ten|one two words three four five six seven eight nine ten|three|two words three|three four five six seven eight nine ten"
