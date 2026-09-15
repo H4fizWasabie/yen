@@ -42,6 +42,24 @@ func TestFilesystemTools(t *testing.T) {
 	}
 }
 
+func TestFindToolSupportsRecursiveGlobstar(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "internal", "nested", "main.go"), []byte("package nested"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("readme"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "**/*.go"})
+	if err != nil || got != "internal/nested/main.go" {
+		t.Fatalf("find=%q err=%v", got, err)
+	}
+}
+
 func TestEditRequiresUniqueOldText(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "x.txt"), []byte("x\nx\n"), 0o600); err != nil {
