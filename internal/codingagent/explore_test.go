@@ -57,3 +57,40 @@ func TestExploreStopsAtQuickScanTurnBudget(t *testing.T) {
 		t.Fatalf("provider calls=%d, want 8", provider.calls)
 	}
 }
+
+type inputBudgetExploreProvider struct{}
+
+func (inputBudgetExploreProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	return agent.Response{Text: "answer", StopReason: "stop", Usage: agent.Usage{Input: 200001}}, nil
+}
+
+func TestExploreStopsWhenQuickScanInputBudgetIsConsumed(t *testing.T) {
+	answer, err := newExploreTool(t.TempDir(), inputBudgetExploreProvider{}).Execute(context.Background(), map[string]any{"question": "map it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(answer, "INCOMPLETE:") || !strings.Contains(answer, "~200K in, 1/8 turns") {
+		t.Fatalf("answer=%q", answer)
+	}
+}
+
+type inputBudgetToolExploreProvider struct{ calls int }
+
+func (p *inputBudgetToolExploreProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	return agent.Response{ToolCalls: []agent.ToolCall{{ID: "scan", Name: "ls"}}, StopReason: "toolUse", Usage: agent.Usage{Input: 200001}}, nil
+}
+
+func TestExploreStopsAfterBudgetedToolTurn(t *testing.T) {
+	provider := &inputBudgetToolExploreProvider{}
+	answer, err := newExploreTool(t.TempDir(), provider).Execute(context.Background(), map[string]any{"question": "map it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(answer, "INCOMPLETE:") || !strings.Contains(answer, "~200K in, 1/8 turns") {
+		t.Fatalf("answer=%q", answer)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls=%d, want 1", provider.calls)
+	}
+}

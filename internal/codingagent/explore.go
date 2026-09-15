@@ -28,9 +28,9 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 	if value, ok := args["tier"].(string); ok && value != "" {
 		tier = value
 	}
-	lines, turns := 30, 8
+	lines, turns, maxInputTokens := 30, 8, 200_000
 	if tier == "deep-map" {
-		lines, turns = 80, 15
+		lines, turns, maxInputTokens = 80, 15, 400_000
 	} else if tier != "quick-scan" {
 		return "", fmt.Errorf("tier must be quick-scan or deep-map")
 	}
@@ -40,8 +40,8 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
-	history := []agent.Message{{Role: "system", Content: explorerPrompt(tier, lines, turns)}}
-	limited := &turnLimitedProvider{provider: t.provider, limit: turns, tier: tier}
+	history := []agent.Message{{Role: "system", Content: explorerPrompt(tier, lines, turns, maxInputTokens)}}
+	limited := &turnLimitedProvider{provider: t.provider, limit: turns, maxInputTokens: maxInputTokens, tier: tier}
 	result, err := agent.RunFrom(ctx, limited, []agent.Tool{
 		tools.NewReadTool(t.cwd),
 		tools.NewGrepTool(t.cwd),
@@ -52,7 +52,7 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 		return "", err
 	}
 	answer := strings.TrimSpace(result.FinalText)
-	if answer == "" {
+	if answer == "" || limited.inputTokens >= maxInputTokens {
 		answer = "INCOMPLETE: budget exhausted before a final answer was produced."
 	}
 	if strings.HasPrefix(answer, "INCOMPLETE:") {
@@ -65,21 +65,22 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 	return answer, nil
 }
 
-func explorerPrompt(tier string, lines, turns int) string {
+func explorerPrompt(tier string, lines, turns, maxInputTokens int) string {
 	structural := ""
 	if tier == "deep-map" {
 		structural = " Start with a 5–15 line structural overview of components, entry points, and data flow before findings."
 	}
-	return fmt.Sprintf("You are Theoses's background explorer: a cheap, isolated scouting agent. Answer ONE question about a codebase with a distilled answer; never return raw tool dumps. Use only read, grep, find, and ls. Cite file paths and line locations when possible. Keep the answer to at most %d lines and stop within %d turns.%s End with a budget footer in the form ~<K> in, <turns>/%d turns. If the turn budget is reached before you can answer, say INCOMPLETE: <what is missing> instead of guessing.", lines, turns, structural, turns)
+	return fmt.Sprintf("You are Yen's background explorer: a cheap, isolated scouting agent. Answer ONE question about a codebase with a distilled answer; never return raw tool dumps. Use only read, grep, find, and ls. Cite file paths and line locations when possible. Keep the answer to at most %d lines, within %d turns, and below %d input tokens.%s End with a budget footer in the form ~<K> in, <turns>/%d turns. If a budget is reached before you can answer, say INCOMPLETE: <what is missing> instead of guessing.", lines, turns, maxInputTokens, structural, turns)
 }
 
 type turnLimitedProvider struct {
-	provider     agent.Provider
-	limit        int
-	calls        int
-	tier         string
-	inputTokens  int
-	outputTokens int
+	provider       agent.Provider
+	limit          int
+	maxInputTokens int
+	calls          int
+	tier           string
+	inputTokens    int
+	outputTokens   int
 }
 
 func (p *turnLimitedProvider) Next(ctx context.Context, messages []agent.Message, tools []string) (agent.Response, error) {
@@ -96,6 +97,10 @@ func (p *turnLimitedProvider) Next(ctx context.Context, messages []agent.Message
 		p.outputTokens += response.Usage.Output
 	}
 	return response, err
+}
+
+func (p *turnLimitedProvider) StopAfterTurn(agent.Response, []agent.Message) bool {
+	return p.maxInputTokens > 0 && p.inputTokens >= p.maxInputTokens
 }
 
 func capExplorerAnswer(answer string, limit int) string {
