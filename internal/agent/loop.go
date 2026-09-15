@@ -26,13 +26,17 @@ type ToolCall struct {
 }
 
 type Response struct {
-	Text       string
-	Thinking   string
-	ToolCalls  []ToolCall
-	StopReason string
-	Provider   string
-	Model      string
-	Usage      Usage
+	Text          string
+	Thinking      string
+	ToolCalls     []ToolCall
+	StopReason    string
+	RawStopReason string
+	ErrorMessage  string
+	ResponseID    string
+	ResponseModel string
+	Provider      string
+	Model         string
+	Usage         Usage
 }
 
 type Usage struct {

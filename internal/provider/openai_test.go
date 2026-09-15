@@ -40,6 +40,27 @@ func TestOpenAICompletionsReadsTextSSE(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsPreservesResponseMetadataAndFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"id":"resp-1","model":"served-model","choices":[{"delta":{"content":"blocked"},"finish_reason":null}]}`)
+		fmt.Fprintln(w, `data: {"id":"resp-1","model":"served-model","choices":[{"delta":{},"finish_reason":"content_filter"}]}`)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	result, err := NewOpenAICompletions(server.URL, "key", "requested-model").Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResponseID != "resp-1" || result.ResponseModel != "served-model" || result.RawStopReason != "content_filter" {
+		t.Fatalf("metadata=%#v", result)
+	}
+	if result.StopReason != "error" || result.ErrorMessage != "Provider finish_reason: content_filter" {
+		t.Fatalf("finish=%#v", result)
+	}
+}
+
 func TestOpenAICompletionsJSONModeSetsResponseFormat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {

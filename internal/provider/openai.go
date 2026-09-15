@@ -189,6 +189,8 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			break
 		}
 		var event struct {
+			ID    string `json:"id"`
+			Model string `json:"model"`
 			Usage *struct {
 				PromptTokens         int `json:"prompt_tokens"`
 				CachedTokens         int `json:"cached_tokens"`
@@ -222,6 +224,12 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		}
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			return agent.Response{}, err
+		}
+		if event.ID != "" {
+			result.ResponseID = event.ID
+		}
+		if event.Model != "" && event.Model != p.Model {
+			result.ResponseModel = event.Model
 		}
 		if event.Usage != nil {
 			result.Usage.Output = event.Usage.CompletionTokens
@@ -272,7 +280,8 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 				update(choice.Delta.Content)
 			}
 			if choice.FinishReason != nil {
-				result.StopReason = normalizeStopReason(*choice.FinishReason)
+				result.RawStopReason = *choice.FinishReason
+				result.StopReason, result.ErrorMessage = mapStopReason(*choice.FinishReason)
 			}
 			for _, delta := range choice.Delta.ToolCalls {
 				if update != nil {
@@ -335,11 +344,19 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	return result, nil
 }
 
-func normalizeStopReason(reason string) string {
-	if reason == "tool_calls" || reason == "function_call" {
-		return "toolUse"
+func mapStopReason(reason string) (string, string) {
+	switch reason {
+	case "stop", "end":
+		return "stop", ""
+	case "length":
+		return "length", ""
+	case "tool_calls", "function_call":
+		return "toolUse", ""
+	case "content_filter", "network_error":
+		return "error", "Provider finish_reason: " + reason
+	default:
+		return "error", "Provider finish_reason: " + reason
 	}
-	return reason
 }
 
 func retryDelay(header http.Header, attempt int) time.Duration {
