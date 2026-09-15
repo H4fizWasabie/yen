@@ -365,6 +365,12 @@ the mutations and the trust-file override; the full gate is 237 tests plus
 race/vet/diff. Full TUI selectors, OAuth commands, and session-picker flows
 remain open.
 
+The authorized side-by-side VPS deployment now runs `/opt/yen/releases/45b246e`.
+`yen-telegram-pilot.service`, `yen-dashboard-pilot.service`,
+`theoses2-telegram.service`, and `theoses2-dashboard.service` all read back
+`active`; Yen `/healthz` returns `{"ok":true}`. The Theoses2 services were not
+restarted or modified.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future
