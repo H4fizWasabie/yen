@@ -147,6 +147,39 @@ func TestOpenAICompletionsSendsReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsSendsProviderRouting(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Provider  map[string]any `json:"provider"`
+			MaxTokens int            `json:"max_completion_tokens"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		order, ok := payload.Provider["order"].([]any)
+		if !ok || len(order) != 3 || order[0] != "OpenInference" {
+			t.Fatalf("provider routing=%#v", payload.Provider)
+		}
+		if payload.Provider["allow_fallbacks"] != false {
+			t.Fatalf("provider routing=%#v", payload.Provider)
+		}
+		if payload.MaxTokens != 8000 {
+			t.Fatalf("max tokens=%d", payload.MaxTokens)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "key", "deepseek/deepseek-v4-flash-0731")
+	client.ProviderRouting = map[string]any{
+		"order": []string{"OpenInference", "BaseTen", "GMICloud"}, "quantizations": []string{"fp8"}, "allow_fallbacks": false,
+	}
+	client.MaxTokens = 8000
+	if _, err := client.Next(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {

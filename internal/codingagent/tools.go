@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
 	"github.com/H4fizWasabie/yen/internal/tools"
 )
@@ -48,7 +49,10 @@ func newTools(workspace string, current *session.Session, provider agent.Provide
 		generateImageTool{client: nil, session: current},
 	}
 	if provider != nil {
-		result = append(result, newExploreTool(workspace, provider))
+		explorer := providerpkg.NewExplorerProvider()
+		if explorer.APIKey != "" {
+			result = append(result, newExploreTool(workspace, explorer))
+		}
 	}
 	if current != nil {
 		result[1] = newSessionBashTool(workspace, current)
