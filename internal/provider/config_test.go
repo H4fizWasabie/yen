@@ -52,6 +52,25 @@ func TestCloudflareProvidersUseYenCredentialsAndRouting(t *testing.T) {
 	}
 }
 
+func TestGitHubCopilotUsesStoredYenCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if _, err := auth.Open(path).Modify("github-copilot", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "oauth", Access: "stored-copilot-token"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_COPILOT_GITHUB_TOKEN", "")
+	configured, err := NewConfigured("github-copilot", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(OpenAICompletions)
+	if !ok || client.APIKey != "stored-copilot-token" {
+		t.Fatalf("configured=%#v", configured)
+	}
+}
+
 func TestGoogleVertexUsesProjectEndpointAndYenAPIKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/projects/project/locations/asia-southeast1/publishers/google/models/fixture-model:streamGenerateContent" {

@@ -426,7 +426,11 @@ func ConfiguredFromEnv() agent.Provider {
 		if baseURL == "" {
 			baseURL = providerDefaults[providerID]
 		}
-		client := NewOpenAICompletions(baseURL, os.Getenv("YEN_COPILOT_GITHUB_TOKEN"), model)
+		key := os.Getenv("YEN_COPILOT_GITHUB_TOKEN")
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
+		client := NewOpenAICompletions(baseURL, key, model)
 		client.ProviderName = providerID
 		client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
 		return client
@@ -532,7 +536,11 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if baseURL == "" {
 			baseURL = providerDefaults[providerID]
 		}
-		client := NewOpenAICompletions(baseURL, os.Getenv("YEN_COPILOT_GITHUB_TOKEN"), model)
+		key := os.Getenv("YEN_COPILOT_GITHUB_TOKEN")
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
+		client := NewOpenAICompletions(baseURL, key, model)
 		client.ProviderName = providerID
 		client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
 		return client, nil
