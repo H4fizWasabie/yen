@@ -59,21 +59,22 @@ type CompactionPlan struct {
 }
 
 type Message struct {
-	Role           string   `json:"role"`
-	Content        any      `json:"content"`
-	Images         []string `json:"images,omitempty"`
-	ToolCallID     string   `json:"toolCallId,omitempty"`
-	StopReason     string   `json:"stopReason,omitempty"`
-	Provider       string   `json:"provider,omitempty"`
-	Model          string   `json:"model,omitempty"`
-	Usage          *Usage   `json:"usage,omitempty"`
-	Command        string   `json:"command,omitempty"`
-	Output         string   `json:"output,omitempty"`
-	ExitCode       *int     `json:"exitCode,omitempty"`
-	Cancelled      bool     `json:"cancelled,omitempty"`
-	Truncated      bool     `json:"truncated,omitempty"`
-	FullOutputPath string   `json:"fullOutputPath,omitempty"`
-	Summary        string   `json:"summary,omitempty"`
+	Role               string   `json:"role"`
+	Content            any      `json:"content"`
+	Images             []string `json:"images,omitempty"`
+	ToolCallID         string   `json:"toolCallId,omitempty"`
+	StopReason         string   `json:"stopReason,omitempty"`
+	Provider           string   `json:"provider,omitempty"`
+	Model              string   `json:"model,omitempty"`
+	Usage              *Usage   `json:"usage,omitempty"`
+	Command            string   `json:"command,omitempty"`
+	Output             string   `json:"output,omitempty"`
+	ExitCode           *int     `json:"exitCode,omitempty"`
+	Cancelled          bool     `json:"cancelled,omitempty"`
+	Truncated          bool     `json:"truncated,omitempty"`
+	FullOutputPath     string   `json:"fullOutputPath,omitempty"`
+	ExcludeFromContext bool     `json:"excludeFromContext,omitempty"`
+	Summary            string   `json:"summary,omitempty"`
 }
 
 type TimedMessage struct {

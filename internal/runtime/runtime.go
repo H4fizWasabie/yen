@@ -449,6 +449,28 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 				CacheRead: message.Usage.CacheRead, CacheWrite: message.Usage.CacheWrite, TotalTokens: message.Usage.TotalTokens,
 			}
 		}
+		switch message.Role {
+		case "bashExecution":
+			if message.ExcludeFromContext {
+				continue
+			}
+			converted.Role = "user"
+			converted.Content = bashExecutionContext(message)
+			result = append(result, converted)
+			continue
+		case "branchSummary":
+			converted.Role = "user"
+			converted.Content = "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n" + message.Summary + "\n</summary>"
+			result = append(result, converted)
+			continue
+		case "compactionSummary":
+			converted.Role = "user"
+			converted.Content = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n" + message.Summary + "\n</summary>"
+			result = append(result, converted)
+			continue
+		case "custom":
+			converted.Role = "user"
+		}
 		if message.Role == "toolResult" {
 			converted.Role = "tool"
 		}
@@ -477,6 +499,24 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 		result = append(result, converted)
 	}
 	return result
+}
+
+func bashExecutionContext(message session.Message) string {
+	text := fmt.Sprintf("Ran `%s`\n", message.Command)
+	if message.Output != "" {
+		text += "```\n" + message.Output + "\n```"
+	} else {
+		text += "(no output)"
+	}
+	if message.Cancelled {
+		text += "\n\n(command cancelled)"
+	} else if message.ExitCode != nil && *message.ExitCode != 0 {
+		text += fmt.Sprintf("\n\nCommand exited with code %d", *message.ExitCode)
+	}
+	if message.Truncated && message.FullOutputPath != "" {
+		text += "\n\n[Output truncated. Full output: " + message.FullOutputPath + "]"
+	}
+	return text
 }
 
 func toSessionMessage(message agent.Message) session.Message {

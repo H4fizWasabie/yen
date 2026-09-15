@@ -229,6 +229,9 @@ The agent callback also exposes `tool_execution_start` and
 `tool_execution_end` lifecycle events with arguments, result, and error state.
 Recoverable provider `length` stops now use the existing overflow opt-in to
 compact once and retry once, matching the pinned TypeScript recovery path.
+Persisted bash, custom, branch-summary, and compaction-summary messages are
+converted into provider-compatible user context, including the bash exclusion
+flag and TypeScript summary wrappers.
 Consolidation now carries session-entry timestamps into the transcript prefix.
 Persisted tool errors are labeled `FAILED` in that transcript, matching the
 TypeScript consolidation summary.

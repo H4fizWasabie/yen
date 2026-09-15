@@ -697,3 +697,28 @@ func TestToConsolidationTurnsFormatsSpecialEntries(t *testing.T) {
 		}
 	}
 }
+
+func TestToAgentMessagesConvertsPersistedSpecialMessages(t *testing.T) {
+	exitCode := 1
+	messages := toAgentMessages([]session.Message{
+		{Role: "bashExecution", Command: "go test", Output: "failed", ExitCode: &exitCode},
+		{Role: "branchSummary", Summary: "safer branch"},
+		{Role: "compactionSummary", Summary: "old context"},
+		{Role: "custom", Content: "extension note"},
+		{Role: "bashExecution", Command: "secret", ExcludeFromContext: true},
+	})
+	if len(messages) != 4 {
+		t.Fatalf("converted messages=%#v", messages)
+	}
+	want := []string{
+		"Ran `go test`\n```\nfailed\n```\n\nCommand exited with code 1",
+		"The following is a summary of a branch that this conversation came back from:\n\n<summary>\nsafer branch\n</summary>",
+		"The conversation history before this point was compacted into the following summary:\n\n<summary>\nold context\n</summary>",
+		"extension note",
+	}
+	for i := range want {
+		if messages[i].Role != "user" || messages[i].Content != want[i] {
+			t.Fatalf("message %d=%#v want role user content %q", i, messages[i], want[i])
+		}
+	}
+}
