@@ -272,6 +272,15 @@ func TestFileSearchToolsReportResultLimit(t *testing.T) {
 	if err != nil || !strings.Contains(find, "1 results limit reached. Use limit=2 for more, or refine pattern") {
 		t.Fatalf("find=%q err=%v", find, err)
 	}
+
+	exactDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(exactDir, "only.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	find, err = NewFindTool(exactDir).Execute(context.Background(), map[string]any{"pattern": "*.txt", "limit": 1})
+	if err != nil || !strings.Contains(find, "1 results limit reached. Use limit=2 for more, or refine pattern") {
+		t.Fatalf("exact find=%q err=%v", find, err)
+	}
 }
 
 func TestEditRequiresUniqueOldText(t *testing.T) {
