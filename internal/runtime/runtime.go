@@ -538,6 +538,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})
+	history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
 	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && (recoverableLengthStop(result) || silentContextOverflow(result, r.AutoCompactContextWindow))) {
 		keepRecentTurns := r.AutoCompactTurns
@@ -561,6 +562,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			if catalog := current.ArtifactCatalog(2000); catalog != "" {
 				history = append([]agent.Message{codingagent.ArtifactCatalogMessage(catalog)}, history...)
 			}
+			history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
 			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 		}
 	}

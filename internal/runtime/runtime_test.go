@@ -181,7 +181,7 @@ func TestRunnerInjectsPersistedWorkingNoteIntoProviderContext(t *testing.T) {
 	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.messages) == 0 || provider.messages[0].Role != "system" || !strings.Contains(provider.messages[0].Content, "use the pinned fixture") {
+	if !hasMessageContaining(provider.messages, "use the pinned fixture") {
 		t.Fatalf("messages=%#v", provider.messages)
 	}
 	reopened, err := session.Open(path)
@@ -214,7 +214,7 @@ func TestRunnerInjectsArtifactCatalogIntoProviderContext(t *testing.T) {
 	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.messages) == 0 || !strings.Contains(provider.messages[0].Content, "<document_artifacts>") || !strings.Contains(provider.messages[0].Content, "source document") {
+	if !hasMessageContaining(provider.messages, "<document_artifacts>") || !hasMessageContaining(provider.messages, "source document") {
 		t.Fatalf("messages=%#v", provider.messages)
 	}
 }
@@ -530,7 +530,7 @@ func TestRunnerUsesCompactionAwareContext(t *testing.T) {
 	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.messages) != 4 || provider.messages[0].Content == "old" || provider.messages[1].Content != "keep" || provider.messages[3].Content != "new prompt" {
+	if hasMessageExact(provider.messages, "old") || !hasMessageContaining(provider.messages, "keep") || !hasMessageContaining(provider.messages, "new prompt") {
 		t.Fatalf("provider context=%#v", provider.messages)
 	}
 }
@@ -848,7 +848,7 @@ func TestRunnerCanDisableAutomaticCompaction(t *testing.T) {
 	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.messages) == 0 || provider.messages[0].Content != "one" {
+	if !hasMessageContaining(provider.messages, "one") {
 		t.Fatalf("automatic compaction was not disabled: %#v", provider.messages)
 	}
 }
@@ -894,7 +894,7 @@ func TestRunnerRetriesOnceAfterOptInContextOverflow(t *testing.T) {
 	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "overflow summary") {
 		t.Fatalf("context=%#v", reopened.ContextMessages())
 	}
-	if len(provider.seen) != 3 || !strings.Contains(provider.seen[2][0].Content, "keep this orientation") {
+	if len(provider.seen) != 3 || !hasMessageContaining(provider.seen[2], "keep this orientation") {
 		t.Fatalf("retry context=%#v", provider.seen)
 	}
 }
@@ -1129,9 +1129,27 @@ func TestRunnerSteersActiveTurnThroughAgentQueue(t *testing.T) {
 	}
 	provider.mu.Lock()
 	defer provider.mu.Unlock()
-	if len(provider.seen) != 2 || len(provider.seen[1]) != 3 || provider.seen[1][2].Content != "change direction" {
+	if len(provider.seen) != 2 || !hasMessageContaining(provider.seen[1], "change direction") {
 		t.Fatalf("provider messages=%#v", provider.seen)
 	}
+}
+
+func hasMessageContaining(messages []agent.Message, want string) bool {
+	for _, message := range messages {
+		if strings.Contains(message.Content, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMessageExact(messages []agent.Message, want string) bool {
+	for _, message := range messages {
+		if message.Content == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestToConsolidationTurnsCondensesToolPayloads(t *testing.T) {
