@@ -78,6 +78,22 @@ func TestGrepToolMatchesRecursiveGlobstarPaths(t *testing.T) {
 	}
 }
 
+func TestGrepToolTruncatesLongMatchingLines(t *testing.T) {
+	dir := t.TempDir()
+	line := "match " + strings.Repeat("x", 600)
+	if err := os.WriteFile(filepath.Join(dir, "long.txt"), []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "match"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "... [truncated]") || strings.Contains(got, strings.Repeat("x", 600)) {
+		t.Fatalf("grep=%q", got)
+	}
+}
+
 func TestEditRequiresUniqueOldText(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "x.txt"), []byte("x\nx\n"), 0o600); err != nil {

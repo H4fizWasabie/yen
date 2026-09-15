@@ -11,6 +11,7 @@ import (
 )
 
 const toolOutputLimit = 64 * 1024
+const grepMaxLineLength = 500
 
 type ListTool struct{ cwd string }
 func NewListTool(cwd string) ListTool { return ListTool{cwd: cwd} }
@@ -113,7 +114,7 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 		for i, line := range lines {
 			if !re.MatchString(line) { continue }
 			start, end := max(0, i-contextLines), min(len(lines), i+contextLines+1)
-			for j := start; j < end; j++ { out = append(out, fmt.Sprintf("%s:%d:%s", rel, j+1, lines[j])); if len(out) >= limit { return errGrepLimit } }
+			for j := start; j < end; j++ { out = append(out, fmt.Sprintf("%s:%d:%s", rel, j+1, truncateGrepLine(lines[j]))); if len(out) >= limit { return errGrepLimit } }
 		}
 		return nil
 	})
@@ -123,6 +124,12 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 }
 
 var errGrepLimit = fmt.Errorf("grep match limit reached")
+
+func truncateGrepLine(line string) string {
+	runes := []rune(line)
+	if len(runes) <= grepMaxLineLength { return line }
+	return string(runes[:grepMaxLineLength]) + "... [truncated]"
+}
 
 type WriteTool struct{ cwd string }
 func NewWriteTool(cwd string) WriteTool { return WriteTool{cwd: cwd} }

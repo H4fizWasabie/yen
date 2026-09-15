@@ -181,10 +181,12 @@ hooks, and provider interception remain open.
 
 The built-in `find` tool now supports recursive `**` glob patterns across
 nested directories, and `grep` applies the same path-aware glob filtering,
-matching the pinned file-search contract. TypeScript authority:
+truncates long match lines, and matches the pinned file-search contract.
+TypeScript authority:
 `packages/coding-agent/src/core/tools/find.ts` and `grep.ts`; Go evidence:
 `internal/tools/fs_tools.go`, `TestFindToolSupportsRecursiveGlobstar`, and
-`TestGrepToolMatchesRecursiveGlobstarPaths`.
+`TestGrepToolMatchesRecursiveGlobstarPaths`, plus
+`TestGrepToolTruncatesLongMatchingLines`.
 
 OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
 fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
