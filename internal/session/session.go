@@ -64,6 +64,7 @@ type Message struct {
 	Images             []string `json:"images,omitempty"`
 	ToolCallID         string   `json:"toolCallId,omitempty"`
 	StopReason         string   `json:"stopReason,omitempty"`
+	ErrorMessage       string   `json:"errorMessage,omitempty"`
 	Provider           string   `json:"provider,omitempty"`
 	Model              string   `json:"model,omitempty"`
 	Usage              *Usage   `json:"usage,omitempty"`

@@ -341,7 +341,7 @@ func TestRunPersistsAssistantErrorBoundary(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected provider error")
 	}
-	if len(result.Messages) != 2 || result.Messages[1].Role != "assistant" || result.Messages[1].StopReason != "error" {
+	if len(result.Messages) != 2 || result.Messages[1].Role != "assistant" || result.Messages[1].StopReason != "error" || result.Messages[1].ErrorMessage != "provider down" {
 		t.Fatalf("messages = %#v", result.Messages)
 	}
 }

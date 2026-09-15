@@ -7,16 +7,17 @@ import (
 )
 
 type Message struct {
-	Role       string
-	Content    string
-	Thinking   string
-	Images     []string
-	ToolCalls  []ToolCall
-	ToolCallID string
-	StopReason string
-	Provider   string
-	Model      string
-	Usage      *Usage
+	Role         string
+	Content      string
+	Thinking     string
+	Images       []string
+	ToolCalls    []ToolCall
+	ToolCallID   string
+	StopReason   string
+	ErrorMessage string
+	Provider     string
+	Model        string
+	Usage        *Usage
 }
 
 type ToolCall struct {
@@ -234,7 +235,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			if ctx.Err() != nil {
 				stopReason = "aborted"
 			}
-			assistant := Message{Role: "assistant", Content: err.Error(), StopReason: stopReason}
+			assistant := Message{Role: "assistant", Content: err.Error(), StopReason: stopReason, ErrorMessage: err.Error()}
 			result.Messages = append(result.Messages, assistant)
 			emitEvent(onEvent, Event{Type: "message_end", Message: &assistant, StopReason: stopReason})
 			result.Events = append(result.Events, "message_end:assistant:"+stopReason, "turn_end", "agent_end", "agent_settled")
@@ -243,7 +244,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 			return result, err
 		}
-		assistant := Message{Role: "assistant", Content: response.Text, Thinking: response.Thinking, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
+		assistant := Message{Role: "assistant", Content: response.Text, Thinking: response.Thinking, ToolCalls: response.ToolCalls, StopReason: response.StopReason, ErrorMessage: response.ErrorMessage, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
 		result.Messages = append(result.Messages, assistant)
 		if onEvent != nil {
 			onEvent(Event{Type: "usage", Usage: response.Usage, Message: &assistant, StopReason: response.StopReason})
