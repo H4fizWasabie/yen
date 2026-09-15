@@ -417,19 +417,44 @@ func (c *mcpClient) request(ctx context.Context, method string, params map[strin
 		c.sessionID = value
 		c.mu.Unlock()
 	}
+	payload, err := readMCPHTTPPayload(response)
+	if err != nil {
+		return nil, err
+	}
 	var message struct {
 		Result any `json:"result"`
 		Error  *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&message); err != nil {
+	if err := json.Unmarshal(payload, &message); err != nil {
 		return nil, err
 	}
 	if message.Error != nil {
 		return nil, errors.New(message.Error.Message)
 	}
 	return message.Result, nil
+}
+
+func readMCPHTTPPayload(response *http.Response) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
+		return data, nil
+	}
+	var payload []byte
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data:") {
+			payload = []byte(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		}
+	}
+	if len(payload) == 0 {
+		return nil, errors.New("MCP returned an empty event stream")
+	}
+	return payload, nil
 }
 
 func (c *mcpClient) notify(ctx context.Context, method string, params map[string]any) (any, error) {
