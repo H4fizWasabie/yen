@@ -27,6 +27,8 @@ type generateImageTool struct {
 	session *session.Session
 }
 
+const generatedImageMaxInlineBytes = 4.5 * 1024 * 1024
+
 func (generateImageTool) Name() string { return "generate_image" }
 
 func (t generateImageTool) Execute(ctx context.Context, args map[string]any) (string, error) {
@@ -89,7 +91,7 @@ func (t generateImageTool) ExecuteRich(ctx context.Context, args map[string]any)
 }
 
 func generatedImageIsDecodable(data []byte, mimeType string) bool {
-	if len(data) == 0 {
+	if len(data) == 0 || base64.StdEncoding.EncodedLen(len(data)) >= int(generatedImageMaxInlineBytes) {
 		return false
 	}
 	// The standard library has no WebP decoder; preserve valid provider WebP
