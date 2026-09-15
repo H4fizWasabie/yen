@@ -340,7 +340,7 @@ func TestOpenAICompletionsSendsSchemasForCodingTools(t *testing.T) {
 		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer server.Close()
-	tools := []string{"read", "bash", "powershell", "edit", "write", "grep", "find", "ls", "remember", "save_note", "recall_turns"}
+	tools := []string{"read", "bash", "powershell", "edit", "write", "grep", "find", "ls", "working_note", "note_operations", "remember", "save_note", "recall_turns"}
 	if _, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, tools); err != nil {
 		t.Fatal(err)
 	}

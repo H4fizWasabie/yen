@@ -425,6 +425,16 @@ func toolParameters(name string) map[string]any {
 		return optional(map[string]any{"query": stringProperty("What to search for")}, "query")
 	case "save_note":
 		return optional(map[string]any{"note": stringProperty("A present, durable fact worth remembering")}, "note")
+	case "working_note":
+		return optional(map[string]any{
+			"note":  stringProperty("One concise fact to append to the Working Note"),
+			"clear": map[string]any{"type": "boolean", "description": "Clear the Working Note"},
+		})
+	case "note_operations":
+		return optional(map[string]any{
+			"section": stringProperty("Section heading for the operational note"),
+			"content": stringProperty("One concise durable operational line"),
+		}, "section", "content")
 	default:
 		return map[string]any{"type": "object"}
 	}

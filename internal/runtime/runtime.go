@@ -23,6 +23,7 @@ type Runner struct {
 	Queue                       *conversation.Queue
 	Provider                    agent.Provider
 	ToolFactory                 func(workspace string) []agent.Tool
+	SessionToolFactory          func(workspace string, current *session.Session) []agent.Tool
 	SessionPath                 func(turn conversation.Turn) string
 	Checkpoints                 *memory.Checkpoints
 	Memory                      *memory.Engine
@@ -365,7 +366,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	}
 	history := toAgentMessages(current.ContextMessages())
 	var tools []agent.Tool
-	if r.ToolFactory != nil {
+	if r.SessionToolFactory != nil {
+		tools = r.SessionToolFactory(turn.WorkspaceID, current)
+	} else if r.ToolFactory != nil {
 		tools = r.ToolFactory(turn.WorkspaceID)
 	}
 	if r.Memory != nil {
@@ -387,6 +390,11 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			}
 			history = toAgentMessages(current.ContextMessages())
 			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
+		}
+	}
+	if runErr == nil && current.WorkingNote() != "" {
+		if _, err := current.ClearWorkingNote(); err != nil {
+			return result, err
 		}
 	}
 	for _, message := range result.Messages[len(history):] {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -97,6 +98,7 @@ type sessionEntry struct {
 	ChannelSessionID    string      `json:"channelSessionId,omitempty"`
 	ParentID            *string     `json:"parentId"`
 	Message             *Message    `json:"message,omitempty"`
+	Note                string      `json:"note,omitempty"`
 	Compaction          *Compaction `json:"compaction,omitempty"`
 	Summary             string      `json:"summary,omitempty"`
 	FirstKeptEntryID    string      `json:"firstKeptEntryId,omitempty"`
@@ -314,6 +316,55 @@ func (s *Session) Append(message Message) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+const workingNoteWriteCap = 2000
+
+func (s *Session) WorkingNote() string {
+	var note string
+	for _, entry := range s.activeEntries() {
+		if entry.Type == "working_note" {
+			note = entry.Note
+		}
+	}
+	return note
+}
+
+func (s *Session) AppendWorkingNote(line string) (string, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", fmt.Errorf("working note line cannot be empty")
+	}
+	combined := line
+	if existing := s.WorkingNote(); existing != "" {
+		combined = existing + "\n" + line
+	}
+	lines := strings.Split(combined, "\n")
+	for len(combined) > workingNoteWriteCap && len(lines) > 1 {
+		lines = lines[1:]
+		combined = strings.Join(lines, "\n")
+	}
+	if len(combined) > workingNoteWriteCap {
+		combined = combined[len(combined)-workingNoteWriteCap:]
+	}
+	return s.appendWorkingNote(combined)
+}
+
+func (s *Session) ClearWorkingNote() (string, error) { return s.appendWorkingNote("") }
+
+func (s *Session) appendWorkingNote(note string) (string, error) {
+	id := newEntryID(s.entries)
+	var parentID *string
+	if len(s.entries) > 0 {
+		parent := s.entries[len(s.entries)-1].ID
+		parentID = &parent
+	}
+	entry := sessionEntry{Type: "working_note", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Note: note}
+	s.entries = append(s.entries, entry)
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
 }
 
 func newEntryID(entries []sessionEntry) string {
