@@ -33,6 +33,8 @@ if [ ! -f "$provider_env" ]; then
 	exit 1
 fi
 
+cd "$source_dir"
+
 release_dir=$state_dir/releases/$release_id
 install -d -m 0755 "$release_dir" "$data_dir" "$secrets_dir"
 if [ "$channel_env" != "$secrets_dir/telegram.env" ]; then
