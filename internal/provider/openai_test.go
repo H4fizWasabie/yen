@@ -243,6 +243,37 @@ func TestOpenAICompletionsReplaysThinkingField(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsPreservesAndReplaysReasoningDetails(t *testing.T) {
+	detail := `{"type":"reasoning.summary","summary":"plan"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Messages[0]["reasoning_details"].([]any)) != 1 {
+			t.Fatalf("messages=%#v", payload.Messages)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"reasoning_details\":[%s]},\"finish_reason\":\"stop\"}]}\n", detail)
+	}))
+	defer server.Close()
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"reasoning_details\":[%s]},\"finish_reason\":\"stop\"}]}\n", detail)
+	}))
+	defer first.Close()
+	result, err := NewOpenAICompletions(first.URL, "", "test-model").Next(context.Background(), nil, nil)
+	if err != nil || result.ThinkingSignature == "" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if _, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), []agent.Message{{Role: "assistant", ThinkingSignature: result.ThinkingSignature}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompletionsCombinesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

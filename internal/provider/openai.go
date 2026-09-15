@@ -15,13 +15,14 @@ import (
 )
 
 type openAIMessage struct {
-	Role             string           `json:"role"`
-	Content          any              `json:"content,omitempty"`
-	Reasoning        string           `json:"reasoning,omitempty"`
-	ReasoningContent string           `json:"reasoning_content,omitempty"`
-	ReasoningText    string           `json:"reasoning_text,omitempty"`
-	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string           `json:"tool_call_id,omitempty"`
+	Role             string            `json:"role"`
+	Content          any               `json:"content,omitempty"`
+	Reasoning        string            `json:"reasoning,omitempty"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"`
+	ReasoningText    string            `json:"reasoning_text,omitempty"`
+	ReasoningDetails []json.RawMessage `json:"reasoning_details,omitempty"`
+	ToolCalls        []openAIToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID       string            `json:"tool_call_id,omitempty"`
 }
 
 type openAIToolCall struct {
@@ -209,10 +210,11 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			} `json:"usage"`
 			Choices []struct {
 				Delta struct {
-					Content          string `json:"content"`
-					Reasoning        string `json:"reasoning"`
-					ReasoningContent string `json:"reasoning_content"`
-					ReasoningText    string `json:"reasoning_text"`
+					Content          string            `json:"content"`
+					Reasoning        string            `json:"reasoning"`
+					ReasoningContent string            `json:"reasoning_content"`
+					ReasoningText    string            `json:"reasoning_text"`
+					ReasoningDetails []json.RawMessage `json:"reasoning_details"`
 					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
@@ -275,6 +277,22 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 				partial.Thinking += reasoning
 				if emit != nil {
 					emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: 0, Delta: reasoning, Partial: partial})
+				}
+			}
+			if len(choice.Delta.ReasoningDetails) > 0 {
+				var details []json.RawMessage
+				if strings.HasPrefix(strings.TrimSpace(partial.ThinkingSignature), "[") {
+					_ = json.Unmarshal([]byte(partial.ThinkingSignature), &details)
+				}
+				for _, detail := range choice.Delta.ReasoningDetails {
+					var object map[string]any
+					if json.Unmarshal(detail, &object) == nil && object["type"] != nil {
+						details = append(details, append(json.RawMessage(nil), detail...))
+					}
+				}
+				if len(details) > 0 {
+					encoded, _ := json.Marshal(details)
+					partial.ThinkingSignature = string(encoded)
 				}
 			}
 			result.Text += choice.Delta.Content
@@ -403,14 +421,18 @@ func convertMessages(messages []agent.Message) []openAIMessage {
 			content = parts
 		}
 		convertedMessage := openAIMessage{Role: message.Role, Content: content, ToolCallID: message.ToolCallID}
-		if message.Thinking != "" {
-			switch message.ThinkingSignature {
-			case "reasoning":
-				convertedMessage.Reasoning = message.Thinking
-			case "reasoning_text":
-				convertedMessage.ReasoningText = message.Thinking
-			default:
-				convertedMessage.ReasoningContent = message.Thinking
+		if message.Thinking != "" || strings.HasPrefix(strings.TrimSpace(message.ThinkingSignature), "[") {
+			if strings.HasPrefix(strings.TrimSpace(message.ThinkingSignature), "[") {
+				_ = json.Unmarshal([]byte(message.ThinkingSignature), &convertedMessage.ReasoningDetails)
+			} else {
+				switch message.ThinkingSignature {
+				case "reasoning":
+					convertedMessage.Reasoning = message.Thinking
+				case "reasoning_text":
+					convertedMessage.ReasoningText = message.Thinking
+				default:
+					convertedMessage.ReasoningContent = message.Thinking
+				}
 			}
 		}
 		for _, call := range message.ToolCalls {
