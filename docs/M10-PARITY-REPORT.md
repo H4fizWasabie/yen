@@ -30,9 +30,11 @@ deferred below.
 ## Checkpoint update: 2026-09-16
 
 Native OpenAI Responses reasoning output items now preserve their summary text
-and serialized reasoning-item signature for stateless multi-turn replay. Go
-evidence: `internal/provider/responses.go` and
-`TestOpenAIResponsesPersistsReasoningItemSignature`.
+and serialized reasoning-item signature for stateless multi-turn replay, while
+failed responses surface the provider's error. Go evidence:
+`internal/provider/responses.go`,
+`TestOpenAIResponsesPersistsReasoningItemSignature`, and
+`TestOpenAIResponsesReturnsResponseFailure`.
 
 Captionless Telegram document guidance now names `convert_doc`, matching the
 oracle's `noteFor` prompt and the tool intended for stored document artifacts.
