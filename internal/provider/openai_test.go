@@ -61,6 +61,20 @@ func TestOpenAICompletionsPreservesResponseMetadataAndFinishReason(t *testing.T)
 	}
 }
 
+func TestOpenAICompletionsTreatsNullFinishReasonAsStop(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"done"},"finish_reason":null}]}`)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	result, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, nil)
+	if err != nil || result.StopReason != "stop" || result.Text != "done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestOpenAICompletionsJSONModeSetsResponseFormat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {

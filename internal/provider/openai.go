@@ -219,7 +219,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 						} `json:"function"`
 					} `json:"tool_calls"`
 				} `json:"delta"`
-				FinishReason *string `json:"finish_reason"`
+				FinishReason json.RawMessage `json:"finish_reason"`
 			} `json:"choices"`
 		}
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
@@ -279,9 +279,18 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			if update != nil && choice.Delta.Content != "" {
 				update(choice.Delta.Content)
 			}
-			if choice.FinishReason != nil {
-				result.RawStopReason = *choice.FinishReason
-				result.StopReason, result.ErrorMessage = mapStopReason(*choice.FinishReason)
+			if len(choice.FinishReason) > 0 {
+				if string(choice.FinishReason) == "null" {
+					result.RawStopReason = ""
+					result.StopReason, result.ErrorMessage = "stop", ""
+				} else {
+					var reason string
+					if err := json.Unmarshal(choice.FinishReason, &reason); err != nil {
+						return agent.Response{}, fmt.Errorf("finish reason: %w", err)
+					}
+					result.RawStopReason = reason
+					result.StopReason, result.ErrorMessage = mapStopReason(reason)
+				}
 			}
 			for _, delta := range choice.Delta.ToolCalls {
 				if update != nil {
