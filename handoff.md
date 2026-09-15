@@ -146,6 +146,10 @@ queue slices are now implemented and locally verified. Work in this order:
    cookie requests in the side-by-side pilot before claiming live dashboard
    authentication parity.
 
+7. Run `deploy/install-side-by-side.sh` on a disposable host with prepared
+   channel/provider env files, keeping `YEN_START=0` for the first read-back;
+   do not use the production VPS as the installer test host.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future
