@@ -11,9 +11,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 func TestRunRejectsMissingPrompt(t *testing.T) {
@@ -146,4 +149,35 @@ func TestInteractiveSessionCommands(t *testing.T) {
 	if err != nil || !handled || !strings.Contains(output.String(), "Working Note is empty") {
 		t.Fatalf("working note command handled=%v err=%v output=%q", handled, err, output.String())
 	}
+}
+
+func TestInteractiveProviderAndTrustCommands(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", ConversationID: "conv-1", CWD: dir})
+	runner := &runtime.Runner{Provider: provider.NewOpenAICompletions("http://fixture", "key", "old-model")}
+	link := conversation.Link{ConversationID: "conv-1", WorkspaceID: dir}
+	var output bytes.Buffer
+	handled, err := handleInteractiveCommand("/model new-model", current, runner, link, &output)
+	if err != nil || !handled || providerModel(runner.Provider) != "new-model" {
+		t.Fatalf("model handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	handled, err = handleInteractiveCommand("/thinking high", current, runner, link, &output)
+	if err != nil || !handled || provider.ThinkingLevel(runner.Provider) != "high" {
+		t.Fatalf("thinking handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	handled, err = handleInteractiveCommand("/retry on", current, runner, link, &output)
+	if err != nil || !handled || !provider.RetryEnabled(runner.Provider) {
+		t.Fatalf("retry handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	t.Setenv("YEN_TRUST_PROJECT", "")
+	t.Setenv("YEN_TRUST_FILE", filepath.Join(dir, "trusted-projects.json"))
+	handled, err = handleInteractiveCommand("/trust", current, runner, link, &output)
+	if err != nil || !handled || !settings.IsTrusted(dir) {
+		t.Fatalf("trust handled=%v err=%v output=%q", handled, err, output.String())
+	}
+}
+
+func providerModel(value agent.Provider) string {
+	_, model := provider.Describe(value)
+	return model
 }

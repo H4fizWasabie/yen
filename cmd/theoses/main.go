@@ -163,6 +163,59 @@ func run(args []string, stdout, stderr io.Writer) int {
 func handleInteractiveCommand(input string, current *session.Session, runner *runtime.Runner, link conversation.Link, stdout io.Writer) (bool, error) {
 	text := strings.TrimSpace(input)
 	switch {
+	case text == "/model" || strings.HasPrefix(text, "/model "):
+		model := strings.TrimSpace(strings.TrimPrefix(text, "/model"))
+		if model == "" {
+			name, currentModel := provider.Describe(runner.Provider)
+			_, err := fmt.Fprintf(stdout, "Provider: %s\nModel: %s\n", name, currentModel)
+			return true, err
+		}
+		configured, err := provider.SetModel(runner.Provider, model)
+		if err != nil {
+			return true, err
+		}
+		runner.Provider = configured
+		_, err = fmt.Fprintf(stdout, "Model set: %s\n", model)
+		return true, err
+	case text == "/thinking" || strings.HasPrefix(text, "/thinking "):
+		level := strings.TrimSpace(strings.TrimPrefix(text, "/thinking"))
+		if level == "" {
+			_, err := fmt.Fprintf(stdout, "Thinking: %s\n", provider.ThinkingLevel(runner.Provider))
+			return true, err
+		}
+		configured, err := provider.SetThinkingLevel(runner.Provider, level)
+		if err != nil {
+			return true, err
+		}
+		runner.Provider = configured
+		_, err = fmt.Fprintf(stdout, "Thinking set: %s\n", level)
+		return true, err
+	case text == "/retry" || strings.HasPrefix(text, "/retry "):
+		value := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(text, "/retry")))
+		if value != "on" && value != "off" {
+			_, err := fmt.Fprintf(stdout, "Retry: %t\nUsage: /retry on|off\n", provider.RetryEnabled(runner.Provider))
+			return true, err
+		}
+		configured, err := provider.SetRetryEnabled(runner.Provider, value == "on")
+		if err != nil {
+			return true, err
+		}
+		runner.Provider = configured
+		_, err = fmt.Fprintf(stdout, "Retry %s\n", value)
+		return true, err
+	case text == "/trust":
+		workspace := link.WorkspaceID
+		if workspace == "" {
+			workspace = current.Header().CWD
+		}
+		if workspace == "" {
+			return true, fmt.Errorf("workspace is required for trust")
+		}
+		if err := settings.Trust(workspace); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintf(stdout, "Trusted: %s\n", workspace)
+		return true, err
 	case text == "/name":
 		if name := current.SessionName(); name != "" {
 			_, err := fmt.Fprintf(stdout, "Session name: %s\n", name)

@@ -359,6 +359,12 @@ and `internal/provider/responses_test.go` covers the wire/result contract. The
 full gate is 236 tests plus race/vet/diff; commit and push this work before the
 next gap.
 
+The interactive CLI now also exposes `/model`, `/thinking`, `/retry`, and
+`/trust`, backed by the same provider/settings helpers used by RPC. Tests cover
+the mutations and the trust-file override; the full gate is 237 tests plus
+race/vet/diff. Full TUI selectors, OAuth commands, and session-picker flows
+remain open.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future

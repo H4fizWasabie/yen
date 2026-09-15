@@ -63,6 +63,9 @@ func Save(workspace string, current Settings) error {
 }
 
 func TrustPath(workspace string) string {
+	if path := os.Getenv("YEN_TRUST_FILE"); path != "" {
+		return path
+	}
 	if configDir, err := os.UserConfigDir(); err == nil {
 		return filepath.Join(configDir, "yen", "trusted-projects.json")
 	}
