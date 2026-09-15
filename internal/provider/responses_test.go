@@ -58,6 +58,17 @@ func TestOpenAIResponsesUsesYenConfiguration(t *testing.T) {
 	}
 }
 
+func TestAzureResponsesUsesAzureRouteAndAPIKeyHeader(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "azure-openai-responses")
+	t.Setenv("YEN_MODEL", "deployment-1")
+	t.Setenv("YEN_AZURE_OPENAI_BASE_URL", "http://fixture/openai")
+	t.Setenv("YEN_AZURE_OPENAI_API_KEY", "azure-key")
+	client, ok := ConfiguredFromEnv().(OpenAIResponses)
+	if !ok || client.ProviderName != "azure-openai-responses" || client.BaseURL != "http://fixture/openai/v1" || client.APIKeyHeader != "api-key" || client.APIKey != "azure-key" {
+		t.Fatalf("client=%#v", client)
+	}
+}
+
 func mustJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)

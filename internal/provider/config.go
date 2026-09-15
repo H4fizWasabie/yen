@@ -48,6 +48,7 @@ var providerDefaults = map[string]string{
 	"cloudflare-ai-gateway":      "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
 	"github-copilot":             "https://api.individual.githubcopilot.com",
 	"openai-codex":               "https://chatgpt.com/backend-api/codex",
+	"azure-openai-responses":     "",
 }
 
 var providerKeyEnvs = map[string]string{
@@ -86,6 +87,32 @@ var providerKeyEnvs = map[string]string{
 	"google-vertex":              "YEN_GOOGLE_CLOUD_API_KEY",
 	"github-copilot":             "YEN_COPILOT_GITHUB_TOKEN",
 	"openai-codex":               "YEN_OPENAI_CODEX_ACCESS_TOKEN",
+	"azure-openai-responses":     "YEN_AZURE_OPENAI_API_KEY",
+}
+
+func azureConfigured(model string) OpenAIResponses {
+	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_AZURE_OPENAI_BASE_URL")), "/")
+	if baseURL == "" {
+		resource := strings.TrimSpace(os.Getenv("YEN_AZURE_OPENAI_RESOURCE_NAME"))
+		if resource != "" {
+			baseURL = "https://" + resource + ".openai.azure.com/openai/v1"
+		}
+	}
+	if baseURL == "" {
+		baseURL = "https://{AZURE_RESOURCE_NAME}.openai.azure.com/openai/v1"
+	}
+	if !strings.HasSuffix(baseURL, "/openai/v1") && strings.HasSuffix(baseURL, "/openai") {
+		baseURL += "/v1"
+	}
+	key := os.Getenv("YEN_AZURE_OPENAI_API_KEY")
+	if key == "" {
+		key = storedCredentialKey("azure-openai-responses")
+	}
+	client := NewOpenAIResponses(baseURL, key, model)
+	client.ProviderName = "azure-openai-responses"
+	client.APIKeyHeader = "api-key"
+	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+	return client
 }
 
 func codexAccountID(token string) string {
@@ -214,6 +241,13 @@ func NewFromEnv() OpenAICompletions {
 
 func ConfiguredFromEnv() agent.Provider {
 	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
+	if providerID == "azure-openai-responses" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gpt-4.1"
+		}
+		return azureConfigured(model)
+	}
 	if providerID == "openai-codex" {
 		model := os.Getenv("YEN_MODEL")
 		if model == "" {
@@ -331,6 +365,12 @@ func ConfiguredFromEnv() agent.Provider {
 func NewConfigured(providerID, model string) (agent.Provider, error) {
 	providerID = strings.ToLower(strings.TrimSpace(providerID))
 	model = strings.TrimSpace(model)
+	if providerID == "azure-openai-responses" {
+		if model == "" {
+			model = "gpt-4.1"
+		}
+		return azureConfigured(model), nil
+	}
 	if providerID == "openai-codex" {
 		if model == "" {
 			model = "gpt-5"

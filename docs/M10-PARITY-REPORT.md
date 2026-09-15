@@ -39,6 +39,15 @@ Go evidence: `internal/settings/settings.go`,
 settings/runtime tests pass. This closes the shared settings configuration
 gap; interactive settings UI and the broader schema remain open.
 
+Azure OpenAI Responses now has its own route, Azure resource/base-URL
+resolution, and `api-key` authentication header instead of being treated as a
+Bearer-authenticated OpenAI endpoint. TypeScript authority:
+`packages/ai/src/providers/azure-openai-responses.ts` and
+`packages/ai/src/api/azure-openai-responses.ts:196-250`.
+Go evidence: `internal/provider/config.go`, `internal/provider/responses.go`,
+and `TestAzureResponsesUsesAzureRouteAndAPIKeyHeader`; full AWS Bedrock
+SigV4/credential-chain support remains open.
+
 The coding-agent bash boundary now records both the oracle's bounded automatic
 working-note command log and a durable `bashExecution` session message with
 the full command, output, exit code, cancellation, truncation, and
