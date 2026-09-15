@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,7 +28,19 @@ type vertexServiceAccount struct {
 }
 
 func vertexServiceAccountSource(path string) func(context.Context) (string, error) {
+	var cacheMu sync.Mutex
+	var cachedToken string
+	var cachedExpiry time.Time
+
 	return func(ctx context.Context) (string, error) {
+		cacheMu.Lock()
+		if cachedToken != "" && time.Now().Before(cachedExpiry) {
+			token := cachedToken
+			cacheMu.Unlock()
+			return token, nil
+		}
+		cacheMu.Unlock()
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return "", err
@@ -86,10 +99,15 @@ func vertexServiceAccountSource(path string) func(context.Context) (string, erro
 		}
 		var token struct {
 			AccessToken string `json:"access_token"`
+			ExpiresIn   int64  `json:"expires_in"`
 		}
 		if err := json.Unmarshal(body, &token); err != nil || token.AccessToken == "" {
 			return "", errors.New("vertex token exchange returned no access token")
 		}
+		cacheMu.Lock()
+		cachedToken = token.AccessToken
+		cachedExpiry = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+		cacheMu.Unlock()
 		return token.AccessToken, nil
 	}
 }
