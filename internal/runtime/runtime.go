@@ -563,16 +563,16 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			outcome = "aborted"
 		}
 	}
+	for _, message := range result.Messages[len(history):] {
+		if _, err := current.Append(toSessionMessage(message)); err != nil {
+			return result, err
+		}
+	}
 	if _, err := current.AppendOperationFinished(outcome); err != nil {
 		return result, err
 	}
 	if outcome == "completed" && current.WorkingNote() != "" {
 		if _, err := current.ClearWorkingNote(); err != nil {
-			return result, err
-		}
-	}
-	for _, message := range result.Messages[len(history):] {
-		if _, err := current.Append(toSessionMessage(message)); err != nil {
 			return result, err
 		}
 	}

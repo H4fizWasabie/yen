@@ -398,6 +398,31 @@ func TestRunnerUsesCanonicalQueueAndResumesSession(t *testing.T) {
 	}
 }
 
+func TestRunnerPersistsOperationOutcomeAfterTurnMessages(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := New(queue, provider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: "cwd", ConversationID: "ordered", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := session.Open(filepath.Join(dir, "ordered.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := opened.Tree()
+	if len(tree) < 2 || tree[len(tree)-1].Type != "operation_finished" {
+		t.Fatalf("entry order=%#v", tree)
+	}
+}
+
 func TestRunnerOptInConsolidationUsesSeparateCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
