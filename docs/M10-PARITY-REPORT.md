@@ -174,12 +174,13 @@ and `TestAzureResponsesUsesAzureRouteAndAPIKeyHeader`; full AWS Bedrock
 SigV4/credential-chain support remains open.
 
 Resource context now also loads the configurable user agent directory and
-`YEN.md` persona before repository context, matching Yen's global
-resource pass. TypeScript authority:
-`packages/coding-agent/src/core/resource-loader.ts:220-260` and
-`packages/coding-agent/src/config.ts:517-523`. Go evidence:
-`internal/codingagent/prompt.go` and
-`TestContextMessageLoadsConfiguredAgentPersonaFirst`.
+`YEN.md` persona before repository context, matching Yen's global resource
+pass. TypeScript authority: `packages/coding-agent/src/core/resource-loader.ts`
+and `packages/coding-agent/src/config.ts`. Linked worktrees now suppress the
+main worktree's context file when the linked worktree has its own copy,
+matching Theoses2's `findShadowedContextFile` path. Go evidence:
+`internal/codingagent/prompt.go`, `TestContextMessageLoadsConfiguredAgentPersonaFirst`,
+and `TestContextMessageSkipsMainWorktreeContextFromLinkedWorktree`.
 
 The built-in `read` tool now returns supported local images as rich data-image
 content while preserving its existing bounded text path. TypeScript authority:

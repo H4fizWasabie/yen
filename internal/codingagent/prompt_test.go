@@ -3,6 +3,7 @@ package codingagent
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -111,6 +112,34 @@ func TestContextMessageEmptyHigherPriorityFileShadowsLowerPriority(t *testing.T)
 	message, ok := ContextMessage(workspace)
 	if ok || strings.Contains(message.Content, "lower priority guidance") {
 		t.Fatalf("message=%#v", message)
+	}
+}
+
+func TestContextMessageSkipsMainWorktreeContextFromLinkedWorktree(t *testing.T) {
+	root := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com", "GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+	runGit("init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("main guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "AGENTS.md")
+	runGit("commit", "-qm", "context")
+	worktree := filepath.Join(root, "linked")
+	runGit("worktree", "add", "-q", worktree)
+	if err := os.WriteFile(filepath.Join(worktree, "AGENTS.md"), []byte("linked guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	message, ok := ContextMessage(worktree)
+	if !ok || !strings.Contains(message.Content, "linked guidance") || strings.Contains(message.Content, "main guidance") {
+		t.Fatalf("message=%q", message.Content)
 	}
 }
 
