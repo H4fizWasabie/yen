@@ -37,6 +37,14 @@ the existing Yen context files. TypeScript authority:
 `TestContextMessageLoadsTheosesPersonaAtEachScope`; broader resource-loader
 diagnostics and extension discovery remain open.
 
+Dropped-memory distillation now retries transient provider failures with the
+same bounded exponential policy as the oracle's compaction path, while leaving
+non-transient failures best-effort and non-blocking. TypeScript authority:
+`packages/coding-agent/src/core/compaction/compaction.ts:816-879`. Go evidence:
+`internal/memory/distillation.go` and
+`TestDistillMemoryRetriesTransientProviderFailure`; channel retry UI remains
+open.
+
 Assistant calls now retry bounded transient provider failures independently of
 provider HTTP retries, using the oracle's default three attempts and
 exponential two-second base delay. Context-overflow, quota, and billing errors

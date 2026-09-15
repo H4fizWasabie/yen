@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 )
 
 type DistilledFact struct {
@@ -19,6 +21,8 @@ type DistilledMemory struct {
 	Facts   []DistilledFact
 	Episode string
 }
+
+var distillationRetryDelay = 2 * time.Second
 
 // DistillMemory extracts durable facts from messages that are leaving context.
 // It mirrors Theoses' best-effort compaction safety net: provider failures return
@@ -43,7 +47,7 @@ func DistillMemory(ctx context.Context, provider agent.Provider, turns []Consoli
 		`[{"fact":"one durable fact","confidence":0.0},{"episode":"one sentence describing this batch"}]` +
 		" Keep only facts worth remembering in a month; confidence must be at least 0.85.\n<conversation>\n" +
 		transcript.String() + "</conversation>"
-	response, err := provider.Next(ctx, []agent.Message{{Role: "user", Content: prompt}}, nil)
+	response, err := retryDistillationCall(ctx, provider, []agent.Message{{Role: "user", Content: prompt}})
 	if err != nil {
 		return DistilledMemory{}, err
 	}
@@ -51,6 +55,27 @@ func DistillMemory(ctx context.Context, provider agent.Provider, turns []Consoli
 		return DistilledMemory{}, fmt.Errorf("distillation stopped: %s", response.StopReason)
 	}
 	return ParseDistillationResponse(response.Text)
+}
+
+func retryDistillationCall(ctx context.Context, provider agent.Provider, messages []agent.Message) (agent.Response, error) {
+	for attempt := 0; ; attempt++ {
+		response, err := provider.Next(ctx, messages, nil)
+		if err == nil || attempt >= consolidationMaxRetries || !providerpkg.IsRetryableProviderError(err.Error()) {
+			return response, err
+		}
+		timer := time.NewTimer(distillationRetryDelay * time.Duration(1<<attempt))
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return agent.Response{}, ctx.Err()
+		}
+	}
 }
 
 func ParseDistillationResponse(raw string) (DistilledMemory, error) {
