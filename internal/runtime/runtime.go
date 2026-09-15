@@ -15,18 +15,20 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 type Runner struct {
-	Queue            *conversation.Queue
-	Provider         agent.Provider
-	ToolFactory      func(workspace string) []agent.Tool
-	SessionPath      func(turn conversation.Turn) string
-	Checkpoints      *memory.Checkpoints
-	Memory           *memory.Engine
-	SharedMemory     bool
-	AutoCompactTurns int
+	Queue                 *conversation.Queue
+	Provider              agent.Provider
+	ToolFactory           func(workspace string) []agent.Tool
+	SessionPath           func(turn conversation.Turn) string
+	Checkpoints           *memory.Checkpoints
+	Memory                *memory.Engine
+	SharedMemory          bool
+	AutoCompactTurns      int
+	AutoCompactOnOverflow bool
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -43,6 +45,11 @@ func AutoCompactTurnsFromEnv() int {
 		return 0
 	}
 	return value
+}
+
+func AutoCompactOnOverflowFromEnv() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_OVERFLOW")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func (r *Runner) Submit(link conversation.Link, prompt string) (conversation.Turn, error) {
@@ -280,6 +287,20 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 	}
 	tools = append(tools, recallTurnsTool{history: history})
 	result, runErr := agent.RunFromWithQueues(ctx, r.Provider, tools, history, turn.Prompt, queues, onUpdate)
+	if runErr != nil && r.AutoCompactOnOverflow && providerpkg.IsContextOverflowError(runErr.Error()) {
+		keepRecentTurns := r.AutoCompactTurns
+		if keepRecentTurns < 1 {
+			keepRecentTurns = 2
+		}
+		if compactErr := r.compactConversation(ctx, turn.ConversationID, keepRecentTurns); compactErr == nil {
+			current, err = openOrCreate(path, turn)
+			if err != nil {
+				return result, err
+			}
+			history = toAgentMessages(current.ContextMessages())
+			result, runErr = agent.RunFromWithQueues(ctx, r.Provider, tools, history, turn.Prompt, queues, onUpdate)
+		}
+	}
 	for _, message := range result.Messages[len(history):] {
 		if _, err := current.Append(toSessionMessage(message)); err != nil {
 			return result, err

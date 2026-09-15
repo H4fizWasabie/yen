@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -121,7 +122,11 @@ func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent
 			retryable = false
 		}
 		if !retryable || attempt >= p.MaxRetries {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
 			response.Body.Close()
+			if len(body) > 0 {
+				return agent.Response{}, fmt.Errorf("openai completions returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+			}
 			return agent.Response{}, fmt.Errorf("openai completions returned %s", response.Status)
 		}
 		response.Body.Close()
