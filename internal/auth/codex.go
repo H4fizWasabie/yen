@@ -33,6 +33,11 @@ func LoginOpenAICodexDevice(ctx context.Context, notify func(string)) (Credentia
 	return loginOpenAICodexDevice(ctx, http.DefaultClient, notify, codexDeviceUserCode, codexDeviceToken, codexTokenURL, codexDeviceURL)
 }
 
+// RefreshOpenAICodex exchanges a stored refresh token for a new OAuth credential.
+func RefreshOpenAICodex(ctx context.Context, refresh string) (Credential, error) {
+	return refreshOpenAICodex(ctx, &http.Client{Timeout: 10 * time.Second}, codexTokenURL, refresh)
+}
+
 func loginOpenAICodexDevice(ctx context.Context, client *http.Client, notify func(string), userCodeURL, deviceTokenURL, tokenURL, verificationURL string) (Credential, error) {
 	device, err := requestCodexDevice(ctx, client, userCodeURL)
 	if err != nil {
@@ -163,8 +168,37 @@ func exchangeCodexCode(ctx context.Context, client *http.Client, endpoint, code,
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&token); err != nil {
 		return Credential{}, err
 	}
-	if token.Access == "" || token.Refresh == "" {
+	if token.Access == "" || token.Refresh == "" || token.Expires <= 0 {
 		return Credential{}, fmt.Errorf("invalid openai codex token response")
+	}
+	return Credential{Type: "oauth", Access: token.Access, Refresh: token.Refresh, Expires: time.Now().UnixMilli() + token.Expires*1000}, nil
+}
+
+func refreshOpenAICodex(ctx context.Context, client *http.Client, endpoint, refresh string) (Credential, error) {
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {codexClientID}}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBufferString(form.Encode()))
+	if err != nil {
+		return Credential{}, err
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := client.Do(request)
+	if err != nil {
+		return Credential{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return Credential{}, fmt.Errorf("openai codex token refresh failed with status %s", response.Status)
+	}
+	var token struct {
+		Access  string `json:"access_token"`
+		Refresh string `json:"refresh_token"`
+		Expires int64  `json:"expires_in"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&token); err != nil {
+		return Credential{}, err
+	}
+	if token.Access == "" || token.Refresh == "" || token.Expires <= 0 {
+		return Credential{}, fmt.Errorf("invalid openai codex token refresh response")
 	}
 	return Credential{Type: "oauth", Access: token.Access, Refresh: token.Refresh, Expires: time.Now().UnixMilli() + token.Expires*1000}, nil
 }

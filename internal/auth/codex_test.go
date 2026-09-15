@@ -42,3 +42,17 @@ func TestLoginOpenAICodexDevice(t *testing.T) {
 		t.Fatalf("credential=%#v message=%q", credential, message)
 	}
 }
+
+func TestRefreshOpenAICodex(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil || r.Form.Get("grant_type") != "refresh_token" || r.Form.Get("refresh_token") != "old-refresh" {
+			t.Fatalf("form=%v err=%v", r.Form, err)
+		}
+		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"new-refresh","expires_in":60}`))
+	}))
+	defer server.Close()
+	credential, err := refreshOpenAICodex(context.Background(), server.Client(), server.URL, "old-refresh")
+	if err != nil || credential.Access != "new-access" || credential.Refresh != "new-refresh" || credential.Expires <= 0 {
+		t.Fatalf("credential=%#v err=%v", credential, err)
+	}
+}

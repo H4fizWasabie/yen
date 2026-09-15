@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/auth"
@@ -221,7 +222,7 @@ func radiusConfigured(model string) TheosesMessages {
 func codexConfigured(model string) (OpenAIResponses, error) {
 	token := os.Getenv("YEN_OPENAI_CODEX_ACCESS_TOKEN")
 	if token == "" {
-		token = storedCredentialKey("openai-codex")
+		token = storedCodexAccessToken()
 	}
 	if token == "" {
 		return OpenAIResponses{}, errors.New("openai codex access token is required")
@@ -244,6 +245,28 @@ func codexConfigured(model string) (OpenAIResponses, error) {
 	}
 	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 	return client, nil
+}
+
+func storedCodexAccessToken() string {
+	path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+	if path == "" {
+		return ""
+	}
+	store := auth.Open(path)
+	credential, ok, err := store.Read("openai-codex")
+	if err != nil || !ok {
+		return ""
+	}
+	if credential.Type != "oauth" {
+		return credential.Key
+	}
+	if credential.Expires > 0 && credential.Expires <= time.Now().UnixMilli() && credential.Refresh != "" {
+		if refreshed, refreshErr := auth.RefreshOpenAICodex(context.Background(), credential.Refresh); refreshErr == nil {
+			credential = refreshed
+			_, _ = store.Modify("openai-codex", func(*auth.Credential) (*auth.Credential, error) { return &credential, nil })
+		}
+	}
+	return credential.Access
 }
 
 func nativeResponsesConfigured(providerID, model string) OpenAIResponses {
