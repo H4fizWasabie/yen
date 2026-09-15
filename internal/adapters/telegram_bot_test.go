@@ -143,11 +143,13 @@ func TestTelegramBotReportsToolStatus(t *testing.T) {
 }
 
 type replyCaptureProvider struct {
-	seen string
+	seen   string
+	images []string
 }
 
 func (p *replyCaptureProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
 	p.seen = messages[len(messages)-1].Content
+	p.images = messages[len(messages)-1].Images
 	return agent.Response{Text: "reply answer", StopReason: "stop"}, nil
 }
 
@@ -453,6 +455,42 @@ func TestTelegramBotStoresDocumentAttachmentForReadTool(t *testing.T) {
 	}
 	if string(data) != "attachment contents" || !strings.Contains(note, filepath.Join(dir, "report.txt")) {
 		t.Fatalf("data=%q note=%q", data, note)
+	}
+}
+
+func TestTelegramBotPassesPhotoToProviderAsImageContent(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &replyCaptureProvider{}
+	runner := runtime.New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottoken/getFile":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_path":"photos/photo.jpg"}}`))
+		case "/file/bottoken/photos/photo.jpg":
+			_, _ = w.Write([]byte("jpeg bytes"))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL, ArtifactDir: filepath.Join(dir, "artifacts")}
+	update := telegramUpdate{Message: &telegramMessage{MessageID: 4, Caption: "inspect this"}}
+	update.Message.Chat.ID = 42
+	update.Message.Photo = []telegramPhoto{{FileID: "photo-1"}}
+	if err := bot.HandleUpdate(context.Background(), update); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.images) != 1 || !strings.HasPrefix(provider.images[0], "data:image/jpeg;base64,") {
+		t.Fatalf("images=%#v", provider.images)
 	}
 }
 

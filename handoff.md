@@ -112,7 +112,8 @@ cookie, and health requests. Theoses2 dashboard configuration was untouched.
 
 Telegram photos/documents and common media now download through bounded Bot API
 calls into `/var/lib/yen/telegram-artifacts`; the prompt points the existing
-read tool at the saved file. Multimodal provider delivery remains deferred.
+read tool at the saved file. Photos also survive into OpenAI-compatible image
+content parts; live attachment acceptance still requires an incoming user file.
 See [docs/M7-PILOT-READINESS.md](docs/M7-PILOT-READINESS.md),
 [docs/M9-OPERATIONS.md](docs/M9-OPERATIONS.md), and
 [docs/M10-PARITY-REPORT.md](docs/M10-PARITY-REPORT.md).

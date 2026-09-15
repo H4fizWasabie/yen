@@ -16,7 +16,7 @@ import (
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    string           `json:"content,omitempty"`
+	Content    any              `json:"content,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
@@ -292,7 +292,18 @@ func retryDelay(header http.Header, attempt int) time.Duration {
 func convertMessages(messages []agent.Message) []openAIMessage {
 	converted := make([]openAIMessage, 0, len(messages))
 	for _, message := range messages {
-		convertedMessage := openAIMessage{Role: message.Role, Content: message.Content, ToolCallID: message.ToolCallID}
+		var content any = message.Content
+		if len(message.Images) > 0 {
+			parts := make([]map[string]any, 0, len(message.Images)+1)
+			if message.Content != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": message.Content})
+			}
+			for _, image := range message.Images {
+				parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}})
+			}
+			content = parts
+		}
+		convertedMessage := openAIMessage{Role: message.Role, Content: content, ToolCallID: message.ToolCallID}
 		for _, call := range message.ToolCalls {
 			arguments, _ := json.Marshal(call.Args)
 			toolCall := openAIToolCall{ID: call.ID, Type: "function"}

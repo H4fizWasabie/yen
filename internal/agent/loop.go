@@ -8,6 +8,7 @@ import (
 type Message struct {
 	Role       string
 	Content    string
+	Images     []string
 	ToolCalls  []ToolCall
 	ToolCallID string
 	StopReason string
@@ -137,12 +138,20 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 }
 
 func RunFromWithQueuesAndEvents(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
-	return runFromWithQueues(ctx, provider, tools, history, prompt, queues, onUpdate, onEvent)
+	return RunFromWithQueuesAndEventsAndImages(ctx, provider, tools, history, prompt, nil, queues, onUpdate, onEvent)
+}
+
+func RunFromWithQueuesAndEventsAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
+	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent)
 }
 
 func runFromWithQueues(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
+	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, nil, queues, onUpdate, onEvent)
+}
+
+func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
 	result := Result{Messages: append([]Message(nil), history...), Events: []string{"agent_start"}}
-	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt})
+	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt, Images: images})
 	result.Events = append(result.Events, "turn_start", "message_start:user", "message_end:user")
 
 	toolMap := make(map[string]Tool, len(tools))

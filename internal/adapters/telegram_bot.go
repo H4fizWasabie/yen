@@ -3,6 +3,7 @@ package adapters
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,6 +68,14 @@ type telegramFile struct {
 	FileName string `json:"file_name"`
 	MimeType string `json:"mime_type"`
 }
+
+func (m *telegramMessage) DocumentMimeType() string {
+	if m != nil && m.Document != nil {
+		return m.Document.MimeType
+	}
+	return ""
+}
+
 type telegramResponse struct {
 	OK          bool            `json:"ok"`
 	Result      json.RawMessage `json:"result"`
@@ -125,7 +134,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	b.loadToolDetail()
 	chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
 	text := strings.TrimSpace(telegramMessageText(update.Message))
-	attachmentNote, err := b.storeAttachment(ctx, update.Message)
+	attachmentNote, image, err := b.storeAttachmentWithImage(ctx, update.Message)
 	if err != nil {
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
@@ -162,7 +171,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	}
 	var statusMessageID int64
 	stopTyping := b.startTyping(ctx, chatID)
-	result, err := b.Adapter.HandleMessageWithReplyEvents(ctx, chatID, text, replyContext, func(event agent.Event) {
+	result, err := b.Adapter.HandleMessageWithImagesEvents(ctx, chatID, text, replyContext, image, func(event agent.Event) {
 		if event.Type == "tool_call" && event.Name != "" {
 			b.toolMu.Lock()
 			detail := b.toolDetail
@@ -229,8 +238,13 @@ func (b *TelegramBot) saveToolDetail() {
 }
 
 func (b *TelegramBot) storeAttachment(ctx context.Context, message *telegramMessage) (string, error) {
+	note, _, err := b.storeAttachmentWithImage(ctx, message)
+	return note, err
+}
+
+func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *telegramMessage) (string, string, error) {
 	if b.ArtifactDir == "" {
-		return "", nil
+		return "", "", nil
 	}
 	fileID, name, kind := "", "attachment", "media"
 	if len(message.Photo) > 0 {
@@ -260,19 +274,23 @@ func (b *TelegramBot) storeAttachment(ctx context.Context, message *telegramMess
 		}
 	}
 	if fileID == "" {
-		return "", nil
+		return "", "", nil
 	}
-	path, err := b.downloadAttachment(ctx, fileID, name)
+	path, data, err := b.downloadAttachment(ctx, fileID, name)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return fmt.Sprintf("User sent a %s; it was stored at `%s`. Use the read tool if needed.", kind, path), nil
+	image := ""
+	if kind == "photo" || strings.HasPrefix(message.DocumentMimeType(), "image/") {
+		image = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(data)
+	}
+	return fmt.Sprintf("User sent a %s; it was stored at `%s`. Use the read tool if needed.", kind, path), image, nil
 }
 
-func (b *TelegramBot) downloadAttachment(ctx context.Context, fileID, name string) (string, error) {
+func (b *TelegramBot) downloadAttachment(ctx context.Context, fileID, name string) (string, []byte, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/getFile?file_id="+url.QueryEscape(fileID), nil)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	client := b.Client
 	if client == nil {
@@ -280,11 +298,11 @@ func (b *TelegramBot) downloadAttachment(ctx context.Context, fileID, name strin
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("telegram getFile returned %s", response.Status)
+		return "", nil, fmt.Errorf("telegram getFile returned %s", response.Status)
 	}
 	var result struct {
 		OK     bool `json:"ok"`
@@ -294,39 +312,39 @@ func (b *TelegramBot) downloadAttachment(ctx context.Context, fileID, name strin
 		Description string `json:"description"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if !result.OK || result.Result.FilePath == "" {
-		return "", errors.New(result.Description)
+		return "", nil, errors.New(result.Description)
 	}
 	downloadURL := strings.TrimRight(b.APIBase, "/") + "/file/bot" + url.PathEscape(b.Token) + "/" + result.Result.FilePath
 	request, err = http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	response, err = client.Do(request)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("telegram file download returned %s", response.Status)
+		return "", nil, fmt.Errorf("telegram file download returned %s", response.Status)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, telegramDownloadMaxBytes+1))
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(data) > telegramDownloadMaxBytes {
-		return "", errors.New("telegram file is too large")
+		return "", nil, errors.New("telegram file is too large")
 	}
 	if err := os.MkdirAll(b.ArtifactDir, 0700); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	path := filepath.Join(b.ArtifactDir, filepath.Base(name))
 	if err := os.WriteFile(path, data, 0600); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return path, nil
+	return path, data, nil
 }
 
 func telegramToolDetailToggle(text string) (bool, bool) {

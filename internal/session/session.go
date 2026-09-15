@@ -59,13 +59,14 @@ type CompactionPlan struct {
 }
 
 type Message struct {
-	Role       string `json:"role"`
-	Content    any    `json:"content"`
-	ToolCallID string `json:"toolCallId,omitempty"`
-	StopReason string `json:"stopReason,omitempty"`
-	Provider   string `json:"provider,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Usage      *Usage `json:"usage,omitempty"`
+	Role       string   `json:"role"`
+	Content    any      `json:"content"`
+	Images     []string `json:"images,omitempty"`
+	ToolCallID string   `json:"toolCallId,omitempty"`
+	StopReason string   `json:"stopReason,omitempty"`
+	Provider   string   `json:"provider,omitempty"`
+	Model      string   `json:"model,omitempty"`
+	Usage      *Usage   `json:"usage,omitempty"`
 }
 
 type sessionEntry struct {

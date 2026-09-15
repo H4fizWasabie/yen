@@ -74,25 +74,33 @@ func (r *Runner) RunNextWithUpdates(ctx context.Context, conversationID string, 
 }
 
 func (r *Runner) RunSubmitted(ctx context.Context, submitted conversation.Turn) (conversation.Turn, agent.Result, error) {
-	return r.runSubmitted(ctx, submitted, nil, nil)
+	return r.runSubmitted(ctx, submitted, nil, nil, nil)
 }
 
 func (r *Runner) RunSubmittedWithUpdates(ctx context.Context, submitted conversation.Turn, onUpdate func(string)) (conversation.Turn, agent.Result, error) {
-	return r.runSubmitted(ctx, submitted, onUpdate, nil)
+	return r.runSubmitted(ctx, submitted, nil, onUpdate, nil)
 }
 
 func (r *Runner) RunSubmittedWithEvents(ctx context.Context, submitted conversation.Turn, onUpdate func(string), onEvent agent.EventFunc) (conversation.Turn, agent.Result, error) {
-	return r.runSubmitted(ctx, submitted, onUpdate, onEvent)
+	return r.RunSubmittedWithEventsAndImages(ctx, submitted, nil, onUpdate, onEvent)
 }
 
-func (r *Runner) runSubmitted(ctx context.Context, submitted conversation.Turn, onUpdate func(string), onEvent agent.EventFunc) (conversation.Turn, agent.Result, error) {
+func (r *Runner) RunSubmittedWithEventsAndImages(ctx context.Context, submitted conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (conversation.Turn, agent.Result, error) {
+	return r.runSubmitted(ctx, submitted, images, onUpdate, onEvent)
+}
+
+func (r *Runner) runSubmitted(ctx context.Context, submitted conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (conversation.Turn, agent.Result, error) {
 	for {
 		turn, ok, err := r.Queue.Claim(submitted.ConversationID)
 		if err != nil {
 			return conversation.Turn{}, agent.Result{}, err
 		}
 		if ok {
-			result, runErr := r.runClaimed(ctx, turn, onUpdate, onEvent)
+			turnImages := images
+			if turn.ID != submitted.ID {
+				turnImages = nil
+			}
+			result, runErr := r.runClaimed(ctx, turn, turnImages, onUpdate, onEvent)
 			if turn.ID == submitted.ID || runErr != nil {
 				return turn, result, runErr
 			}
@@ -114,11 +122,11 @@ func (r *Runner) runNext(ctx context.Context, conversationID string, onUpdate fu
 	if !ok {
 		return conversation.Turn{}, agent.Result{}, errors.New("no pending turn")
 	}
-	result, runErr := r.runClaimed(ctx, turn, onUpdate, nil)
+	result, runErr := r.runClaimed(ctx, turn, nil, onUpdate, nil)
 	return turn, result, runErr
 }
 
-func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
+func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	turnCtx, cancel := context.WithCancel(ctx)
 	queues := &agent.MessageQueues{}
 	r.mu.Lock()
@@ -158,7 +166,7 @@ func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, onUpdat
 		delete(r.queues, turn.ID)
 		r.mu.Unlock()
 	}()
-	result, runErr := r.runTurn(turnCtx, turn, queues, onUpdate, onEvent)
+	result, runErr := r.runTurn(turnCtx, turn, images, queues, onUpdate, onEvent)
 	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
 		_ = r.Queue.Cancel(turn.ID)
 	} else {
@@ -270,7 +278,7 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 	return err
 }
 
-func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
+func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	path := r.pathFor(turn)
 	current, err := openOrCreate(path, turn)
 	if err != nil {
@@ -296,7 +304,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})
-	result, runErr := agent.RunFromWithQueuesAndEvents(ctx, r.Provider, tools, history, turn.Prompt, queues, onUpdate, onEvent)
+	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
 	if runErr != nil && r.AutoCompactOnOverflow && providerpkg.IsContextOverflowError(runErr.Error()) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
@@ -308,7 +316,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 				return result, err
 			}
 			history = toAgentMessages(current.ContextMessages())
-			result, runErr = agent.RunFromWithQueuesAndEvents(ctx, r.Provider, tools, history, turn.Prompt, queues, onUpdate, onEvent)
+			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
 		}
 	}
 	for _, message := range result.Messages[len(history):] {
@@ -363,7 +371,7 @@ func openOrCreate(path string, turn conversation.Turn) (*session.Session, error)
 func toAgentMessages(messages []session.Message) []agent.Message {
 	result := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
-		converted := agent.Message{Role: message.Role, ToolCallID: message.ToolCallID, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model}
+		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model}
 		if message.Usage != nil {
 			converted.Usage = &agent.Usage{
 				Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
@@ -421,5 +429,5 @@ func toSessionMessage(message agent.Message) session.Message {
 		}
 		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
 	}
-	return session.Message{Role: message.Role, Content: message.Content, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
+	return session.Message{Role: message.Role, Content: message.Content, Images: message.Images, StopReason: message.StopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
 }

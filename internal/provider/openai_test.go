@@ -186,6 +186,30 @@ func TestOpenAICompletionsSendsReadToolSchema(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsSendsImageContentParts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []struct {
+				Content any `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		parts, ok := payload.Messages[0].Content.([]any)
+		if !ok || len(parts) != 2 || parts[0].(map[string]any)["text"] != "look" || parts[1].(map[string]any)["type"] != "image_url" {
+			t.Fatalf("content=%#v", payload.Messages[0].Content)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"seen"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	_, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{"data:image/jpeg;base64,AA=="}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompletionsRejectsStreamWithoutFinishReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

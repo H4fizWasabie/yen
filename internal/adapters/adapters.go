@@ -54,14 +54,22 @@ func (a Telegram) HandleMessage(ctx context.Context, chatID, text string) (agent
 }
 
 func (a Telegram) HandleMessageWithReply(ctx context.Context, chatID, text, replyContext string) (agent.Result, error) {
-	return a.handleMessageWithReply(ctx, chatID, text, replyContext, nil)
+	return a.handleMessageWithReply(ctx, chatID, text, replyContext, nil, nil)
 }
 
 func (a Telegram) HandleMessageWithReplyEvents(ctx context.Context, chatID, text, replyContext string, onEvent agent.EventFunc) (agent.Result, error) {
-	return a.handleMessageWithReply(ctx, chatID, text, replyContext, onEvent)
+	return a.handleMessageWithReply(ctx, chatID, text, replyContext, nil, onEvent)
 }
 
-func (a Telegram) handleMessageWithReply(ctx context.Context, chatID, text, replyContext string, onEvent agent.EventFunc) (agent.Result, error) {
+func (a Telegram) HandleMessageWithImagesEvents(ctx context.Context, chatID, text, replyContext, image string, onEvent agent.EventFunc) (agent.Result, error) {
+	var images []string
+	if image != "" {
+		images = []string{image}
+	}
+	return a.handleMessageWithReply(ctx, chatID, text, replyContext, images, onEvent)
+}
+
+func (a Telegram) handleMessageWithReply(ctx context.Context, chatID, text, replyContext string, images []string, onEvent agent.EventFunc) (agent.Result, error) {
 	if replyContext != "" {
 		if len([]rune(replyContext)) > 2000 {
 			replyContext = string([]rune(replyContext)[:2000])
@@ -76,7 +84,7 @@ func (a Telegram) handleMessageWithReply(ctx context.Context, chatID, text, repl
 	if err != nil {
 		return agent.Result{}, err
 	}
-	_, result, err := a.Service.Runner.RunSubmittedWithEvents(ctx, turn, nil, onEvent)
+	_, result, err := a.Service.Runner.RunSubmittedWithEventsAndImages(ctx, turn, images, nil, onEvent)
 	return result, err
 }
 
