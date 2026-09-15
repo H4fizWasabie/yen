@@ -159,6 +159,16 @@ func TestParseConsolidationResponseRequiresEpisodeObject(t *testing.T) {
 	}
 }
 
+func TestParseConsolidationResponseRepairsTrailingCommasOutsideStrings(t *testing.T) {
+	parsed, err := parseConsolidationResponse(`{"facts":[{"id":"f1","subject":"comma ,} stays",},],"episode":{"summary":"window","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z",},}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Facts) != 1 || parsed.Facts[0].Subject != "comma ,} stays" {
+		t.Fatalf("facts=%#v", parsed.Facts)
+	}
+}
+
 func TestEngineConsolidatesOnlyWhenTriggeredAndTracksSeparateState(t *testing.T) {
 	engine, err := OpenEngine(t.TempDir())
 	if err != nil {

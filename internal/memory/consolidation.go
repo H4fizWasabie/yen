@@ -219,12 +219,18 @@ func parseConsolidationResponse(raw string) (struct {
 		cleaned = cleaned[start : end+1]
 	}
 	if err := json.Unmarshal([]byte(cleaned), &envelope); err != nil {
+		repaired := stripTrailingCommas(cleaned)
+		if repaired != cleaned && json.Unmarshal([]byte(repaired), &envelope) == nil {
+			goto parsed
+		}
 		return struct {
 			Facts   []ConsolidatedFact
 			Edges   []ConsolidatedEdge
 			Episode ConsolidatedEpisode
 		}{}, fmt.Errorf("consolidation JSON: %w", err)
 	}
+
+parsed:
 	if len(envelope.Episode) == 0 || string(envelope.Episode) == "null" {
 		return struct {
 			Facts   []ConsolidatedFact
@@ -298,4 +304,42 @@ func parseConsolidationResponse(raw string) (struct {
 		Edges   []ConsolidatedEdge
 		Episode ConsolidatedEpisode
 	}{Facts: facts, Edges: edges, Episode: ConsolidatedEpisode{Summary: episode.Summary, StartedAt: episode.StartedAt, EndedAt: episode.EndedAt, RelatedSemanticNodeIDs: related}}, nil
+}
+
+// stripTrailingCommas repairs the near-miss JSON commonly emitted by models
+// without changing commas that occur inside string values.
+func stripTrailingCommas(text string) string {
+	var out strings.Builder
+	out.Grow(len(text))
+	inString, escaped := false, false
+	for i := 0; i < len(text); i++ {
+		char := text[i]
+		if inString {
+			out.WriteByte(char)
+			if escaped {
+				escaped = false
+			} else if char == '\\' {
+				escaped = true
+			} else if char == '"' {
+				inString = false
+			}
+			continue
+		}
+		if char == '"' {
+			inString = true
+			out.WriteByte(char)
+			continue
+		}
+		if char == ',' {
+			j := i + 1
+			for j < len(text) && strings.ContainsRune(" \t\r\n", rune(text[j])) {
+				j++
+			}
+			if j < len(text) && (text[j] == '}' || text[j] == ']') {
+				continue
+			}
+		}
+		out.WriteByte(char)
+	}
+	return out.String()
 }
