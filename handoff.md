@@ -29,6 +29,10 @@ the pinned TypeScript branch-path behavior. The v2 branch fixture proves that
 an earlier sibling is excluded from the runtime context; the durable read-back
 still retains both siblings.
 
+Dashboard session GET now includes the TypeScript UI contract (`session`,
+`history`, and `runtime`) while retaining the earlier `messages` field for
+pilot clients. The response is covered by the dashboard HTTP test.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

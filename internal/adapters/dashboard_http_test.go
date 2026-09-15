@@ -136,8 +136,11 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&readback); err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != http.StatusOK || len(readback["messages"].([]any)) != 2 {
+	if response.StatusCode != http.StatusOK || len(readback["messages"].([]any)) != 2 || len(readback["history"].([]any)) != 2 {
 		t.Fatalf("readback=%#v status=%d", readback, response.StatusCode)
+	}
+	if _, ok := readback["runtime"].(map[string]any); !ok {
+		t.Fatalf("runtime readback=%#v", readback["runtime"])
 	}
 	if episodes, err := runner.Memory.Episodic.Recent(link.ConversationID, 8); err != nil || len(episodes) != 1 {
 		t.Fatalf("dashboard episodes=%#v err=%v", episodes, err)

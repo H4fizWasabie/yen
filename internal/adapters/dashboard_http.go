@@ -3,12 +3,14 @@ package adapters
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 type DashboardHTTP struct {
@@ -212,7 +214,14 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": openErr.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"conversationId": id, "messages": session.Messages()})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"session": map[string]any{"id": id, "channel": "dashboard", "title": id, "messageCount": len(session.Messages())},
+			"history": dashboardHistory(session.Messages()),
+			"runtime": dashboardRuntime(session.Messages()),
+			// Keep the early Go pilot response available to non-UI clients.
+			"conversationId": id,
+			"messages":       session.Messages(),
+		})
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	}
@@ -222,6 +231,85 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func dashboardHistory(messages []session.Message) []map[string]any {
+	history := make([]map[string]any, 0)
+	for _, message := range messages {
+		if message.Role == "user" {
+			history = append(history, map[string]any{"role": "user", "segments": []map[string]any{{"type": "text", "text": contentText(message.Content)}}})
+			continue
+		}
+		if message.Role == "assistant" {
+			turn := map[string]any{"role": "assistant", "segments": assistantSegments(message.Content), "usage": usageSummary(message.Usage)}
+			history = append(history, turn)
+			continue
+		}
+		if message.Role == "toolResult" {
+			segment := map[string]any{"type": "tool_result", "id": message.ToolCallID, "name": "", "result": contentText(message.Content), "isError": strings.HasPrefix(contentText(message.Content), "Tool error:")}
+			if len(history) > 0 && history[len(history)-1]["role"] == "assistant" {
+				history[len(history)-1]["segments"] = append(history[len(history)-1]["segments"].([]map[string]any), segment)
+			}
+		}
+	}
+	return history
+}
+
+func assistantSegments(content any) []map[string]any {
+	parts, ok := content.([]session.ContentPart)
+	if !ok {
+		return []map[string]any{{"type": "text", "text": contentText(content)}}
+	}
+	segments := make([]map[string]any, 0, len(parts))
+	for _, part := range parts {
+		if part.Type == "toolCall" {
+			args, _ := part.Arguments.(map[string]any)
+			segments = append(segments, map[string]any{"type": "tool_call", "id": part.ID, "name": part.Name, "args": args})
+		} else if part.Type == "text" {
+			segments = append(segments, map[string]any{"type": "text", "text": part.Text})
+		}
+	}
+	return segments
+}
+
+func contentText(content any) string {
+	if text, ok := content.(string); ok {
+		return text
+	}
+	parts, ok := content.([]session.ContentPart)
+	if !ok {
+		return fmt.Sprint(content)
+	}
+	var result strings.Builder
+	for _, part := range parts {
+		if part.Type == "text" {
+			result.WriteString(part.Text)
+		}
+	}
+	return result.String()
+}
+
+func usageSummary(usage *session.Usage) map[string]any {
+	if usage == nil {
+		return nil
+	}
+	return map[string]any{"input": usage.Input, "output": usage.Output, "totalTokens": usage.TotalTokens, "cost": 0}
+}
+
+func dashboardRuntime(messages []session.Message) map[string]any {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			return map[string]any{"provider": nullableString(messages[i].Provider), "modelId": nullableString(messages[i].Model), "thinkingLevel": "", "lastUsage": usageSummary(messages[i].Usage)}
+		}
+	}
+	return map[string]any{"provider": nil, "modelId": nil, "thinkingLevel": "", "lastUsage": nil}
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func mustJSON(value any) string { data, _ := json.Marshal(value); return string(data) }
