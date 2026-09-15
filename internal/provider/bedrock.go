@@ -163,9 +163,7 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 			result.StopReason = bedrockStopReason(string(event.Value.StopReason))
 		case *bedrocktypes.ConverseStreamOutputMemberMetadata:
 			if usage := event.Value.Usage; usage != nil {
-				result.Usage.Input = int(aws.ToInt32(usage.InputTokens))
-				result.Usage.Output = int(aws.ToInt32(usage.OutputTokens))
-				result.Usage.TotalTokens = int(aws.ToInt32(usage.TotalTokens))
+				applyBedrockUsage(&result, usage)
 			}
 		}
 	}
@@ -208,6 +206,17 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 		emit(agent.StreamEvent{Type: "done", Partial: partial})
 	}
 	return result, nil
+}
+
+func applyBedrockUsage(result *agent.Response, usage *bedrocktypes.TokenUsage) {
+	result.Usage.Input = int(aws.ToInt32(usage.InputTokens))
+	result.Usage.Output = int(aws.ToInt32(usage.OutputTokens))
+	result.Usage.CacheRead = int(aws.ToInt32(usage.CacheReadInputTokens))
+	result.Usage.CacheWrite = int(aws.ToInt32(usage.CacheWriteInputTokens))
+	result.Usage.TotalTokens = int(aws.ToInt32(usage.TotalTokens))
+	if result.Usage.TotalTokens == 0 {
+		result.Usage.TotalTokens = result.Usage.Input + result.Usage.Output + result.Usage.CacheRead + result.Usage.CacheWrite
+	}
 }
 
 func (p BedrockConverse) awsConfig(ctx context.Context) (aws.Config, error) {
