@@ -157,6 +157,38 @@ func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
 	}
 }
 
+func TestMistralParsesThinkingChunksAndNormalizesToolIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []struct {
+				ToolCallID string `json:"tool_call_id"`
+				ToolCalls  []struct {
+					ID string `json:"id"`
+				} `json:"tool_calls"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Messages) != 2 || len(payload.Messages[0].ToolCalls) != 1 || len(payload.Messages[0].ToolCalls[0].ID) != 9 || len(payload.Messages[1].ToolCallID) != 9 || payload.Messages[0].ToolCalls[0].ID != payload.Messages[1].ToolCallID {
+			t.Fatalf("messages=%#v", payload.Messages)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"plan"}]},{"type":"text","text":"answer"}]},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompletions(server.URL, "", "mistral-model")
+	client.ProviderName = "mistral"
+	result, err := client.Next(context.Background(), []agent.Message{
+		{Role: "assistant", ToolCalls: []agent.ToolCall{{ID: "call-with-too-many-chars", Name: "read", Args: map[string]any{"path": "x"}}}},
+		{Role: "tool", ToolCallID: "call-with-too-many-chars", Content: "done"},
+	}, nil)
+	if err != nil || result.Thinking != "plan" || result.Text != "answer" || result.StopReason != "stop" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestOpenAICompletionsReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provider failed", http.StatusBadGateway)
