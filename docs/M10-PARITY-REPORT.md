@@ -34,6 +34,13 @@ and serialized reasoning-item signature for stateless multi-turn replay. Go
 evidence: `internal/provider/responses.go` and
 `TestOpenAIResponsesPersistsReasoningItemSignature`.
 
+Captionless Telegram document guidance now names `convert_doc`, matching the
+oracle's `noteFor` prompt and the tool intended for stored document artifacts.
+TypeScript authority: `packages/telegram/src/index.ts:536-542`; Go evidence:
+`internal/adapters/telegram_bot.go` and
+`TestTelegramBotAttachmentNoteIncludesDocumentMetadata`. The focused test and
+full 362-test race/vet/diff gates pass.
+
 ## Checkpoint update: 2026-09-15
 
 Assistant calls now retry bounded transient provider failures independently of
