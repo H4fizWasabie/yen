@@ -1,10 +1,13 @@
 package codingagent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 func TestWorkingNoteMessageBoundsAndLabelsNote(t *testing.T) {
@@ -20,6 +23,23 @@ func TestWorkingNoteMessageBoundsAndLabelsNote(t *testing.T) {
 		t.Fatalf("content=%q", message.Content)
 	}
 }
+
+func TestSystemPromptMessageMatchesProductBaseline(t *testing.T) {
+	message := SystemPromptMessage("/work/project", []agent.Tool{testPromptTool{name: "read"}, testPromptTool{name: "bash"}, testPromptTool{name: "read"}})
+	for _, want := range []string{"You are Yen", "Available tools:", "- read", "- bash", "Be concise", "Current working directory: /work/project"} {
+		if !strings.Contains(message.Content, want) {
+			t.Fatalf("system prompt missing %q: %s", want, message.Content)
+		}
+	}
+	if strings.Count(message.Content, "- read") != 1 || message.Role != "system" {
+		t.Fatalf("system prompt=%#v", message)
+	}
+}
+
+type testPromptTool struct{ name string }
+
+func (t testPromptTool) Name() string                                          { return t.name }
+func (testPromptTool) Execute(context.Context, map[string]any) (string, error) { return "", nil }
 
 func TestContextMessageLoadsAncestorGuidanceInOrder(t *testing.T) {
 	root := t.TempDir()
