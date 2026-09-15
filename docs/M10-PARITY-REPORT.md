@@ -34,6 +34,7 @@ and serialized reasoning-item signature for stateless multi-turn replay, while
 failed responses surface the provider's error. Go evidence:
 `internal/provider/responses.go`,
 `TestOpenAIResponsesPersistsReasoningItemSignature`, and
+`TestOpenAIResponsesBackfillsReasoningSignatureFromTerminalOutput`,
 `TestOpenAIResponsesReturnsResponseFailure`.
 
 ## Checkpoint update: 2026-09-15
