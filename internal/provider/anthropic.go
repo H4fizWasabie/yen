@@ -156,7 +156,7 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 				toolArgs[event.Index] += event.Delta.PartialJSON
 			}
 		case "message_delta":
-			result.StopReason = event.Delta.StopReason
+			result.StopReason = mapAnthropicStopReason(event.Delta.StopReason)
 			result.Usage.Output = event.Delta.OutputTokens
 		}
 	}
@@ -175,6 +175,21 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		result.StopReason = "toolUse"
 	}
 	return result, nil
+}
+
+func mapAnthropicStopReason(reason string) string {
+	switch reason {
+	case "end_turn", "stop_sequence":
+		return "stop"
+	case "tool_use":
+		return "toolUse"
+	case "max_tokens":
+		return "length"
+	case "refusal":
+		return "error"
+	default:
+		return reason
+	}
 }
 
 func convertAnthropicMessages(messages []agent.Message) (string, []map[string]any) {

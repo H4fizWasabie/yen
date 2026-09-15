@@ -28,7 +28,7 @@ func TestAnthropicMessagesStreamsTextAndThinking(t *testing.T) {
 	provider := NewAnthropicMessages(server.URL, "anthropic-key", "claude-test")
 	var updates []string
 	result, err := provider.NextWithUpdates(context.Background(), []agent.Message{{Role: "user", Content: "hi"}}, nil, func(text string) { updates = append(updates, text) })
-	if err != nil || result.Text != "hello" || result.Thinking != "plan" || result.ResponseID != "msg-1" || result.StopReason != "end_turn" || strings.Join(updates, "") != "hello" {
+	if err != nil || result.Text != "hello" || result.Thinking != "plan" || result.ResponseID != "msg-1" || result.StopReason != "stop" || strings.Join(updates, "") != "hello" {
 		t.Fatalf("result=%#v updates=%#v err=%v", result, updates, err)
 	}
 }
