@@ -599,7 +599,7 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if key == "" {
 			key = storedCredentialKey(providerID)
 		}
-		client := NewAnthropicMessages(providerDefaults[providerID], key, model)
+		client := NewAnthropicMessages(strings.TrimSuffix(providerDefaults[providerID], "/v1"), key, model)
 		client.ProviderName = providerID
 		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 		return client, nil

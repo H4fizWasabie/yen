@@ -225,7 +225,7 @@ func TestNewConfiguredSelectsFireworksProtocolByModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	anthropic, ok := configured.(AnthropicMessages)
-	if !ok || anthropic.ProviderName != "fireworks" || anthropic.BaseURL != providerDefaults["fireworks"] || anthropic.APIKey != "fireworks-key" || anthropic.ThinkingLevel != "high" {
+	if !ok || anthropic.ProviderName != "fireworks" || anthropic.BaseURL != "https://api.fireworks.ai/inference" || anthropic.APIKey != "fireworks-key" || anthropic.ThinkingLevel != "high" {
 		t.Fatalf("provider=%#v", configured)
 	}
 
