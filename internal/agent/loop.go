@@ -9,6 +9,7 @@ import (
 type Message struct {
 	Role              string
 	Content           string
+	TextSignature     string
 	Thinking          string
 	ThinkingSignature string
 	Images            []string
@@ -32,6 +33,7 @@ type ToolCall struct {
 
 type Response struct {
 	Text              string
+	TextSignature     string
 	Thinking          string
 	ThinkingSignature string
 	ToolCalls         []ToolCall
@@ -311,7 +313,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 			return result, err
 		}
-		assistant := Message{Role: "assistant", Content: response.Text, Thinking: response.Thinking, ThinkingSignature: response.ThinkingSignature, ToolCalls: response.ToolCalls, StopReason: response.StopReason, ErrorMessage: response.ErrorMessage, ResponseID: response.ResponseID, ResponseModel: response.ResponseModel, RawStopReason: response.RawStopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
+		assistant := Message{Role: "assistant", Content: response.Text, TextSignature: response.TextSignature, Thinking: response.Thinking, ThinkingSignature: response.ThinkingSignature, ToolCalls: response.ToolCalls, StopReason: response.StopReason, ErrorMessage: response.ErrorMessage, ResponseID: response.ResponseID, ResponseModel: response.ResponseModel, RawStopReason: response.RawStopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
 		result.Messages = append(result.Messages, assistant)
 		if onEvent != nil {
 			onEvent(Event{Type: "usage", Usage: response.Usage, Message: &assistant, StopReason: response.StopReason})

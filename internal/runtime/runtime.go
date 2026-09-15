@@ -822,6 +822,7 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 		for _, part := range parts {
 			if part.Type == "text" {
 				converted.Content += part.Text
+				converted.TextSignature = part.TextSignature
 			}
 			if part.Type == "thinking" {
 				converted.Thinking += part.Text
@@ -866,13 +867,13 @@ func toSessionMessage(message agent.Message) session.Message {
 	if message.Role == "tool" {
 		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Images: message.Images, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
 	}
-	if len(message.ToolCalls) > 0 || message.Thinking != "" || message.ThinkingSignature != "" {
+	if len(message.ToolCalls) > 0 || message.TextSignature != "" || message.Thinking != "" || message.ThinkingSignature != "" {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)
 		if message.Thinking != "" || message.ThinkingSignature != "" {
 			parts = append(parts, session.ContentPart{Type: "thinking", Text: message.Thinking, ThinkingSignature: message.ThinkingSignature})
 		}
-		if message.Content != "" {
-			parts = append(parts, session.ContentPart{Type: "text", Text: message.Content})
+		if message.Content != "" || message.TextSignature != "" {
+			parts = append(parts, session.ContentPart{Type: "text", Text: message.Content, TextSignature: message.TextSignature})
 		}
 		for _, call := range message.ToolCalls {
 			parts = append(parts, session.ContentPart{Type: "toolCall", ID: call.ID, Name: call.Name, Arguments: call.Args})

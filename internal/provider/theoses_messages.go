@@ -155,6 +155,14 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 			if emit != nil {
 				emit(agent.StreamEvent{Type: event.Type, ContentIndex: index, Delta: event.Delta, Partial: partial})
 			}
+		case "text_end":
+			result.Text = event.Content
+			partial.Content = event.Content
+			result.TextSignature = event.ContentSignature
+			partial.TextSignature = event.ContentSignature
+			if emit != nil {
+				emit(agent.StreamEvent{Type: event.Type, ContentIndex: index, Partial: partial})
+			}
 		case "thinking_delta":
 			result.Thinking += event.Delta
 			partial.Thinking += event.Delta
@@ -232,6 +240,7 @@ type radiusContext struct {
 type radiusMessage struct {
 	Role              string           `json:"role"`
 	Content           string           `json:"content,omitempty"`
+	TextSignature     string           `json:"textSignature,omitempty"`
 	Thinking          string           `json:"thinking,omitempty"`
 	ThinkingSignature string           `json:"thinkingSignature,omitempty"`
 	Images            []string         `json:"images,omitempty"`
@@ -243,7 +252,7 @@ type radiusMessage struct {
 func radiusMessages(messages []agent.Message) []radiusMessage {
 	result := make([]radiusMessage, 0, len(messages))
 	for _, message := range messages {
-		result = append(result, radiusMessage{Role: message.Role, Content: message.Content, Thinking: message.Thinking, ThinkingSignature: message.ThinkingSignature, Images: message.Images, ToolCalls: message.ToolCalls, ToolCallID: message.ToolCallID, ErrorMessage: message.ErrorMessage})
+		result = append(result, radiusMessage{Role: message.Role, Content: message.Content, TextSignature: message.TextSignature, Thinking: message.Thinking, ThinkingSignature: message.ThinkingSignature, Images: message.Images, ToolCalls: message.ToolCalls, ToolCallID: message.ToolCallID, ErrorMessage: message.ErrorMessage})
 	}
 	return result
 }

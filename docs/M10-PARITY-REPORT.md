@@ -73,6 +73,12 @@ authority: `packages/ai/src/api/theoses-messages.ts:68-77,197-205`; Go
 evidence: `internal/provider/theoses_messages.go` and
 `TestTheosesMessagesPreservesErrorMetadata`.
 
+Radius text block signatures now survive stream parsing, agent-loop response
+propagation, session persistence, and replay. TypeScript authority:
+`packages/ai/src/api/theoses-messages.ts:56,216-220`; Go evidence:
+`internal/provider/theoses_messages.go`, `internal/runtime/runtime.go`, and
+`TestTheosesMessagesPreservesTextSignature`.
+
 Bedrock Converse usage now preserves cache-read and cache-write token
 breakdowns and falls back to the component sum when the service omits total
 tokens. TypeScript authority:
