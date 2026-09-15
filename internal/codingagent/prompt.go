@@ -85,7 +85,12 @@ func shadowedWorktreeContextFile(cwd string) string {
 	if err != nil {
 		return ""
 	}
-	common, err = filepath.Abs(filepath.Join(cwd, common))
+	common = resolveGitPath(cwd, common)
+	root = resolveGitPath(cwd, root)
+	if common == "" || root == "" {
+		return ""
+	}
+	common, err = filepath.Abs(common)
 	if err != nil {
 		return ""
 	}
@@ -106,6 +111,17 @@ func shadowedWorktreeContextFile(cwd string) string {
 		}
 	}
 	return ""
+}
+
+func resolveGitPath(cwd, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	resolved, err := filepath.Abs(filepath.Join(cwd, path))
+	if err != nil {
+		return ""
+	}
+	return resolved
 }
 
 func canonicalPath(path string) string {

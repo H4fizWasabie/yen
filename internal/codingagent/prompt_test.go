@@ -131,7 +131,7 @@ func TestContextMessageSkipsMainWorktreeContextFromLinkedWorktree(t *testing.T) 
 	}
 	runGit("add", "AGENTS.md")
 	runGit("commit", "-qm", "context")
-	worktree := filepath.Join(filepath.Dir(root), "linked")
+	worktree := filepath.Join(root, "linked")
 	runGit("worktree", "add", "-q", worktree)
 	if err := os.WriteFile(filepath.Join(worktree, "AGENTS.md"), []byte("linked guidance"), 0o600); err != nil {
 		t.Fatal(err)
