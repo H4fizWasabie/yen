@@ -484,6 +484,29 @@ func TestTelegramBotAttachmentNoteIncludesDocumentMetadata(t *testing.T) {
 	}
 }
 
+func TestTelegramBotCaptionlessPhotoUsesPhotoPrompt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottoken/getFile":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_path":"photos/photo.jpg"}}`))
+		case "/file/bottoken/photos/photo.jpg":
+			_, _ = w.Write([]byte("jpeg"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	bot := &TelegramBot{Token: "token", APIBase: server.URL, ArtifactDir: t.TempDir()}
+	note, _, err := bot.storeAttachmentWithImage(context.Background(), &telegramMessage{Photo: []telegramPhoto{{FileID: "photo-1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note != "User sent a photo without a caption. Describe or act on it as appropriate." {
+		t.Fatalf("note=%q", note)
+	}
+}
+
 func TestTelegramBotPassesPhotoToProviderAsImageContent(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))

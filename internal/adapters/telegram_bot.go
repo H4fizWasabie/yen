@@ -339,6 +339,9 @@ func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *tel
 		if file != nil {
 			fileID, name = file.FileID, file.FileName
 			mime = file.MimeType
+			if kind == "media" {
+				kind = "media file"
+			}
 			if name == "" {
 				name = "media"
 			}
@@ -361,11 +364,14 @@ func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *tel
 	if strings.TrimSpace(telegramMessageText(message)) != "" {
 		return "", image, nil
 	}
+	if kind == "photo" {
+		return "User sent a photo without a caption. Describe or act on it as appropriate.", image, nil
+	}
 	if mime == "" {
 		mime = "unknown"
 	}
 	note := fmt.Sprintf("User sent a %s without a caption: %q (mime type %s, %d bytes). ", kind, filepath.Base(name), mime, len(data))
-	return note + fmt.Sprintf("It was stored at `%s`. Use the read tool if needed.", path), image, nil
+	return note + fmt.Sprintf("It has been stored as a document artifact at `%s`. Use the read tool if needed.", path), image, nil
 }
 
 func (b *TelegramBot) downloadAttachment(ctx context.Context, fileID, name string) (string, []byte, error) {
