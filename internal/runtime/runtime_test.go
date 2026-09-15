@@ -789,13 +789,13 @@ func TestToAgentMessagesConvertsPersistedSpecialMessages(t *testing.T) {
 }
 
 func TestThinkingRoundTripsThroughSessionContext(t *testing.T) {
-	stored := toSessionMessage(agent.Message{Role: "assistant", Thinking: "plan first", Content: "answer"})
+	stored := toSessionMessage(agent.Message{Role: "assistant", Thinking: "plan first", ThinkingSignature: "reasoning_content", Content: "answer"})
 	parts, ok := stored.Content.([]session.ContentPart)
-	if !ok || len(parts) != 2 || parts[0].Type != "thinking" || parts[0].Text != "plan first" || parts[1].Type != "text" || parts[1].Text != "answer" {
+	if !ok || len(parts) != 2 || parts[0].Type != "thinking" || parts[0].Text != "plan first" || parts[0].ThinkingSignature != "reasoning_content" || parts[1].Type != "text" || parts[1].Text != "answer" {
 		t.Fatalf("stored content=%#v", stored.Content)
 	}
 	converted := toAgentMessages([]session.Message{stored})
-	if len(converted) != 1 || converted[0].Thinking != "plan first" || converted[0].Content != "answer" {
+	if len(converted) != 1 || converted[0].Thinking != "plan first" || converted[0].ThinkingSignature != "reasoning_content" || converted[0].Content != "answer" {
 		t.Fatalf("converted=%#v", converted)
 	}
 }

@@ -540,6 +540,7 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 			}
 			if part.Type == "thinking" {
 				converted.Thinking += part.Text
+				converted.ThinkingSignature = part.ThinkingSignature
 			}
 			if part.Type == "toolCall" {
 				args, _ := part.Arguments.(map[string]any)
@@ -583,7 +584,7 @@ func toSessionMessage(message agent.Message) session.Message {
 	if len(message.ToolCalls) > 0 || message.Thinking != "" {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)
 		if message.Thinking != "" {
-			parts = append(parts, session.ContentPart{Type: "thinking", Text: message.Thinking})
+			parts = append(parts, session.ContentPart{Type: "thinking", Text: message.Thinking, ThinkingSignature: message.ThinkingSignature})
 		}
 		if message.Content != "" {
 			parts = append(parts, session.ContentPart{Type: "text", Text: message.Content})

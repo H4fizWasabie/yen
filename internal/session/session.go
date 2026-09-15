@@ -28,11 +28,12 @@ type Header struct {
 }
 
 type ContentPart struct {
-	Type      string `json:"type"`
-	Text      string `json:"text,omitempty"`
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments any    `json:"arguments,omitempty"`
+	Type              string `json:"type"`
+	Text              string `json:"text,omitempty"`
+	ThinkingSignature string `json:"thinkingSignature,omitempty"`
+	ID                string `json:"id,omitempty"`
+	Name              string `json:"name,omitempty"`
+	Arguments         any    `json:"arguments,omitempty"`
 }
 
 type Usage struct {

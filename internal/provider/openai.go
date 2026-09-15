@@ -15,10 +15,13 @@ import (
 )
 
 type openAIMessage struct {
-	Role       string           `json:"role"`
-	Content    any              `json:"content,omitempty"`
-	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Role             string           `json:"role"`
+	Content          any              `json:"content,omitempty"`
+	Reasoning        string           `json:"reasoning,omitempty"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
+	ReasoningText    string           `json:"reasoning_text,omitempty"`
+	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
 }
 
 type openAIToolCall struct {
@@ -256,6 +259,15 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 				reasoning = choice.Delta.ReasoningText
 			}
 			if reasoning != "" {
+				if partial.ThinkingSignature == "" {
+					if choice.Delta.ReasoningContent != "" {
+						partial.ThinkingSignature = "reasoning_content"
+					} else if choice.Delta.Reasoning != "" {
+						partial.ThinkingSignature = "reasoning"
+					} else {
+						partial.ThinkingSignature = "reasoning_text"
+					}
+				}
 				if emit != nil && !startedThinking {
 					startedThinking = true
 					emit(agent.StreamEvent{Type: "thinking_start", ContentIndex: 0, Partial: partial})
@@ -346,6 +358,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		emit(agent.StreamEvent{Type: "thinking_end", ContentIndex: 0, Partial: partial})
 	}
 	result.Thinking = partial.Thinking
+	result.ThinkingSignature = partial.ThinkingSignature
 	result.ToolCalls = toolCalls
 	if len(toolCalls) > 0 && result.StopReason == "" {
 		result.StopReason = "toolUse"
@@ -390,6 +403,16 @@ func convertMessages(messages []agent.Message) []openAIMessage {
 			content = parts
 		}
 		convertedMessage := openAIMessage{Role: message.Role, Content: content, ToolCallID: message.ToolCallID}
+		if message.Thinking != "" {
+			switch message.ThinkingSignature {
+			case "reasoning":
+				convertedMessage.Reasoning = message.Thinking
+			case "reasoning_text":
+				convertedMessage.ReasoningText = message.Thinking
+			default:
+				convertedMessage.ReasoningContent = message.Thinking
+			}
+		}
 		for _, call := range message.ToolCalls {
 			arguments, _ := json.Marshal(call.Args)
 			toolCall := openAIToolCall{ID: call.ID, Type: "function"}

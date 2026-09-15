@@ -7,20 +7,21 @@ import (
 )
 
 type Message struct {
-	Role          string
-	Content       string
-	Thinking      string
-	Images        []string
-	ToolCalls     []ToolCall
-	ToolCallID    string
-	StopReason    string
-	ErrorMessage  string
-	ResponseID    string
-	ResponseModel string
-	RawStopReason string
-	Provider      string
-	Model         string
-	Usage         *Usage
+	Role              string
+	Content           string
+	Thinking          string
+	ThinkingSignature string
+	Images            []string
+	ToolCalls         []ToolCall
+	ToolCallID        string
+	StopReason        string
+	ErrorMessage      string
+	ResponseID        string
+	ResponseModel     string
+	RawStopReason     string
+	Provider          string
+	Model             string
+	Usage             *Usage
 }
 
 type ToolCall struct {
@@ -30,17 +31,18 @@ type ToolCall struct {
 }
 
 type Response struct {
-	Text          string
-	Thinking      string
-	ToolCalls     []ToolCall
-	StopReason    string
-	RawStopReason string
-	ErrorMessage  string
-	ResponseID    string
-	ResponseModel string
-	Provider      string
-	Model         string
-	Usage         Usage
+	Text              string
+	Thinking          string
+	ThinkingSignature string
+	ToolCalls         []ToolCall
+	StopReason        string
+	RawStopReason     string
+	ErrorMessage      string
+	ResponseID        string
+	ResponseModel     string
+	Provider          string
+	Model             string
+	Usage             Usage
 }
 
 type Usage struct {
