@@ -114,11 +114,12 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		if !ok {
 			return errors.New("no active turn")
 		}
+		images := rpcImages(request.Images)
 		var err error
 		if request.Type == "steer" {
-			err = s.Runner.Steer(active.ID, request.Message)
+			err = s.Runner.SteerWithImages(active.ID, request.Message, images)
 		} else {
-			err = s.Runner.FollowUp(active.ID, request.Message)
+			err = s.Runner.FollowUpWithImages(active.ID, request.Message, images)
 		}
 		if err != nil {
 			return err
@@ -130,11 +131,12 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		if request.StreamingBehavior == "steer" || request.StreamingBehavior == "followUp" {
 			if active, ok := s.Runner.Active(link.ConversationID); ok {
+				images := rpcImages(request.Images)
 				if request.StreamingBehavior == "steer" {
-					if err := s.Runner.Steer(active.ID, request.Message); err != nil {
+					if err := s.Runner.SteerWithImages(active.ID, request.Message, images); err != nil {
 						return err
 					}
-				} else if err := s.Runner.FollowUp(active.ID, request.Message); err != nil {
+				} else if err := s.Runner.FollowUpWithImages(active.ID, request.Message, images); err != nil {
 					return err
 				}
 				return s.response(output, request.ID, request.Type, true, map[string]any{"turnId": active.ID}, nil)
@@ -150,16 +152,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		if err := s.response(output, request.ID, request.Type, true, nil, nil); err != nil {
 			return err
 		}
-		images := make([]string, 0, len(request.Images))
-		for _, image := range request.Images {
-			if image.Type == "image" && image.Data != "" {
-				mime := image.MIMEType
-				if mime == "" {
-					mime = "application/octet-stream"
-				}
-				images = append(images, "data:"+mime+";base64,"+image.Data)
-			}
-		}
+		images := rpcImages(request.Images)
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
@@ -508,6 +501,21 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 	default:
 		return fmt.Errorf("unsupported rpc command %q", request.Type)
 	}
+}
+
+func rpcImages(input []rpcImage) []string {
+	images := make([]string, 0, len(input))
+	for _, image := range input {
+		if image.Type != "image" || image.Data == "" {
+			continue
+		}
+		mime := image.MIMEType
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		images = append(images, "data:"+mime+";base64,"+image.Data)
+	}
+	return images
 }
 
 func (s *Server) modes() (string, string) {

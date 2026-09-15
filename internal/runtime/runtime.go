@@ -235,6 +235,10 @@ func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, images 
 }
 
 func (r *Runner) Steer(turnID, prompt string) error {
+	return r.SteerWithImages(turnID, prompt, nil)
+}
+
+func (r *Runner) SteerWithImages(turnID, prompt string, images []string) error {
 	if prompt == "" {
 		return errors.New("steering prompt is required")
 	}
@@ -244,11 +248,15 @@ func (r *Runner) Steer(turnID, prompt string) error {
 	if queues == nil {
 		return errors.New("turn is not active")
 	}
-	queues.Steer(agent.Message{Role: "user", Content: prompt})
+	queues.Steer(agent.Message{Role: "user", Content: prompt, Images: images})
 	return nil
 }
 
 func (r *Runner) FollowUp(turnID, prompt string) error {
+	return r.FollowUpWithImages(turnID, prompt, nil)
+}
+
+func (r *Runner) FollowUpWithImages(turnID, prompt string, images []string) error {
 	if prompt == "" {
 		return errors.New("follow-up prompt is required")
 	}
@@ -258,7 +266,7 @@ func (r *Runner) FollowUp(turnID, prompt string) error {
 	if queues == nil {
 		return errors.New("turn is not active")
 	}
-	queues.FollowUp(agent.Message{Role: "user", Content: prompt})
+	queues.FollowUp(agent.Message{Role: "user", Content: prompt, Images: images})
 	return nil
 }
 
