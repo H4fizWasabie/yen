@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"image"
 	_ "image/gif"
-	_ "image/jpeg"
+	"image/jpeg"
+	"image/png"
 	_ "image/png"
 	"io"
 	"net/http"
@@ -28,6 +29,11 @@ type generateImageTool struct {
 }
 
 const generatedImageMaxInlineBytes = 4.5 * 1024 * 1024
+
+const (
+	generatedImageMaxWidth  = 2000
+	generatedImageMaxHeight = 2000
+)
 
 func (generateImageTool) Name() string { return "generate_image" }
 
@@ -84,10 +90,69 @@ func (t generateImageTool) ExecuteRich(ctx context.Context, args map[string]any)
 		return agent.ToolResult{Text: text}, nil
 	}
 	mimeType := sniffImageMIME(data)
+	data, mimeType, _ = resizeGeneratedImage(data, mimeType)
 	if !generatedImageIsDecodable(data, mimeType) {
 		return agent.ToolResult{Text: text + "\n[Image omitted: could not be converted to a supported inline image format.]"}, nil
 	}
 	return agent.ToolResult{Text: text, Images: []string{"data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)}}, nil
+}
+
+// resizeGeneratedImage mirrors the oracle's inline-image safety boundary with
+// standard-library decoders and encoders. WebP remains untouched because Go
+// has no standard-library decoder for it.
+func resizeGeneratedImage(data []byte, mimeType string) ([]byte, string, bool) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return data, mimeType, true
+	}
+	encodedSize := func(value []byte) int { return base64.StdEncoding.EncodedLen(len(value)) }
+	if config.Width <= generatedImageMaxWidth && config.Height <= generatedImageMaxHeight && encodedSize(data) < int(generatedImageMaxInlineBytes) {
+		return data, mimeType, true
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data, mimeType, false
+	}
+	width, height := config.Width, config.Height
+	if width > generatedImageMaxWidth {
+		height = max(1, height*generatedImageMaxWidth/width)
+		width = generatedImageMaxWidth
+	}
+	if height > generatedImageMaxHeight {
+		width = max(1, width*generatedImageMaxHeight/height)
+		height = generatedImageMaxHeight
+	}
+	for {
+		resized := resizeGeneratedImagePixels(decoded, width, height)
+		var pngData bytes.Buffer
+		if err := png.Encode(&pngData, resized); err == nil && encodedSize(pngData.Bytes()) < int(generatedImageMaxInlineBytes) {
+			return pngData.Bytes(), "image/png", true
+		}
+		for _, quality := range []int{80, 85, 70, 55, 40} {
+			var jpegData bytes.Buffer
+			if err := jpeg.Encode(&jpegData, resized, &jpeg.Options{Quality: quality}); err == nil && encodedSize(jpegData.Bytes()) < int(generatedImageMaxInlineBytes) {
+				return jpegData.Bytes(), "image/jpeg", true
+			}
+		}
+		if width == 1 && height == 1 {
+			return nil, "", false
+		}
+		width = max(1, width*3/4)
+		height = max(1, height*3/4)
+	}
+}
+
+func resizeGeneratedImagePixels(source image.Image, width, height int) image.Image {
+	resized := image.NewRGBA(image.Rect(0, 0, width, height))
+	bounds := source.Bounds()
+	for y := 0; y < height; y++ {
+		sourceY := bounds.Min.Y + y*bounds.Dy()/height
+		for x := 0; x < width; x++ {
+			sourceX := bounds.Min.X + x*bounds.Dx()/width
+			resized.Set(x, y, source.At(sourceX, sourceY))
+		}
+	}
+	return resized
 }
 
 func generatedImageIsDecodable(data []byte, mimeType string) bool {
