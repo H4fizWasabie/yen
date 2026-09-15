@@ -232,6 +232,8 @@ compact once and retry once, matching the pinned TypeScript recovery path.
 Persisted bash, custom, branch-summary, and compaction-summary messages are
 converted into provider-compatible user context, including the bash exclusion
 flag and TypeScript summary wrappers.
+Independent multi-tool batches execute concurrently and retain provider/tool
+result ordering in the persisted conversation.
 Consolidation now carries session-entry timestamps into the transcript prefix.
 Persisted tool errors are labeled `FAILED` in that transcript, matching the
 TypeScript consolidation summary.

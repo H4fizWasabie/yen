@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type scriptedProvider struct {
@@ -82,6 +83,23 @@ func (t countingTool) Execute(context.Context, map[string]any) (string, error) {
 	return "should not run", nil
 }
 
+type parallelTool struct {
+	started chan<- struct{}
+	release <-chan struct{}
+}
+
+func (parallelTool) Name() string { return "parallel" }
+
+func (t parallelTool) Execute(ctx context.Context, _ map[string]any) (string, error) {
+	t.started <- struct{}{}
+	select {
+	case <-t.release:
+		return "done", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
 type failingTool struct{}
 
 func (failingTool) Name() string { return "read" }
@@ -143,6 +161,36 @@ func TestRunDoesNotExecuteToolCallsFromLengthLimitedResponse(t *testing.T) {
 	}
 	if len(events) != 6 || events[3].Type != "tool_execution_end" || !events[3].IsError || events[4].Type != "tool_result" || !events[4].IsError {
 		t.Fatalf("events=%#v", events)
+	}
+}
+
+func TestRunExecutesIndependentToolCallsInParallel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	go func() {
+		select {
+		case <-started:
+			select {
+			case <-started:
+				close(release)
+			case <-ctx.Done():
+				close(release)
+			}
+		case <-ctx.Done():
+			close(release)
+		}
+	}()
+	result, err := Run(ctx, &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "one", Name: "parallel"}, {ID: "two", Name: "parallel"}}, StopReason: "toolUse"},
+		{Text: "complete", StopReason: "stop"},
+	}}, []Tool{parallelTool{started: started, release: release}}, "run both")
+	if err != nil || result.FinalText != "complete" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(result.Messages) != 5 || result.Messages[2].Content != "done" || result.Messages[3].Content != "done" {
+		t.Fatalf("messages=%#v", result.Messages)
 	}
 }
 

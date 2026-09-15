@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"sync"
 )
 
@@ -211,6 +212,14 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
 			return result, nil
 		}
+		if len(response.ToolCalls) > 1 && response.StopReason != "length" {
+			if err := runParallelToolCalls(ctx, &result, response.ToolCalls, toolMap, onEvent); err != nil {
+				result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
+				return result, err
+			}
+			result.Events = append(result.Events, "turn_end", "turn_start")
+			continue
+		}
 
 		for _, call := range response.ToolCalls {
 			if onEvent != nil {
@@ -271,6 +280,58 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		result.Events = append(result.Events, "turn_end")
 		result.Events = append(result.Events, "turn_start")
 	}
+}
+
+type parallelToolResult struct {
+	call    ToolCall
+	content string
+	err     error
+}
+
+func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc) error {
+	outcomes := make([]parallelToolResult, len(calls))
+	var wait sync.WaitGroup
+	for i, call := range calls {
+		outcomes[i].call = call
+		result.Events = append(result.Events, "tool_execution_start:"+call.ID)
+		if onEvent != nil {
+			onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args})
+			onEvent(Event{Type: "tool_execution_start", ID: call.ID, Name: call.Name, Args: call.Args})
+		}
+		wait.Add(1)
+		go func(i int, call ToolCall) {
+			defer wait.Done()
+			tool, ok := toolMap[call.Name]
+			if !ok {
+				outcomes[i].content = (&UnknownToolError{Name: call.Name}).Error()
+				outcomes[i].err = errors.New(outcomes[i].content)
+				return
+			}
+			outcomes[i].content, outcomes[i].err = tool.Execute(ctx, call.Args)
+		}(i, call)
+	}
+	wait.Wait()
+	var canceled error
+	for _, outcome := range outcomes {
+		content := outcome.content
+		isError := outcome.err != nil
+		if outcome.err != nil {
+			if ctx.Err() != nil {
+				content = "Operation aborted"
+				canceled = ctx.Err()
+			} else {
+				content = "Tool error: " + outcome.err.Error()
+			}
+		}
+		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
+		result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: outcome.call.ID})
+		if onEvent != nil {
+			onEvent(Event{Type: "tool_execution_end", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError})
+			onEvent(Event{Type: "tool_result", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError})
+		}
+		result.Events = append(result.Events, "message_end:toolResult")
+	}
+	return canceled
 }
 
 func appendQueuedMessages(result *Result, messages []Message) {
