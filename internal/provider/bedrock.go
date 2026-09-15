@@ -278,6 +278,20 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 		return []bedrocktypes.ContentBlock{&bedrocktypes.ContentBlockMemberToolResult{Value: bedrocktypes.ToolResultBlock{ToolUseId: aws.String(message.ToolCallID), Status: status, Content: content}}}, nil
 	}
 	content := make([]bedrocktypes.ContentBlock, 0, 1+len(message.Images)+len(message.ToolCalls))
+	if message.Thinking != "" {
+		if strings.HasPrefix(message.Thinking, "[Reasoning redacted]") {
+			if opaque, err := base64.StdEncoding.DecodeString(message.ThinkingSignature); err == nil && len(opaque) > 0 {
+				content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberRedactedContent{Value: opaque}})
+			}
+		}
+		if len(content) == 0 {
+			thinking := bedrocktypes.ReasoningTextBlock{Text: aws.String(message.Thinking)}
+			if message.ThinkingSignature != "" && strings.Contains(strings.ToLower(model), "claude") {
+				thinking.Signature = aws.String(message.ThinkingSignature)
+			}
+			content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberReasoningText{Value: thinking}})
+		}
+	}
 	if strings.TrimSpace(message.Content) != "" {
 		content = append(content, &bedrocktypes.ContentBlockMemberText{Value: message.Content})
 	}
@@ -290,19 +304,6 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 		content = append(content, &bedrocktypes.ContentBlockMemberToolUse{Value: bedrocktypes.ToolUseBlock{
 			ToolUseId: aws.String(call.ID), Name: aws.String(call.Name), Input: bedrockdocument.NewLazyDocument(call.Args),
 		}})
-	}
-	if message.Thinking != "" {
-		if strings.HasPrefix(message.Thinking, "[Reasoning redacted]") {
-			if opaque, err := base64.StdEncoding.DecodeString(message.ThinkingSignature); err == nil && len(opaque) > 0 {
-				content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberRedactedContent{Value: opaque}})
-				return content, nil
-			}
-		}
-		thinking := bedrocktypes.ReasoningTextBlock{Text: aws.String(message.Thinking)}
-		if message.ThinkingSignature != "" && strings.Contains(strings.ToLower(model), "claude") {
-			thinking.Signature = aws.String(message.ThinkingSignature)
-		}
-		content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberReasoningText{Value: thinking}})
 	}
 	return content, nil
 }

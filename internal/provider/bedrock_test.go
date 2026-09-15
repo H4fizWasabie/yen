@@ -65,12 +65,13 @@ func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
 	if len(input.Messages) != 2 {
 		t.Fatalf("messages=%#v", input.Messages)
 	}
-	assistantTool, ok := input.Messages[0].Content[0].(*bedrocktypes.ContentBlockMemberToolUse)
-	if !ok || assistantTool.Value.ToolUseId == nil || *assistantTool.Value.ToolUseId != "call-1" {
+	assistantReasoning, ok := input.Messages[0].Content[0].(*bedrocktypes.ContentBlockMemberReasoningContent)
+	if !ok || assistantReasoning.Value == nil {
 		t.Fatalf("assistant content=%#v", input.Messages[0].Content)
 	}
-	if _, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberReasoningContent); !ok {
-		t.Fatalf("reasoning content=%#v", input.Messages[0].Content)
+	assistantTool, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberToolUse)
+	if !ok || assistantTool.Value.ToolUseId == nil || *assistantTool.Value.ToolUseId != "call-1" {
+		t.Fatalf("tool content=%#v", input.Messages[0].Content)
 	}
 	toolResult, ok := input.Messages[1].Content[0].(*bedrocktypes.ContentBlockMemberToolResult)
 	if !ok || toolResult.Value.ToolUseId == nil || *toolResult.Value.ToolUseId != "call-1" || len(toolResult.Value.Content) != 2 {
@@ -84,7 +85,7 @@ func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
 
 func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte{1, 2, 3})
-	input, err := bedrockInput([]agent.Message{{Role: "assistant", Thinking: "[Reasoning redacted]", ThinkingSignature: encoded}}, nil, "openai.gpt-5")
+	input, err := bedrockInput([]agent.Message{{Role: "assistant", Thinking: "[Reasoning redacted]", ThinkingSignature: encoded, ToolCalls: []agent.ToolCall{{ID: "call-2", Name: "read", Args: map[string]any{"path": "x"}}}}}, nil, "openai.gpt-5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +96,9 @@ func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
 	redacted, ok := block.Value.(*bedrocktypes.ReasoningContentBlockMemberRedactedContent)
 	if !ok || string(redacted.Value) != string([]byte{1, 2, 3}) {
 		t.Fatalf("reasoning=%#v", block.Value)
+	}
+	if tool, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberToolUse); !ok || *tool.Value.ToolUseId != "call-2" {
+		t.Fatalf("redacted reasoning dropped tool call: %#v", input.Messages[0].Content)
 	}
 }
 
