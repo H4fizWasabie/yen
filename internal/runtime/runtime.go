@@ -26,10 +26,11 @@ type Runner struct {
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
+	queues map[string]*agent.MessageQueues
 }
 
 func New(queue *conversation.Queue, provider agent.Provider, tools func(string) []agent.Tool) *Runner {
-	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc)}
+	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues)}
 }
 
 func (r *Runner) Submit(link conversation.Link, prompt string) (conversation.Turn, error) {
@@ -90,8 +91,10 @@ func (r *Runner) runNext(ctx context.Context, conversationID string, onUpdate fu
 
 func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, onUpdate func(string)) (agent.Result, error) {
 	turnCtx, cancel := context.WithCancel(ctx)
+	queues := &agent.MessageQueues{}
 	r.mu.Lock()
 	r.active[turn.ID] = cancel
+	r.queues[turn.ID] = queues
 	r.mu.Unlock()
 	renewDone := make(chan struct{})
 	go func() {
@@ -123,15 +126,44 @@ func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, onUpdat
 		<-renewDone
 		r.mu.Lock()
 		delete(r.active, turn.ID)
+		delete(r.queues, turn.ID)
 		r.mu.Unlock()
 	}()
-	result, runErr := r.runTurn(turnCtx, turn, onUpdate)
+	result, runErr := r.runTurn(turnCtx, turn, queues, onUpdate)
 	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
 		_ = r.Queue.Cancel(turn.ID)
 	} else {
 		_ = r.Queue.Complete(turn.ID)
 	}
 	return result, runErr
+}
+
+func (r *Runner) Steer(turnID, prompt string) error {
+	if prompt == "" {
+		return errors.New("steering prompt is required")
+	}
+	r.mu.Lock()
+	queues := r.queues[turnID]
+	r.mu.Unlock()
+	if queues == nil {
+		return errors.New("turn is not active")
+	}
+	queues.Steer(agent.Message{Role: "user", Content: prompt})
+	return nil
+}
+
+func (r *Runner) FollowUp(turnID, prompt string) error {
+	if prompt == "" {
+		return errors.New("follow-up prompt is required")
+	}
+	r.mu.Lock()
+	queues := r.queues[turnID]
+	r.mu.Unlock()
+	if queues == nil {
+		return errors.New("turn is not active")
+	}
+	queues.FollowUp(agent.Message{Role: "user", Content: prompt})
+	return nil
 }
 
 func (r *Runner) Cancel(turnID string) error {
@@ -156,7 +188,7 @@ func (r *Runner) OpenSession(link conversation.Link) (*session.Session, error) {
 	return openOrCreate(r.pathFor(conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID}), conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID})
 }
 
-func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, onUpdate func(string)) (agent.Result, error) {
+func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *agent.MessageQueues, onUpdate func(string)) (agent.Result, error) {
 	path := r.pathFor(turn)
 	current, err := openOrCreate(path, turn)
 	if err != nil {
@@ -173,7 +205,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, onUpdate f
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})
-	result, runErr := agent.RunFromWithUpdates(ctx, r.Provider, tools, history, turn.Prompt, onUpdate)
+	result, runErr := agent.RunFromWithQueues(ctx, r.Provider, tools, history, turn.Prompt, queues, onUpdate)
 	for _, message := range result.Messages[len(history):] {
 		if _, err := current.Append(toSessionMessage(message)); err != nil {
 			return result, err

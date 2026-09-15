@@ -31,6 +31,28 @@ type slowProvider struct {
 
 type cancelableProvider struct{ started chan struct{} }
 
+type steeringProvider struct {
+	started chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	seen    [][]agent.Message
+	calls   int
+}
+
+func (p *steeringProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.mu.Lock()
+	p.seen = append(p.seen, append([]agent.Message(nil), messages...))
+	p.calls++
+	call := p.calls
+	p.mu.Unlock()
+	if call == 1 {
+		close(p.started)
+		<-p.release
+		return agent.Response{Text: "first", StopReason: "stop"}, nil
+	}
+	return agent.Response{Text: "steered", StopReason: "stop"}, nil
+}
+
 func (p cancelableProvider) Next(ctx context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
 	close(p.started)
 	<-ctx.Done()
@@ -254,5 +276,43 @@ func TestRunnerRemoteCancelStopsActiveTurn(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("remote cancellation did not stop active turn")
+	}
+}
+
+func TestRunnerSteersActiveTurnThroughAgentQueue(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &steeringProvider{started: make(chan struct{}), release: make(chan struct{})}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "dashboard", AdapterKey: "tab-steer", ConversationID: "conv-steer", WorkspaceID: dir}
+	turn, err := runner.Submit(link, "start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, result, runErr := runner.RunSubmitted(context.Background(), turn)
+		if runErr == nil && result.FinalText != "steered" {
+			done <- errors.New("final response did not include steering")
+		} else {
+			done <- runErr
+		}
+	}()
+	<-provider.started
+	if err := runner.Steer(turn.ID, "change direction"); err != nil {
+		t.Fatal(err)
+	}
+	close(provider.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if len(provider.seen) != 2 || len(provider.seen[1]) != 3 || provider.seen[1][2].Content != "change direction" {
+		t.Fatalf("provider messages=%#v", provider.seen)
 	}
 }

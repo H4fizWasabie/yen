@@ -161,9 +161,9 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 		}
 
 		if len(response.ToolCalls) == 0 {
-			followUp := queues.drainFollowUp()
-			if len(followUp) > 0 {
-				appendQueuedMessages(&result, followUp)
+			queued := append(queues.drainSteering(), queues.drainFollowUp()...)
+			if len(queued) > 0 {
+				appendQueuedMessages(&result, queued)
 				result.Events = append(result.Events, "turn_end", "turn_start")
 				continue
 			}
