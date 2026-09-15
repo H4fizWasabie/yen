@@ -350,6 +350,11 @@ The Gemini adapter also implements the native `/models` catalog and filters to
 models advertising `generateContent`; the current full gate remains 234 tests
 plus race/vet/diff.
 
+The dashboard history projection and embedded shell now also render durable
+`bashExecution` records, including the command, output, and excluded-context
+marker. Focused dashboard tests pass; the full gate is now 254 tests plus
+race/vet/diff.
+
 Native OpenAI Responses support is now in `internal/provider/responses.go`.
 It covers `/responses` SSE events, text, incremental function-call arguments,
 terminal response usage/status, image input, retries, and

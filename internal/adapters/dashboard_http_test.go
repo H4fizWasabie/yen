@@ -122,6 +122,17 @@ func TestDashboardShellRendersThinkingSegments(t *testing.T) {
 	}
 }
 
+func TestDashboardHistoryIncludesBashExecution(t *testing.T) {
+	history := dashboardHistory([]session.Message{{Role: "bashExecution", Command: "pwd", Output: "/work", ExcludeFromContext: true}})
+	segments := history[0]["segments"].([]map[string]any)
+	if history[0]["role"] != "bash" || segments[0]["type"] != "bash" || segments[0]["excludeFromContext"] != true {
+		t.Fatalf("history=%#v", history)
+	}
+	if !strings.Contains(dashboardHTML, "s.type==='bash'") {
+		t.Fatal("dashboard shell does not render bash segments")
+	}
+}
+
 type httpProvider struct{}
 
 func (httpProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {

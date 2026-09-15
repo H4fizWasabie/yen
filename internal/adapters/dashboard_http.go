@@ -338,6 +338,13 @@ func dashboardHistory(messages []session.Message) []map[string]any {
 			if len(history) > 0 && history[len(history)-1]["role"] == "assistant" {
 				history[len(history)-1]["segments"] = append(history[len(history)-1]["segments"].([]map[string]any), segments...)
 			}
+			continue
+		}
+		if message.Role == "bashExecution" {
+			history = append(history, map[string]any{"role": "bash", "segments": []map[string]any{{
+				"type": "bash", "command": message.Command, "result": message.Output,
+				"excludeFromContext": message.ExcludeFromContext, "cancelled": message.Cancelled,
+			}}})
 		}
 	}
 	return history
@@ -426,7 +433,7 @@ const state={sessions:[],active:null,history:[],tree:[]};const $=id=>document.ge
 async function api(path,options){const r=await fetch(path,options);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||r.status);return d}
 function renderSessions(){ $('sessions').innerHTML=state.sessions.map(s=>'<button class="session '+(state.active&&s.id===state.active.id?'active':'')+'" data-id="'+esc(s.id)+'">'+esc(s.title||s.id)+'<span class="meta">'+esc(s.channel||'')+'</span></button>').join('');document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>openSession(b.dataset.id)) }
 function renderTree(){const entries=state.tree||[];$('branches').innerHTML=entries.filter(e=>e.message&&e.id!==state.active?.leafId).map(e=>'<button class="branch" data-entry="'+esc(e.id)+'">Use '+esc(String(e.message.content||'').slice(0,40)||e.type)+'</button>').join('');document.querySelectorAll('.branch').forEach(b=>b.onclick=async()=>{try{const d=await api('/api/sessions/'+encodeURIComponent(state.active.id)+'/branch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entryId:b.dataset.entry})});state.tree=d.tree||[];state.active.leafId=d.leafId;renderTree();renderHistory(d.history)}catch(err){alert(err.message)}})}
-function renderHistory(history){state.history=history||state.history;$('messages').innerHTML=state.history.map(t=>{let body=(t.segments||[]).map(s=>s.type==='text'?esc(s.text):s.type==='thinking'?'<div class="tool thinking">'+esc(s.text)+'</div>':s.type==='image'?'<img class="attachment" src="'+esc(s.src)+'" alt="generated image">':'<div class="tool">'+esc(s.name||'tool')+(s.result?' — '+esc(s.result):'')+'</div>').join('');return '<article class="turn '+esc(t.role)+'"><b>'+esc(t.role==='user'?'You':'Yen')+'</b><div>'+body+'</div></article>'}).join('')||'<p>No messages yet.</p>';$('messages').scrollTop=$('messages').scrollHeight}
+function renderHistory(history){state.history=history||state.history;$('messages').innerHTML=state.history.map(t=>{let body=(t.segments||[]).map(s=>s.type==='text'?esc(s.text):s.type==='thinking'?'<div class="tool thinking">'+esc(s.text)+'</div>':s.type==='bash'?'<div class="tool bash"><b>!'+esc(s.command||'')+'</b>'+(s.result?' — '+esc(s.result):'')+(s.excludeFromContext?' <small>(excluded)</small>':'')+'</div>':s.type==='image'?'<img class="attachment" src="'+esc(s.src)+'" alt="generated image">':'<div class="tool">'+esc(s.name||'tool')+(s.result?' — '+esc(s.result):'')+'</div>').join('');return '<article class="turn '+esc(t.role)+'"><b>'+esc(t.role==='user'?'You':t.role==='bash'?'Bash':'Yen')+'</b><div>'+body+'</div></article>'}).join('')||'<p>No messages yet.</p>';$('messages').scrollTop=$('messages').scrollHeight}
 async function openSession(id){const d=await api('/api/sessions/'+encodeURIComponent(id));state.active=d.session;state.tree=d.tree||[];$('title').textContent=d.session.title||id;$('stop').hidden=true;renderSessions();renderTree();renderHistory(d.history)}
 async function load(){const d=await api('/api/sessions');state.sessions=d.sessions||[];renderSessions();if(!state.active&&state.sessions[0])await openSession(state.sessions[0].id)}
 $('login').querySelector('form').onsubmit=async e=>{e.preventDefault();try{await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('token').value})});$('login').hidden=true;$('app').hidden=false;await load()}catch(err){$('error').textContent=err.message}};
