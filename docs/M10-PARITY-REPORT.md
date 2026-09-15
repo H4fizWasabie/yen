@@ -16,7 +16,7 @@ deferred below.
 | Area | TypeScript authority | Go evidence | Status |
 |---|---|---|---|
 | Session identity | `packages/coding-agent/src/core/session-manager.ts:709-717`, `:1973-1993` | `ResolveShared`; 74 Go tests; live Telegram, CLI, and dashboard use one conversation ID | accepted product extension |
-| Agent/tool loop | `packages/agent/src/agent-loop.ts:155-371` | event-order, tool, error, abort, and queue tests; live provider smoke | partial |
+| Agent/tool loop | `packages/agent/src/agent-loop.ts:155-371`, `packages/coding-agent/src/core/agent-session.ts:662-756` | event-order, settled-lifecycle, tool, error, abort, steering-priority, usage-persistence, and live provider tests | partial; full event payload and compaction parity open |
 | Provider | `packages/ai/src/api/openai-completions.ts:699-717` | deterministic SSE tests and live `z-ai/glm-5.3-flash` OpenRouter reply | partial; provider matrix open |
 | Telegram | `packages/telegram/src/index.ts:340-385`, `:630-700` | dedicated unit, valid token, live reply, owner guard, `/stop` unit test | partial; rendering/image parity deferred |
 | Dashboard | `packages/dashboard/src/index.ts:66-115`, `:530-550` | Go auth unit tests, `/healthz`, live request routed to canonical conversation | partial; API auth implemented locally, UI/live authenticated acceptance open |

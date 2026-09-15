@@ -45,6 +45,7 @@ not use the newer checkout as an unqualified oracle.
 
 - `internal/session`: v3 JSONL creation, deferred first publication, parent
   links, open, append, and restart continuation.
+  Assistant provider usage now round-trips through the session log.
 - `internal/agent`: tool-turn loop and normalized event collection.
 - `internal/provider`: one OpenAI-compatible SSE client with fragmented tool
   call argument assembly.
