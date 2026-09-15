@@ -856,6 +856,18 @@ func TestThinkingRoundTripsThroughSessionContext(t *testing.T) {
 	}
 }
 
+func TestReasoningDetailsRoundTripWithoutVisibleThinking(t *testing.T) {
+	stored := toSessionMessage(agent.Message{Role: "assistant", ThinkingSignature: `[{"type":"reasoning.summary","summary":"plan"}]`, Content: "answer"})
+	parts, ok := stored.Content.([]session.ContentPart)
+	if !ok || len(parts) != 2 || parts[0].Type != "thinking" || parts[0].Text != "" || parts[0].ThinkingSignature == "" {
+		t.Fatalf("stored content=%#v", stored.Content)
+	}
+	converted := toAgentMessages([]session.Message{stored})
+	if len(converted) != 1 || converted[0].ThinkingSignature != parts[0].ThinkingSignature || converted[0].Content != "answer" {
+		t.Fatalf("converted=%#v", converted)
+	}
+}
+
 func TestAssistantErrorMessageRoundTripsThroughSession(t *testing.T) {
 	stored := toSessionMessage(agent.Message{Role: "assistant", Content: "blocked", StopReason: "error", ErrorMessage: "Provider finish_reason: content_filter", ResponseID: "resp-1", ResponseModel: "served-model", RawStopReason: "content_filter"})
 	if stored.ErrorMessage != "Provider finish_reason: content_filter" {
