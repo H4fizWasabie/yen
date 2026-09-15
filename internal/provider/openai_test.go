@@ -204,6 +204,46 @@ func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
 	}
 }
 
+func TestMistralSerializesNativeReplayFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if got := payload.Messages[0]["content"].([]any)[1].(map[string]any)["image_url"]; got != "data:image/png;base64,AQ==" {
+			t.Fatalf("image=%#v", got)
+		}
+		assistant := payload.Messages[1]
+		if assistant["prefix"] != false {
+			t.Fatalf("prefix=%#v", assistant["prefix"])
+		}
+		call := assistant["tool_calls"].([]any)[0].(map[string]any)
+		if call["index"] != float64(0) {
+			t.Fatalf("index=%#v", call["index"])
+		}
+		tool := payload.Messages[2]
+		if tool["name"] != "lookup" || tool["tool_call_id"] != "abc123456" {
+			t.Fatalf("tool=%#v", tool)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompletions(server.URL, "", "mistral-model")
+	client.ProviderName = "mistral"
+	messages := []agent.Message{
+		{Role: "user", Content: "describe", Images: []string{"data:image/png;base64,AQ=="}},
+		{Role: "assistant", Content: "answer", Thinking: "reason", ToolCalls: []agent.ToolCall{{ID: "abc123456", Name: "lookup", Args: map[string]any{"q": "pi"}}}},
+		{Role: "tool", ToolCallID: "abc123456", ToolName: "lookup", Content: "found"},
+	}
+	if _, err := client.Next(context.Background(), messages, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestZAIUsesThinkingAndToolStreamFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
