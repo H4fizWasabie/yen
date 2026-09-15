@@ -317,6 +317,35 @@ func TestOpenAICompletionsSendsReadToolSchema(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsSendsSchemasForCodingTools(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Tools []struct {
+				Function struct {
+					Name       string         `json:"name"`
+					Parameters map[string]any `json:"parameters"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range payload.Tools {
+			properties, ok := tool.Function.Parameters["properties"].(map[string]any)
+			if !ok || len(properties) == 0 {
+				t.Errorf("%s has no properties: %#v", tool.Function.Name, tool.Function.Parameters)
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	tools := []string{"read", "bash", "powershell", "edit", "write", "grep", "find", "ls", "remember", "save_note", "recall_turns"}
+	if _, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, tools); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompletionsSendsImageContentParts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {

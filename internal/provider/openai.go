@@ -82,39 +82,9 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		payload.ResponseFormat = map[string]string{"type": "json_object"}
 	}
 	for _, name := range toolNames {
-		parameters := map[string]any{"type": "object"}
-		if name == "read" {
-			parameters = map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path":   map[string]any{"type": "string", "description": "Path to the file to read (relative or absolute)"},
-					"offset": map[string]any{"type": "number", "description": "Line number to start reading from (1-indexed)"},
-					"limit":  map[string]any{"type": "number", "description": "Maximum number of lines to read"},
-				},
-				"required": []string{"path"},
-			}
-		} else if name == "remember" {
-			parameters = map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"query": map[string]any{"type": "string", "description": "What to recall from memory"}},
-				"required":   []string{"query"},
-			}
-		} else if name == "save_note" {
-			parameters = map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"note": map[string]any{"type": "string", "description": "A present, durable fact worth remembering"}},
-				"required":   []string{"note"},
-			}
-		} else if name == "recall_turns" {
-			parameters = map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"query": map[string]any{"type": "string", "description": "What to search for in this session's past turns"}},
-				"required":   []string{"query"},
-			}
-		}
 		payload.Tools = append(payload.Tools, map[string]any{
 			"type":     "function",
-			"function": map[string]any{"name": name, "parameters": parameters},
+			"function": map[string]any{"name": name, "parameters": toolParameters(name)},
 		})
 	}
 	body, err := json.Marshal(payload)
@@ -382,6 +352,82 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		result.StopReason = "toolUse"
 	}
 	return result, nil
+}
+
+func toolParameters(name string) map[string]any {
+	stringProperty := func(description string) map[string]any {
+		return map[string]any{"type": "string", "description": description}
+	}
+	numberProperty := func(description string) map[string]any {
+		return map[string]any{"type": "number", "description": description}
+	}
+	optional := func(properties map[string]any, required ...string) map[string]any {
+		result := map[string]any{"type": "object", "properties": properties}
+		if len(required) > 0 {
+			result["required"] = required
+		}
+		return result
+	}
+	switch name {
+	case "read":
+		return optional(map[string]any{
+			"path":   stringProperty("Path to the file to read (relative or absolute)"),
+			"offset": numberProperty("Line number to start reading from (1-indexed)"),
+			"limit":  numberProperty("Maximum number of lines to read"),
+		}, "path")
+	case "bash", "powershell":
+		return optional(map[string]any{
+			"command": stringProperty("Shell command to execute"),
+			"timeout": numberProperty("Timeout in seconds (optional)"),
+		}, "command")
+	case "write":
+		return optional(map[string]any{
+			"path":    stringProperty("Path to the file to write (relative or absolute)"),
+			"content": stringProperty("Content to write to the file"),
+		}, "path", "content")
+	case "edit":
+		return optional(map[string]any{
+			"path": stringProperty("Path to the file to edit (relative or absolute)"),
+			"edits": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"oldText": stringProperty("Exact text to replace"),
+						"newText": stringProperty("Replacement text"),
+					},
+					"required": []string{"oldText", "newText"},
+				},
+			},
+		}, "path", "edits")
+	case "grep":
+		return optional(map[string]any{
+			"pattern":    stringProperty("Search pattern (regex or literal string)"),
+			"path":       stringProperty("Directory or file to search"),
+			"glob":       stringProperty("File glob filter"),
+			"ignoreCase": map[string]any{"type": "boolean"},
+			"literal":    map[string]any{"type": "boolean"},
+			"context":    numberProperty("Lines before and after matches"),
+			"limit":      numberProperty("Maximum number of matches"),
+		}, "pattern")
+	case "find":
+		return optional(map[string]any{
+			"pattern": stringProperty("Glob pattern to match files"),
+			"path":    stringProperty("Directory to search"),
+			"limit":   numberProperty("Maximum number of results"),
+		}, "pattern")
+	case "ls":
+		return optional(map[string]any{
+			"path":  stringProperty("Directory to list"),
+			"limit": numberProperty("Maximum number of entries"),
+		})
+	case "remember", "recall_turns":
+		return optional(map[string]any{"query": stringProperty("What to search for")}, "query")
+	case "save_note":
+		return optional(map[string]any{"note": stringProperty("A present, durable fact worth remembering")}, "note")
+	default:
+		return map[string]any{"type": "object"}
+	}
 }
 
 func mapStopReason(reason string) (string, string) {
