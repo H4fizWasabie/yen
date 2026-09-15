@@ -222,6 +222,8 @@ func TestRunCarriesProviderUsageOnAssistantMessage(t *testing.T) {
 	result, err := Run(context.Background(), &scriptedProvider{responses: []Response{{
 		Text:       "done",
 		StopReason: "stop",
+		Provider:   "openrouter",
+		Model:      "z-ai/glm-5.3-flash",
 		Usage:      Usage{Input: 4, Output: 2, TotalTokens: 6},
 	}}}, nil, "hello")
 	if err != nil {
@@ -229,6 +231,9 @@ func TestRunCarriesProviderUsageOnAssistantMessage(t *testing.T) {
 	}
 	if result.Messages[1].Usage == nil || *result.Messages[1].Usage != (Usage{Input: 4, Output: 2, TotalTokens: 6}) {
 		t.Fatalf("assistant usage=%#v", result.Messages[1].Usage)
+	}
+	if result.Messages[1].Provider != "openrouter" || result.Messages[1].Model != "z-ai/glm-5.3-flash" {
+		t.Fatalf("assistant model=%#v", result.Messages[1])
 	}
 }
 

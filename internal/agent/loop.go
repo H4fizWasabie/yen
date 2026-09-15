@@ -11,6 +11,8 @@ type Message struct {
 	ToolCalls  []ToolCall
 	ToolCallID string
 	StopReason string
+	Provider   string
+	Model      string
 	Usage      *Usage
 }
 
@@ -24,6 +26,8 @@ type Response struct {
 	Text       string
 	ToolCalls  []ToolCall
 	StopReason string
+	Provider   string
+	Model      string
 	Usage      Usage
 }
 
@@ -154,7 +158,7 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 			result.Events = append(result.Events, "message_end:assistant:"+stopReason, "turn_end", "agent_end", "agent_settled")
 			return result, err
 		}
-		result.Messages = append(result.Messages, Message{Role: "assistant", Content: response.Text, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Usage: &response.Usage})
+		result.Messages = append(result.Messages, Message{Role: "assistant", Content: response.Text, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage})
 		if len(response.ToolCalls) > 0 {
 			result.Events = append(result.Events, "message_end:assistant:toolUse")
 		} else {

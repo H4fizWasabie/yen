@@ -147,6 +147,8 @@ func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent
 	defer response.Body.Close()
 
 	var result agent.Response
+	result.Provider = "openai-completions"
+	result.Model = p.Model
 	var toolCalls []agent.ToolCall
 	arguments := map[string]string{}
 	scanner := bufio.NewScanner(response.Body)

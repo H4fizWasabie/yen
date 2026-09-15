@@ -58,6 +58,8 @@ not use the newer checkout as an unqualified oracle.
   compact-and-retry attempt. Full TypeScript compaction settings remain
   deferred.
 - `internal/agent`: tool-turn loop and normalized event collection.
+  Assistant responses now carry provider/model metadata through the runtime
+  into the durable session entry, matching the TypeScript session fields.
 - `internal/provider`: one OpenAI-compatible SSE client with fragmented tool
   call argument assembly.
 - `internal/tools`: read-only local file tool with offset/limit, basic

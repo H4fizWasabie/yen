@@ -18,7 +18,7 @@ import (
 type provider struct{}
 
 func (provider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
-	return agent.Response{Text: "done", StopReason: "stop"}, nil
+	return agent.Response{Text: "done", StopReason: "stop", Provider: "test-provider", Model: "test-model"}, nil
 }
 
 type contextCaptureProvider struct {
@@ -180,6 +180,9 @@ func TestRunnerUsesCanonicalQueueAndResumesSession(t *testing.T) {
 	}
 	if len(stored.Messages()) != 2 {
 		t.Fatalf("messages=%#v", stored.Messages())
+	}
+	if stored.Messages()[1].Provider != "test-provider" || stored.Messages()[1].Model != "test-model" {
+		t.Fatalf("assistant metadata=%#v", stored.Messages()[1])
 	}
 	if runner.Checkpoints.Get(link.ConversationID).LastEntryID != turn.ID {
 		t.Fatalf("checkpoint=%#v", runner.Checkpoints.Get(link.ConversationID))
