@@ -143,6 +143,26 @@ func TestOpenAICompletionsEmitsTextUpdates(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsEmitsPartialMessageEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"a"}}]}`)
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"b"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	var events []agent.StreamEvent
+	result, err := NewOpenAICompletions(server.URL, "", "test-model").NextWithEvents(context.Background(), nil, nil, func(event agent.StreamEvent) {
+		events = append(events, event)
+	})
+	if err != nil || result.Text != "ab" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(events) != 4 || events[0].Type != "text_start" || events[1].Type != "text_delta" || events[1].Delta != "a" || events[2].Delta != "b" || events[3].Type != "text_end" || events[3].Partial.Content != "ab" {
+		t.Fatalf("events=%#v", events)
+	}
+}
+
 func TestOpenAICompletionsCombinesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

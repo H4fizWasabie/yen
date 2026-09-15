@@ -50,6 +50,20 @@ type StreamingProvider interface {
 	NextWithUpdates(ctx context.Context, messages []Message, tools []string, update func(string)) (Response, error)
 }
 
+type StreamEvent struct {
+	Type         string
+	ContentIndex int
+	Delta        string
+	ToolCall     *ToolCall
+	Partial      Message
+}
+
+// StreamingProviderWithEvents is optional so existing providers can keep the
+// smaller text-update contract while richer providers expose partial messages.
+type StreamingProviderWithEvents interface {
+	NextWithEvents(ctx context.Context, messages []Message, tools []string, emit func(StreamEvent)) (Response, error)
+}
+
 type Tool interface {
 	Name() string
 	Execute(ctx context.Context, args map[string]any) (string, error)
@@ -62,16 +76,17 @@ type Result struct {
 }
 
 type Event struct {
-	Type       string
-	ID         string
-	Name       string
-	Args       map[string]any
-	Result     string
-	IsError    bool
-	Usage      Usage
-	Message    *Message
-	Delta      string
-	StopReason string
+	Type           string
+	ID             string
+	Name           string
+	Args           map[string]any
+	Result         string
+	IsError        bool
+	Usage          Usage
+	Message        *Message
+	Delta          string
+	StopReason     string
+	AssistantEvent string
 }
 
 type EventFunc func(Event)
@@ -170,7 +185,19 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		result.Events = append(result.Events, "message_start:assistant")
 		var response Response
 		var err error
-		if streaming, ok := provider.(StreamingProvider); ok {
+		if streaming, ok := provider.(StreamingProviderWithEvents); ok {
+			response, err = streaming.NextWithEvents(ctx, result.Messages, toolNames, func(event StreamEvent) {
+				if event.Type == "text_delta" && event.Delta != "" {
+					result.Events = append(result.Events, "message_update")
+					if onUpdate != nil {
+						onUpdate(event.Delta)
+					}
+				}
+				if onEvent != nil {
+					onEvent(Event{Type: "message_update", AssistantEvent: event.Type, Delta: event.Delta, Message: &event.Partial})
+				}
+			})
+		} else if streaming, ok := provider.(StreamingProvider); ok {
 			response, err = streaming.NextWithUpdates(ctx, result.Messages, toolNames, func(text string) {
 				if text != "" {
 					result.Events = append(result.Events, "message_update")

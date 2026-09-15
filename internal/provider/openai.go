@@ -45,20 +45,24 @@ func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
 }
 
 func (p OpenAICompletions) Next(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
-	return p.nextWithUpdates(ctx, messages, toolNames, nil, false)
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, nil, false)
 }
 
 func (p OpenAICompletions) NextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string)) (agent.Response, error) {
-	return p.nextWithUpdates(ctx, messages, toolNames, update, false)
+	return p.nextWithUpdates(ctx, messages, toolNames, update, nil, false)
+}
+
+func (p OpenAICompletions) NextWithEvents(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, emit, false)
 }
 
 // NextJSON requests the provider's object-mode response format for structured
 // calls such as memory consolidation. Ordinary turns keep the existing wire shape.
 func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
-	return p.nextWithUpdates(ctx, messages, toolNames, nil, true)
+	return p.nextWithUpdates(ctx, messages, toolNames, nil, nil, true)
 }
 
-func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), jsonMode bool) (agent.Response, error) {
+func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
 	payload := struct {
 		Model          string            `json:"model"`
 		Messages       []openAIMessage   `json:"messages"`
@@ -170,6 +174,9 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	result.Model = p.Model
 	var toolCalls []agent.ToolCall
 	arguments := map[string]string{}
+	partial := agent.Message{Role: "assistant", Provider: result.Provider, Model: result.Model}
+	startedText := false
+	startedTools := map[int]bool{}
 	scanner := bufio.NewScanner(response.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -230,6 +237,16 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		}
 		for _, choice := range event.Choices {
 			result.Text += choice.Delta.Content
+			if choice.Delta.Content != "" {
+				if emit != nil && !startedText {
+					startedText = true
+					emit(agent.StreamEvent{Type: "text_start", ContentIndex: 0, Partial: partial})
+				}
+				partial.Content += choice.Delta.Content
+				if emit != nil {
+					emit(agent.StreamEvent{Type: "text_delta", ContentIndex: 0, Delta: choice.Delta.Content, Partial: partial})
+				}
+			}
 			if update != nil && choice.Delta.Content != "" {
 				update(choice.Delta.Content)
 			}
@@ -250,6 +267,16 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 					toolCalls[delta.Index].Name = delta.Function.Name
 				}
 				arguments[fmt.Sprint(delta.Index)] += delta.Function.Arguments
+				partial.ToolCalls = append([]agent.ToolCall(nil), toolCalls...)
+				if emit != nil {
+					if !startedTools[delta.Index] {
+						startedTools[delta.Index] = true
+						emit(agent.StreamEvent{Type: "toolcall_start", ContentIndex: delta.Index, Partial: partial})
+					}
+					if delta.Function.Arguments != "" {
+						emit(agent.StreamEvent{Type: "toolcall_delta", ContentIndex: delta.Index, Delta: delta.Function.Arguments, Partial: partial})
+					}
+				}
 			}
 		}
 	}
@@ -267,6 +294,14 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			}
 		}
 		toolCalls[index].Args = args
+		if emit != nil {
+			call := toolCalls[index]
+			partial.ToolCalls = append([]agent.ToolCall(nil), toolCalls...)
+			emit(agent.StreamEvent{Type: "toolcall_end", ContentIndex: index, ToolCall: &call, Partial: partial})
+		}
+	}
+	if emit != nil && startedText {
+		emit(agent.StreamEvent{Type: "text_end", ContentIndex: 0, Partial: partial})
 	}
 	result.ToolCalls = toolCalls
 	if len(toolCalls) > 0 && result.StopReason == "" {

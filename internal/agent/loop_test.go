@@ -22,6 +22,8 @@ func (p failingProvider) Next(context.Context, []Message, []string) (Response, e
 
 type updatingProvider struct{}
 
+type eventStreamingProvider struct{}
+
 func (updatingProvider) Next(context.Context, []Message, []string) (Response, error) {
 	return Response{Text: "done", StopReason: "stop"}, nil
 }
@@ -29,6 +31,18 @@ func (updatingProvider) Next(context.Context, []Message, []string) (Response, er
 func (updatingProvider) NextWithUpdates(_ context.Context, _ []Message, _ []string, update func(string)) (Response, error) {
 	update("do")
 	update("ne")
+	return Response{Text: "done", StopReason: "stop"}, nil
+}
+
+func (eventStreamingProvider) Next(context.Context, []Message, []string) (Response, error) {
+	return Response{Text: "done", StopReason: "stop"}, nil
+}
+
+func (eventStreamingProvider) NextWithEvents(_ context.Context, _ []Message, _ []string, emit func(StreamEvent)) (Response, error) {
+	partial := Message{Role: "assistant", Content: "done"}
+	emit(StreamEvent{Type: "text_start", Partial: partial})
+	emit(StreamEvent{Type: "text_delta", Delta: "done", Partial: partial})
+	emit(StreamEvent{Type: "text_end", Partial: partial})
 	return Response{Text: "done", StopReason: "stop"}, nil
 }
 
@@ -214,6 +228,26 @@ func TestRunWithEventsReportsDashboardToolAndUsageEvents(t *testing.T) {
 	}
 	if events[1].Message == nil || len(events[1].Message.ToolCalls) != 1 || events[3].Message == nil || events[3].Message.Role != "tool" || events[3].Message.ToolCallID != "read-1" {
 		t.Fatalf("message payloads = %#v %#v", events[1].Message, events[3].Message)
+	}
+}
+
+func TestRunWithEventsIncludesProviderStreamPayload(t *testing.T) {
+	var events []Event
+	result, err := RunFromWithQueuesAndEvents(context.Background(), eventStreamingProvider{}, nil, nil, "hello", nil, nil, func(event Event) {
+		events = append(events, event)
+	})
+	if err != nil || result.FinalText != "done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	var delta Event
+	for _, event := range events {
+		if event.Type == "message_update" && event.AssistantEvent == "text_delta" {
+			delta = event
+			break
+		}
+	}
+	if delta.Delta != "done" || delta.Message == nil || delta.Message.Content != "done" {
+		t.Fatalf("stream payload=%#v", delta)
 	}
 }
 
