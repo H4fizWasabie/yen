@@ -227,6 +227,12 @@ TypeScript authority:
 `TestGrepToolMatchesRecursiveGlobstarPaths`, plus
 `TestGrepToolTruncatesLongMatchingLines`.
 
+The built-in `ls` and `find` tools now apply the oracle's 6 KiB output ceiling
+without cutting through a filename line. TypeScript authority:
+`packages/coding-agent/src/core/tools/ls.ts`, `find.ts`, and `truncate.ts`;
+Go evidence: `internal/tools/fs_tools.go` and
+`TestFileSearchToolsBoundOutput`.
+
 OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
 fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
 instead of the generic `reasoning.effort` field. TypeScript authority:

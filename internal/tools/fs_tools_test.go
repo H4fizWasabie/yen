@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,34 @@ func TestGrepToolTruncatesLongMatchingLines(t *testing.T) {
 	}
 	if !strings.Contains(got, "... [truncated]") || strings.Contains(got, strings.Repeat("x", 600)) {
 		t.Fatalf("grep=%q", got)
+	}
+}
+
+func TestFileSearchToolsBoundOutput(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 200; i++ {
+		name := fmt.Sprintf("entry-%03d-%s.txt", i, strings.Repeat("x", 40))
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(strings.Repeat("match ", 15)+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ls, err := NewListTool(dir).Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	find, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "*.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range []string{ls, find} {
+		if !strings.Contains(result, "[Output truncated]") {
+			t.Fatalf("result was not truncated: %q", result)
+		}
+	}
+	grep, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "match"})
+	if err != nil || strings.Contains(grep, "[Output truncated]") {
+		t.Fatalf("grep=%q err=%v", grep, err)
 	}
 }
 
