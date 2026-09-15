@@ -3,6 +3,8 @@ package codingagent
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/settings"
@@ -86,11 +88,80 @@ func parsePromptTemplate(raw string) (description, content string) {
 
 func substitutePromptArgs(content string, args []string) string {
 	all := strings.Join(args, " ")
-	for i := len(args); i >= 1; i-- {
-		content = strings.ReplaceAll(content, "$"+string(rune('0'+i)), args[i-1])
+	pattern := regexp.MustCompile(`\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)`)
+	return pattern.ReplaceAllStringFunc(content, func(match string) string {
+		groups := pattern.FindStringSubmatch(match)
+		if groups[1] != "" {
+			value := all
+			if groups[1] != "@" && groups[1] != "ARGUMENTS" {
+				value = promptArg(args, groups[1])
+			}
+			if value == "" {
+				return groups[2]
+			}
+			return value
+		}
+		if groups[3] != "" {
+			start, _ := strconv.Atoi(groups[3])
+			if start < 1 {
+				start = 1
+			}
+			start--
+			end := len(args)
+			if groups[4] != "" {
+				length, _ := strconv.Atoi(groups[4])
+				end = start + length
+				if end > len(args) {
+					end = len(args)
+				}
+			}
+			if start >= len(args) {
+				return ""
+			}
+			return strings.Join(args[start:end], " ")
+		}
+		if groups[5] == "@" || groups[5] == "ARGUMENTS" {
+			return all
+		}
+		return promptArg(args, groups[5])
+	})
+}
+
+func promptArg(args []string, number string) string {
+	index, err := strconv.Atoi(number)
+	if err != nil || index < 1 || index > len(args) {
+		return ""
 	}
-	content = strings.ReplaceAll(content, "$ARGUMENTS", all)
-	return strings.ReplaceAll(content, "$@", all)
+	return args[index-1]
+}
+
+func parsePromptArgs(text string) []string {
+	var args []string
+	var current strings.Builder
+	quote := rune(0)
+	for _, char := range text {
+		switch {
+		case quote != 0:
+			if char == quote {
+				quote = 0
+			} else {
+				current.WriteRune(char)
+			}
+		case char == '\'' || char == '"':
+			quote = char
+		case char == ' ' || char == '\t' || char == '\n':
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	return args
 }
 
 // ExpandPrompt applies a local prompt template when text starts with /name.
@@ -117,7 +188,7 @@ func ExpandPrompt(workspace, text string) string {
 		}
 		return text
 	}
-	fields := strings.Fields(text[1:])
+	fields := parsePromptArgs(text[1:])
 	if len(fields) == 0 {
 		return text
 	}

@@ -54,3 +54,15 @@ func TestSkillPromptExpansionLoadsBodyAndArguments(t *testing.T) {
 		t.Fatalf("expanded=%q", got)
 	}
 }
+
+func TestPromptTemplateSubstitutionSupportsQuotedArgsDefaultsAndSlices(t *testing.T) {
+	got := substitutePromptArgs("$1|$10|$@|${3:-fallback}|${@:2:2}|${@:3}", []string{"one", "two words", "three", "four", "five", "six", "seven", "eight", "nine", "ten"})
+	want := "one|ten|one two words three four five six seven eight nine ten|three|two words three|three four five six seven eight nine ten"
+	if got != want {
+		t.Fatalf("substitution=%q want %q", got, want)
+	}
+	args := parsePromptArgs(`review "two words" 'three words'`)
+	if len(args) != 3 || args[1] != "two words" || args[2] != "three words" {
+		t.Fatalf("args=%#v", args)
+	}
+}

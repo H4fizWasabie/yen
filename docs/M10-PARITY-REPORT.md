@@ -94,6 +94,12 @@ agent call. TypeScript authority:
 `internal/codingagent/prompt_templates.go`, `internal/runtime/runtime.go`, and
 focused expansion tests; the full 268-test race/vet/diff gate passes.
 
+Prompt template expansion now matches the oracle's quoted argument parsing,
+multi-digit positional arguments, defaults, and argument slices. TypeScript
+authority: `packages/coding-agent/src/core/prompt-templates.ts:16-95`; Go
+evidence: `internal/codingagent/prompt_templates.go` and focused substitution
+tests; the full 269-test race/vet/diff gate passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

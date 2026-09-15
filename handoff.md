@@ -544,6 +544,11 @@ Skill commands now expand `/skill:name args` into an XML skill block with the
 skill body, location, relative-reference guidance, and trailing arguments.
 Focused expansion coverage and the full 268-test race/vet/diff gate pass.
 
+Prompt templates now support quoted arguments, multi-digit positional
+placeholders, defaults, and argument slices in the same substitution pass as
+the oracle. Focused template tests and the full 269-test race/vet/diff gate
+pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
