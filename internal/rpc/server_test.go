@@ -291,3 +291,30 @@ func TestQueueModeAndCommandDiscovery(t *testing.T) {
 		t.Fatalf("output=%s", output.String())
 	}
 }
+
+func TestBashCommandReturnsOutputAndLogsWorkingNote(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	created := session.New(path, session.Header{ID: "bash", ConversationID: "bash", CWD: dir})
+	if _, err := created.Append(session.Message{Role: "user", Content: "run"}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "bash", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{Type: "bash", Command: "printf hello"}); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"output":"hello"`) || !strings.Contains(opened.WorkingNote(), "ran: printf hello") {
+		t.Fatalf("output=%s note=%q", output.String(), opened.WorkingNote())
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
@@ -33,22 +34,24 @@ type Server struct {
 }
 
 type command struct {
-	ID                string     `json:"id,omitempty"`
-	Type              string     `json:"type"`
-	Message           string     `json:"message,omitempty"`
-	Images            []rpcImage `json:"images,omitempty"`
-	StreamingBehavior string     `json:"streamingBehavior,omitempty"`
-	Since             string     `json:"since,omitempty"`
-	EntryID           string     `json:"entryId,omitempty"`
-	Name              string     `json:"name,omitempty"`
-	Path              string     `json:"path,omitempty"`
-	Provider          string     `json:"provider,omitempty"`
-	Model             string     `json:"modelId,omitempty"`
-	Level             string     `json:"level,omitempty"`
-	Direction         string     `json:"direction,omitempty"`
-	Mode              string     `json:"mode,omitempty"`
-	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
-	Enabled           *bool      `json:"enabled,omitempty"`
+	ID                 string     `json:"id,omitempty"`
+	Type               string     `json:"type"`
+	Message            string     `json:"message,omitempty"`
+	Command            string     `json:"command,omitempty"`
+	Images             []rpcImage `json:"images,omitempty"`
+	StreamingBehavior  string     `json:"streamingBehavior,omitempty"`
+	Since              string     `json:"since,omitempty"`
+	EntryID            string     `json:"entryId,omitempty"`
+	Name               string     `json:"name,omitempty"`
+	Path               string     `json:"path,omitempty"`
+	Provider           string     `json:"provider,omitempty"`
+	Model              string     `json:"modelId,omitempty"`
+	Level              string     `json:"level,omitempty"`
+	Direction          string     `json:"direction,omitempty"`
+	Mode               string     `json:"mode,omitempty"`
+	KeepRecentTurns    int        `json:"keepRecentTurns,omitempty"`
+	Enabled            *bool      `json:"enabled,omitempty"`
+	ExcludeFromContext bool       `json:"excludeFromContext,omitempty"`
 }
 
 type rpcImage struct {
@@ -122,6 +125,28 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			s.runPrompt(ctx, output, turn, images)
 		}()
 		return nil
+	case "bash":
+		if strings.TrimSpace(request.Command) == "" {
+			return errors.New("command is required")
+		}
+		current, err := s.Runner.OpenSession(link)
+		if err != nil {
+			return err
+		}
+		workspace := link.WorkspaceID
+		if workspace == "" {
+			workspace = current.Header().CWD
+		}
+		for _, tool := range codingagent.NewToolsForSession(workspace, current) {
+			if tool.Name() == "bash" {
+				result, err := tool.Execute(ctx, map[string]any{"command": request.Command, "excludeFromContext": request.ExcludeFromContext})
+				if err != nil {
+					return err
+				}
+				return s.response(output, request.ID, request.Type, true, map[string]any{"output": result}, nil)
+			}
+		}
+		return errors.New("bash tool is unavailable")
 	case "abort":
 		turn, ok := s.Runner.Active(link.ConversationID)
 		if ok {
