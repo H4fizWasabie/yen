@@ -28,7 +28,7 @@ func TestServePromptStateAndMessagesUseJSONLProtocol(t *testing.T) {
 	runner := runtime.New(queue, rpcProvider{}, nil)
 	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
 	link := conversation.Link{Adapter: "rpc", AdapterKey: "test", ConversationID: "conv-rpc", WorkspaceID: dir}
-	input := strings.NewReader(`{"id":"1","type":"prompt","message":"hello"}` + "\n" + `{"id":"2","type":"get_messages"}` + "\n")
+	input := strings.NewReader(`{"id":"1","type":"prompt","message":"hello"}` + "\n" + `{"id":"2","type":"get_messages"}` + "\n" + `{"id":"3","type":"get_tree"}` + "\n" + `{"id":"4","type":"get_last_assistant_text"}` + "\n")
 	var output bytes.Buffer
 	server := Server{Runner: runner, Link: link}
 	if err := server.Serve(context.Background(), input, &output); err != nil {
@@ -42,7 +42,7 @@ func TestServePromptStateAndMessagesUseJSONLProtocol(t *testing.T) {
 		}
 		records = append(records, record)
 	}
-	if len(records) < 4 || records[0]["type"] != "response" || records[0]["id"] != "1" {
+	if len(records) < 6 || records[0]["type"] != "response" || records[0]["id"] != "1" {
 		t.Fatalf("records=%#v", records)
 	}
 	if !strings.Contains(output.String(), `"event":"done"`) || !strings.Contains(output.String(), "rpc reply") {

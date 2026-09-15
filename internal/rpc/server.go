@@ -14,6 +14,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/runtime"
+	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 type Server struct {
@@ -32,6 +33,9 @@ type command struct {
 	Message           string     `json:"message,omitempty"`
 	Images            []rpcImage `json:"images,omitempty"`
 	StreamingBehavior string     `json:"streamingBehavior,omitempty"`
+	Since             string     `json:"since,omitempty"`
+	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
+	Enabled           *bool      `json:"enabled,omitempty"`
 }
 
 type rpcImage struct {
@@ -128,6 +132,51 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"messages": session.Messages()}, nil)
+	case "get_tree", "get_entries", "get_session_stats", "get_last_assistant_text":
+		session, err := s.Runner.OpenSession(s.Link)
+		if err != nil {
+			return err
+		}
+		switch request.Type {
+		case "get_tree":
+			return s.response(output, request.ID, request.Type, true, map[string]any{"leafId": session.LeafID(), "entries": session.Tree()}, nil)
+		case "get_entries":
+			entries := session.Tree()
+			if request.Since != "" {
+				for index, entry := range entries {
+					if entry.ID == request.Since {
+						entries = entries[index+1:]
+						break
+					}
+				}
+			}
+			return s.response(output, request.ID, request.Type, true, map[string]any{"entries": entries}, nil)
+		case "get_last_assistant_text":
+			messages := session.Messages()
+			for index := len(messages) - 1; index >= 0; index-- {
+				if messages[index].Role == "assistant" {
+					return s.response(output, request.ID, request.Type, true, map[string]any{"text": contentText(messages[index].Content)}, nil)
+				}
+			}
+			return s.response(output, request.ID, request.Type, true, map[string]any{"text": ""}, nil)
+		default:
+			return s.response(output, request.ID, request.Type, true, map[string]any{"messageCount": len(session.Messages()), "leafId": session.LeafID()}, nil)
+		}
+	case "compact":
+		keep := request.KeepRecentTurns
+		if keep < 1 {
+			keep = 2
+		}
+		if err := s.Runner.Compact(ctx, s.Link.ConversationID, keep); err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"keepRecentTurns": keep}, nil)
+	case "set_auto_compaction":
+		if request.Enabled == nil {
+			return errors.New("enabled is required")
+		}
+		s.Runner.AutoCompactDisabled = !*request.Enabled
+		return s.response(output, request.ID, request.Type, true, map[string]any{"enabled": *request.Enabled}, nil)
 	default:
 		return fmt.Errorf("unsupported rpc command %q", request.Type)
 	}
@@ -179,4 +228,20 @@ func (s *Server) write(output io.Writer, value any) error {
 	defer s.writeMu.Unlock()
 	_, err = fmt.Fprintf(output, "%s\n", data)
 	return err
+}
+
+func contentText(content any) string {
+	if text, ok := content.(string); ok {
+		return text
+	}
+	if parts, ok := content.([]session.ContentPart); ok {
+		var builder strings.Builder
+		for _, part := range parts {
+			if part.Type == "text" {
+				builder.WriteString(part.Text)
+			}
+		}
+		return builder.String()
+	}
+	return fmt.Sprint(content)
 }
