@@ -25,6 +25,24 @@ func WorkingNoteMessage(note string) agent.Message {
 
 const contextPromptPrefix = "<project_context>\nThe following project guidance was loaded from context files; follow it unless current evidence requires otherwise.\n"
 
+var contextFileNames = []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD", "CONTEXT.md"}
+
+func appendContextFiles(sections []string, dir string) []string {
+	for _, name := range contextFileNames {
+		path := filepath.Join(dir, name)
+		data, err := os.ReadFile(path)
+		if err == nil && strings.TrimSpace(string(data)) != "" {
+			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+			break
+		}
+	}
+	path := filepath.Join(dir, "YEN.md")
+	if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
+		sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+	}
+	return sections
+}
+
 // ContextMessage loads the small, repository-local instruction surface used by
 // the coding-agent layer. Files are ordered from the workspace root downward.
 func ContextMessage(workspace string) (agent.Message, bool) {
@@ -45,26 +63,10 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 	}
 	var sections []string
 	if agentDir := contextAgentDir(); agentDir != "" {
-		for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CONTEXT.md", "THEOSES.md"} {
-			path := filepath.Join(agentDir, name)
-			data, readErr := os.ReadFile(path)
-			if readErr == nil && strings.TrimSpace(string(data)) != "" {
-				sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
-			}
-		}
+		sections = appendContextFiles(sections, agentDir)
 	}
 	for i := len(dirs) - 1; i >= 0; i-- {
-		for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CONTEXT.md", "THEOSES.md"} {
-			path := filepath.Join(dirs[i], name)
-			data, err := os.ReadFile(path)
-			if err != nil || len(data) == 0 {
-				continue
-			}
-			text := strings.TrimSpace(string(data))
-			if text != "" {
-				sections = append(sections, "["+path+"]\n"+text)
-			}
-		}
+		sections = appendContextFiles(sections, dirs[i])
 	}
 	for _, configured := range resourceSettings.ContextFiles {
 		path := configured
