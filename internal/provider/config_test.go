@@ -2,9 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -109,6 +111,31 @@ func TestGitHubCopilotUsesDynamicHeadersAndYenToken(t *testing.T) {
 	client.Client = server.Client()
 	result, err := client.Next(context.Background(), []agent.Message{{Role: "assistant", Content: "prior", Images: []string{"data:image/png;base64,AA=="}}}, nil)
 	if err != nil || result.Provider != "github-copilot" || result.Text != "ok" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
+func TestOpenAICodexUsesAccountAndExperimentalHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/codex/responses" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer header.") || r.Header.Get("chatgpt-account-id") != "acct-1" || r.Header.Get("originator") != "yen" || r.Header.Get("OpenAI-Beta") != "responses=experimental" {
+			t.Fatalf("path=%q auth=%q account=%q originator=%q beta=%q", r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("chatgpt-account-id"), r.Header.Get("originator"), r.Header.Get("OpenAI-Beta"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\",\"model\":\"gpt-5\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n"))
+	}))
+	defer server.Close()
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-1"}}`))
+	t.Setenv("YEN_OPENAI_CODEX_ACCESS_TOKEN", "header."+payload+".signature")
+	t.Setenv("YEN_OPENAI_CODEX_BASE_URL", server.URL+"/codex")
+	configured, err := NewConfigured("openai-codex", "gpt-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := configured.(OpenAIResponses)
+	client.Client = server.Client()
+	result, err := client.Next(context.Background(), []agent.Message{{Role: "user", Content: "hello"}}, nil)
+	if err != nil || result.Provider != "openai-codex" || result.Text != "ok" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 }

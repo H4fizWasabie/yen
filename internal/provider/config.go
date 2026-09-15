@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -45,6 +47,7 @@ var providerDefaults = map[string]string{
 	"cloudflare-workers-ai":      "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
 	"cloudflare-ai-gateway":      "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
 	"github-copilot":             "https://api.individual.githubcopilot.com",
+	"openai-codex":               "https://chatgpt.com/backend-api/codex",
 }
 
 var providerKeyEnvs = map[string]string{
@@ -82,6 +85,25 @@ var providerKeyEnvs = map[string]string{
 	"cloudflare-ai-gateway":      "YEN_CLOUDFLARE_API_KEY",
 	"google-vertex":              "YEN_GOOGLE_CLOUD_API_KEY",
 	"github-copilot":             "YEN_COPILOT_GITHUB_TOKEN",
+	"openai-codex":               "YEN_OPENAI_CODEX_ACCESS_TOKEN",
+}
+
+func codexAccountID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	data, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var payload map[string]any
+	if json.Unmarshal(data, &payload) != nil {
+		return ""
+	}
+	claims, _ := payload["https://api.openai.com/auth"].(map[string]any)
+	account, _ := claims["chatgpt_account_id"].(string)
+	return account
 }
 
 func googleVertexConfigured(model string) GoogleGenerativeAI {
@@ -103,6 +125,31 @@ func googleVertexConfigured(model string) GoogleGenerativeAI {
 	}
 	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 	return client
+}
+
+func codexConfigured(model string) (OpenAIResponses, error) {
+	token := os.Getenv("YEN_OPENAI_CODEX_ACCESS_TOKEN")
+	if token == "" {
+		return OpenAIResponses{}, errors.New("openai codex access token is required")
+	}
+	accountID := codexAccountID(token)
+	if accountID == "" {
+		return OpenAIResponses{}, errors.New("openai codex token has no ChatGPT account ID")
+	}
+	baseURL := os.Getenv("YEN_OPENAI_CODEX_BASE_URL")
+	if baseURL == "" {
+		baseURL = providerDefaults["openai-codex"]
+	}
+	client := NewOpenAIResponses(baseURL, token, model)
+	client.ProviderName = "openai-codex"
+	client.Headers = map[string]string{
+		"chatgpt-account-id": accountID,
+		"originator":         "yen",
+		"OpenAI-Beta":        "responses=experimental",
+		"Accept":             "text/event-stream",
+	}
+	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+	return client, nil
 }
 
 func cloudflareConfigured(providerID, model string) OpenAICompletions {
@@ -167,6 +214,17 @@ func NewFromEnv() OpenAICompletions {
 
 func ConfiguredFromEnv() agent.Provider {
 	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
+	if providerID == "openai-codex" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gpt-5"
+		}
+		client, err := codexConfigured(model)
+		if err != nil {
+			return NewFromEnv()
+		}
+		return client
+	}
 	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
 		baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
 		if baseURL == "" {
@@ -273,6 +331,12 @@ func ConfiguredFromEnv() agent.Provider {
 func NewConfigured(providerID, model string) (agent.Provider, error) {
 	providerID = strings.ToLower(strings.TrimSpace(providerID))
 	model = strings.TrimSpace(model)
+	if providerID == "openai-codex" {
+		if model == "" {
+			model = "gpt-5"
+		}
+		return codexConfigured(model)
+	}
 	if providerID == "cloudflare-workers-ai" || providerID == "cloudflare-ai-gateway" {
 		if model == "" {
 			model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"

@@ -22,6 +22,7 @@ type OpenAIResponses struct {
 	APIKey        string
 	Model         string
 	ProviderName  string
+	Headers       map[string]string
 	ThinkingLevel string
 	Client        *http.Client
 	MaxRetries    int
@@ -81,6 +82,9 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept", "text/event-stream")
 		request.Header.Set("Authorization", "Bearer "+p.APIKey)
+		for name, value := range p.Headers {
+			request.Header.Set(name, value)
+		}
 		response, err = client.Do(request)
 		if err != nil {
 			return agent.Response{}, err
