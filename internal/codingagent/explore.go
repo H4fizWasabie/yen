@@ -70,7 +70,7 @@ func explorerPrompt(tier string, lines, turns, maxInputTokens int) string {
 	if tier == "deep-map" {
 		structural = " Start with a 5–15 line structural overview of components, entry points, and data flow before findings."
 	}
-	return fmt.Sprintf("You are Theoses's background explorer: a cheap, isolated scouting agent. Answer ONE question about a codebase with a distilled answer; never return raw tool dumps. Use only read, grep, find, and ls. Cite file paths and line locations when possible. Keep the answer to at most %d lines, within %d turns, and below %d input tokens.%s End with a budget footer in the form ~<K> in, <turns>/%d turns. If a budget is reached before you can answer, say INCOMPLETE: <what is missing> instead of guessing.", lines, turns, maxInputTokens, structural, turns)
+	return fmt.Sprintf("You are Yen's background explorer: a cheap, isolated scouting agent. Answer ONE question about a codebase with a distilled answer; never return raw tool dumps. Use only read, grep, find, and ls. Cite file paths and line locations when possible. Keep the answer to at most %d lines, within %d turns, and below %d input tokens.%s End with a budget footer in the form ~<K> in, <turns>/%d turns. If a budget is reached before you can answer, say INCOMPLETE: <what is missing> instead of guessing.", lines, turns, maxInputTokens, structural, turns)
 }
 
 type turnLimitedProvider struct {
