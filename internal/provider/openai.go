@@ -24,11 +24,14 @@ type openAIMessage struct {
 	ReasoningDetails []json.RawMessage `json:"reasoning_details,omitempty"`
 	ToolCalls        []openAIToolCall  `json:"tool_calls,omitempty"`
 	ToolCallID       string            `json:"tool_call_id,omitempty"`
+	Name             string            `json:"name,omitempty"`
+	Prefix           *bool             `json:"prefix,omitempty"`
 }
 
 type openAIToolCall struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
+	Index    *int   `json:"index,omitempty"`
 	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -128,7 +131,7 @@ func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Messag
 func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
 	converted := convertMessages(messages)
 	if p.ProviderName == "mistral" {
-		converted = normalizeMistralMessages(converted)
+		converted = convertMistralMessages(messages)
 	}
 	payload := struct {
 		Model               string            `json:"model"`
@@ -572,6 +575,46 @@ func normalizeMistralMessages(messages []openAIMessage) []openAIMessage {
 		result[i].ToolCalls = append([]openAIToolCall(nil), result[i].ToolCalls...)
 		for j := range result[i].ToolCalls {
 			result[i].ToolCalls[j].ID = normalizeMistralToolID(result[i].ToolCalls[j].ID)
+		}
+	}
+	return result
+}
+
+func convertMistralMessages(messages []agent.Message) []openAIMessage {
+	result := normalizeMistralMessages(convertMessages(messages))
+	for i := range result {
+		message := &result[i]
+		if len(messages) <= i {
+			continue
+		}
+		if message.Role == "assistant" {
+			prefix := false
+			message.Prefix = &prefix
+			if text, ok := message.Content.(string); ok && text != "" {
+				message.Content = []map[string]any{{"type": "text", "text": text}}
+			}
+			for j := range message.ToolCalls {
+				index := 0
+				message.ToolCalls[j].Index = &index
+			}
+		}
+		if message.Role == "tool" {
+			message.Name = messages[i].ToolName
+			parts := make([]map[string]any, 0, len(messages[i].Images)+1)
+			if messages[i].Content != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": messages[i].Content})
+			}
+			message.Content = parts
+		}
+		if len(messages[i].Images) > 0 {
+			parts := make([]map[string]any, 0, len(messages[i].Images)+1)
+			if messages[i].Content != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": messages[i].Content})
+			}
+			for _, image := range messages[i].Images {
+				parts = append(parts, map[string]any{"type": "image_url", "image_url": image})
+			}
+			message.Content = parts
 		}
 	}
 	return result

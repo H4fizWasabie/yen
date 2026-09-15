@@ -15,6 +15,7 @@ type Message struct {
 	Images            []string
 	ToolCalls         []ToolCall
 	ToolCallID        string
+	ToolName          string
 	StopReason        string
 	ErrorMessage      string
 	ResponseID        string
@@ -396,7 +397,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_start:"+call.ID)
 				content := `Tool call "` + call.Name + `" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
-				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID, ToolName: call.Name}
 				result.Messages = append(result.Messages, toolMessage)
 				toolResults = append(toolResults, toolMessage)
 				emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -413,7 +414,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_start:"+call.ID, "tool_execution_end:"+call.ID)
 				result.Events = append(result.Events, "message_start:toolResult")
 				content := (&UnknownToolError{Name: call.Name}).Error()
-				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID, ToolName: call.Name}
 				result.Messages = append(result.Messages, toolMessage)
 				toolResults = append(toolResults, toolMessage)
 				emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -430,7 +431,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				if hookErr != nil {
 					content := "Tool error: " + hookErr.Error()
 					result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
-					toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+					toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID, ToolName: call.Name}
 					result.Messages = append(result.Messages, toolMessage)
 					toolResults = append(toolResults, toolMessage)
 					emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -446,7 +447,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 					}
 					content := reason
 					result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
-					toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+					toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID, ToolName: call.Name}
 					result.Messages = append(result.Messages, toolMessage)
 					toolResults = append(toolResults, toolMessage)
 					emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -464,7 +465,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 				if ctx.Err() != nil {
 					result.Events = append(result.Events, "message_start:toolResult")
-					toolMessage := Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID}
+					toolMessage := Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID, ToolName: call.Name}
 					result.Messages = append(result.Messages, toolMessage)
 					toolResults = append(toolResults, toolMessage)
 					emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -494,7 +495,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				content, images = toolResult.Text, toolResult.Images
 			}
 			result.Events = append(result.Events, "message_start:toolResult")
-			toolMessage := Message{Role: "tool", Content: content, Images: images, ToolCallID: call.ID}
+			toolMessage := Message{Role: "tool", Content: content, Images: images, ToolCallID: call.ID, ToolName: call.Name}
 			result.Messages = append(result.Messages, toolMessage)
 			toolResults = append(toolResults, toolMessage)
 			emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -602,7 +603,7 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 			isError = true
 		}
 		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
-		toolMessage := Message{Role: "tool", Content: content, Images: outcome.images, ToolCallID: outcome.call.ID}
+		toolMessage := Message{Role: "tool", Content: content, Images: outcome.images, ToolCallID: outcome.call.ID, ToolName: outcome.call.Name}
 		result.Messages = append(result.Messages, toolMessage)
 		toolMessages = append(toolMessages, toolMessage)
 		emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
