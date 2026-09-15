@@ -20,16 +20,17 @@ import (
 )
 
 type Runner struct {
-	Queue                 *conversation.Queue
-	Provider              agent.Provider
-	ToolFactory           func(workspace string) []agent.Tool
-	SessionPath           func(turn conversation.Turn) string
-	Checkpoints           *memory.Checkpoints
-	Memory                *memory.Engine
-	SharedMemory          bool
-	AutoCompactTurns      int
-	AutoCompactOnOverflow bool
-	AutoConsolidate       bool
+	Queue                       *conversation.Queue
+	Provider                    agent.Provider
+	ToolFactory                 func(workspace string) []agent.Tool
+	SessionPath                 func(turn conversation.Turn) string
+	Checkpoints                 *memory.Checkpoints
+	Memory                      *memory.Engine
+	SharedMemory                bool
+	AutoCompactTurns            int
+	AutoCompactKeepRecentTokens int
+	AutoCompactOnOverflow       bool
+	AutoConsolidate             bool
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -42,6 +43,14 @@ func New(queue *conversation.Queue, provider agent.Provider, tools func(string) 
 
 func AutoCompactTurnsFromEnv() int {
 	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_TURNS"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
+}
+
+func AutoCompactKeepRecentTokensFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -243,7 +252,12 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 	if err != nil {
 		return err
 	}
-	plan, err := current.PrepareCompaction(keepRecentTurns)
+	var plan session.CompactionPlan
+	if r.AutoCompactKeepRecentTokens > 0 {
+		plan, err = current.PrepareCompactionByTokens(r.AutoCompactKeepRecentTokens)
+	} else {
+		plan, err = current.PrepareCompaction(keepRecentTurns)
+	}
 	if err != nil {
 		return err
 	}

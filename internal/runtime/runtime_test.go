@@ -314,6 +314,17 @@ func TestRunnerUsesCompactionAwareContext(t *testing.T) {
 	}
 }
 
+func TestAutoCompactKeepRecentTokensFromEnv(t *testing.T) {
+	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "2048")
+	if got := AutoCompactKeepRecentTokensFromEnv(); got != 2048 {
+		t.Fatalf("tokens=%d", got)
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "0")
+	if got := AutoCompactKeepRecentTokensFromEnv(); got != 0 {
+		t.Fatalf("disabled tokens=%d", got)
+	}
+}
+
 func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conv-compact.jsonl")
