@@ -47,6 +47,7 @@ func main() {
 	provider.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
 	runner := runtime.New(queue, provider, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
+	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()
 	runner.AutoCompactKeepRecentTokens = runtime.AutoCompactKeepRecentTokensFromEnv()
 	runner.AutoCompactContextWindow = runtime.AutoCompactContextWindowFromEnv()
 	runner.AutoCompactReserveTokens = runtime.AutoCompactReserveTokensFromEnv()

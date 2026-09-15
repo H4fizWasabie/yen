@@ -28,6 +28,7 @@ type Runner struct {
 	Memory                      *memory.Engine
 	SharedMemory                bool
 	AutoCompactTurns            int
+	AutoCompactMaxHistoryTurns  int
 	AutoCompactKeepRecentTokens int
 	AutoCompactContextWindow    int
 	AutoCompactReserveTokens    int
@@ -45,6 +46,14 @@ func New(queue *conversation.Queue, provider agent.Provider, tools func(string) 
 
 func AutoCompactTurnsFromEnv() int {
 	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_TURNS"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
+}
+
+func AutoCompactMaxHistoryTurnsFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -338,6 +347,14 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			if err != nil {
 				return agent.Result{}, err
 			}
+		}
+	} else if r.AutoCompactMaxHistoryTurns > 0 {
+		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactMaxHistoryTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
+			return agent.Result{}, err
+		}
+		current, err = openOrCreate(path, turn)
+		if err != nil {
+			return agent.Result{}, err
 		}
 	}
 	history := toAgentMessages(current.ContextMessages())

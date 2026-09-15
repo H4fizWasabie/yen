@@ -344,6 +344,17 @@ func TestAutoCompactContextSettingsFromEnv(t *testing.T) {
 	}
 }
 
+func TestAutoCompactMaxHistoryTurnsFromEnv(t *testing.T) {
+	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "3")
+	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 3 {
+		t.Fatalf("max history turns=%d", got)
+	}
+	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "0")
+	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 0 {
+		t.Fatalf("disabled max history turns=%d", got)
+	}
+}
+
 func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conv-compact.jsonl")
@@ -430,7 +441,7 @@ func TestRunnerAutoCompactsBeforePrompt(t *testing.T) {
 	}
 	provider := &autoCompactionProvider{}
 	runner := New(queue, provider, nil)
-	runner.AutoCompactTurns = 2
+	runner.AutoCompactMaxHistoryTurns = 2
 	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
 	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-auto", WorkspaceID: dir}
 	if _, err := runner.Submit(link, "four"); err != nil {
