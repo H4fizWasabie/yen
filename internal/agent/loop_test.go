@@ -173,7 +173,13 @@ func TestRunDoesNotExecuteToolCallsFromLengthLimitedResponse(t *testing.T) {
 	if len(result.Messages) != 4 || !strings.Contains(result.Messages[2].Content, "arguments may be truncated") {
 		t.Fatalf("messages=%#v", result.Messages)
 	}
-	if len(events) != 6 || events[3].Type != "tool_execution_end" || !events[3].IsError || events[4].Type != "tool_result" || !events[4].IsError {
+	var toolEvents []Event
+	for _, event := range events {
+		if strings.HasPrefix(event.Type, "tool_") || event.Type == "usage" {
+			toolEvents = append(toolEvents, event)
+		}
+	}
+	if len(toolEvents) != 6 || toolEvents[3].Type != "tool_execution_end" || !toolEvents[3].IsError || toolEvents[4].Type != "tool_result" || !toolEvents[4].IsError {
 		t.Fatalf("events=%#v", events)
 	}
 }
@@ -217,18 +223,33 @@ func TestRunWithEventsReportsDashboardToolAndUsageEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 6 || events[0].Type != "usage" || events[1].Type != "tool_call" || events[2].Type != "tool_execution_start" || events[3].Type != "tool_execution_end" || events[4].Type != "tool_result" || events[5].Type != "usage" {
+	var dashboardEvents []Event
+	for _, event := range events {
+		if event.Type == "usage" || strings.HasPrefix(event.Type, "tool_") {
+			dashboardEvents = append(dashboardEvents, event)
+		}
+	}
+	if len(dashboardEvents) != 6 || dashboardEvents[0].Type != "usage" || dashboardEvents[1].Type != "tool_call" || dashboardEvents[2].Type != "tool_execution_start" || dashboardEvents[3].Type != "tool_execution_end" || dashboardEvents[4].Type != "tool_result" || dashboardEvents[5].Type != "usage" {
 		t.Fatalf("events = %#v", events)
 	}
-	if events[3].Result != "README contents" || events[3].IsError || events[4].Result != "README contents" || events[4].IsError {
-		t.Fatalf("tool result = %#v", events[3:5])
+	if dashboardEvents[3].Result != "README contents" || dashboardEvents[3].IsError || dashboardEvents[4].Result != "README contents" || dashboardEvents[4].IsError {
+		t.Fatalf("tool result = %#v", dashboardEvents[3:5])
 	}
-	if events[0].Message == nil || events[0].Message.Role != "assistant" || events[0].StopReason != "toolUse" {
-		t.Fatalf("usage payload = %#v", events[0])
+	if dashboardEvents[0].Message == nil || dashboardEvents[0].Message.Role != "assistant" || dashboardEvents[0].StopReason != "toolUse" {
+		t.Fatalf("usage payload = %#v", dashboardEvents[0])
 	}
-	if events[1].Message == nil || len(events[1].Message.ToolCalls) != 1 || events[3].Message == nil || events[3].Message.Role != "tool" || events[3].Message.ToolCallID != "read-1" {
-		t.Fatalf("message payloads = %#v %#v", events[1].Message, events[3].Message)
+	if dashboardEvents[1].Message == nil || len(dashboardEvents[1].Message.ToolCalls) != 1 || dashboardEvents[3].Message == nil || dashboardEvents[3].Message.Role != "tool" || dashboardEvents[3].Message.ToolCallID != "read-1" {
+		t.Fatalf("message payloads = %#v %#v", dashboardEvents[1].Message, dashboardEvents[3].Message)
 	}
+	for _, event := range events {
+		if event.Type == "turn_end" && len(event.ToolResults) == 1 {
+			if event.ToolResults[0].ToolCallID != "read-1" || event.ToolResults[0].Content != "README contents" {
+				t.Fatalf("turn payload=%#v", event)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing tool turn payload: %#v", events)
 }
 
 func TestRunWithEventsIncludesProviderStreamPayload(t *testing.T) {
@@ -248,6 +269,30 @@ func TestRunWithEventsIncludesProviderStreamPayload(t *testing.T) {
 	}
 	if delta.Delta != "done" || delta.Message == nil || delta.Message.Content != "done" {
 		t.Fatalf("stream payload=%#v", delta)
+	}
+}
+
+func TestRunWithEventsReportsLifecyclePayloads(t *testing.T) {
+	var events []Event
+	result, err := RunFromWithQueuesAndEvents(context.Background(), updatingProvider{}, nil, nil, "hello", nil, nil, func(event Event) {
+		events = append(events, event)
+	})
+	if err != nil || result.FinalText != "done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	var types []string
+	for _, event := range events {
+		types = append(types, event.Type)
+	}
+	want := []string{"agent_start", "turn_start", "message_start", "message_end", "message_start", "usage", "message_end", "turn_end", "agent_end", "agent_settled"}
+	if !reflect.DeepEqual(types, want) {
+		t.Fatalf("event types=%#v want %#v", types, want)
+	}
+	if events[2].Message == nil || events[2].Message.Role != "user" || events[3].Message == nil || events[3].Message.Content != "hello" {
+		t.Fatalf("user lifecycle=%#v %#v", events[2], events[3])
+	}
+	if events[6].Message == nil || events[6].Message.Content != "done" || len(events[8].Messages) != 2 {
+		t.Fatalf("assistant lifecycle=%#v agent end=%#v", events[6], events[8])
 	}
 }
 
