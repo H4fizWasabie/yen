@@ -81,10 +81,14 @@ func (p GoogleGenerativeAI) ListModels(ctx context.Context) ([]ModelInfo, error)
 		return nil, err
 	}
 	result := make([]ModelInfo, 0, len(payload.Models))
+	providerName := p.ProviderName
+	if providerName == "" {
+		providerName = "google"
+	}
 	for _, model := range payload.Models {
 		for _, method := range model.SupportedGenerationMethods {
 			if method == "generateContent" {
-				result = append(result, ModelInfo{Provider: "google", ID: strings.TrimPrefix(model.Name, "models/")})
+				result = append(result, ModelInfo{Provider: providerName, ID: strings.TrimPrefix(model.Name, "models/")})
 				break
 			}
 		}
