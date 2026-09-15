@@ -480,6 +480,11 @@ unset, returning the oracle-compatible 503 response. An integration test
 covers the unconfigured-token case; the full gate is now 259 tests plus
 race/vet/diff.
 
+The read-only explorer now enforces its oracle turn ceilings in the harness:
+8 turns for `quick-scan` and 15 for `deep-map`, with an explicit incomplete
+answer when the ceiling is reached. Its prompt also requires the oracle's
+distilled-answer and budget-footer contract; the full gate is now 260 tests.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

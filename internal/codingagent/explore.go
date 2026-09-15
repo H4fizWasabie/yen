@@ -41,7 +41,7 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 		return "", ctx.Err()
 	}
 	history := []agent.Message{{Role: "system", Content: explorerPrompt(tier, lines, turns)}}
-	result, err := agent.RunFrom(ctx, t.provider, []agent.Tool{
+	result, err := agent.RunFrom(ctx, &turnLimitedProvider{provider: t.provider, limit: turns, tier: tier}, []agent.Tool{
 		tools.NewReadTool(t.cwd),
 		tools.NewGrepTool(t.cwd),
 		tools.NewFindTool(t.cwd),
@@ -56,9 +56,27 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 func explorerPrompt(tier string, lines, turns int) string {
 	structural := ""
 	if tier == "deep-map" {
-		structural = " Start with a concise structural overview before findings."
+		structural = " Start with a 5–15 line structural overview of components, entry points, and data flow before findings."
 	}
-	return fmt.Sprintf("You are Theoses's background explorer: a read-only codebase scouting agent. Answer one question with evidence, never dump raw tool output. Use only read, grep, find, and ls. Cite file paths and line locations when possible.%s Keep the answer to at most %d lines and stop within %d turns.", structural, lines, turns)
+	return fmt.Sprintf("You are Theoses's background explorer: a cheap, isolated scouting agent. Answer ONE question about a codebase with a distilled answer; never return raw tool dumps. Use only read, grep, find, and ls. Cite file paths and line locations when possible. Keep the answer to at most %d lines and stop within %d turns.%s End with a budget footer in the form ~<K> in, <turns>/%d turns. If the turn budget is reached before you can answer, say INCOMPLETE: <what is missing> instead of guessing.", lines, turns, structural, turns)
+}
+
+type turnLimitedProvider struct {
+	provider agent.Provider
+	limit    int
+	calls    int
+	tier     string
+}
+
+func (p *turnLimitedProvider) Next(ctx context.Context, messages []agent.Message, tools []string) (agent.Response, error) {
+	if p.calls >= p.limit {
+		return agent.Response{
+			Text:       fmt.Sprintf("INCOMPLETE: explorer reached the %s turn budget.\n~0K in, %d/%d turns", p.tier, p.limit, p.limit),
+			StopReason: "stop",
+		}, nil
+	}
+	p.calls++
+	return p.provider.Next(ctx, messages, tools)
 }
 
 func capExplorerAnswer(answer string, limit int) string {

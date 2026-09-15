@@ -33,3 +33,24 @@ func TestExploreIsReadOnlyAndCapsQuickScan(t *testing.T) {
 		}
 	}
 }
+
+type loopingExploreProvider struct{ calls int }
+
+func (p *loopingExploreProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	return agent.Response{ToolCalls: []agent.ToolCall{{ID: "scan", Name: "ls"}}, StopReason: "toolUse"}, nil
+}
+
+func TestExploreStopsAtQuickScanTurnBudget(t *testing.T) {
+	provider := &loopingExploreProvider{}
+	answer, err := newExploreTool(t.TempDir(), provider).Execute(context.Background(), map[string]any{"question": "map it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(answer, "INCOMPLETE:") || !strings.Contains(answer, "8/8 turns") {
+		t.Fatalf("answer=%q", answer)
+	}
+	if provider.calls != 8 {
+		t.Fatalf("provider calls=%d, want 8", provider.calls)
+	}
+}
