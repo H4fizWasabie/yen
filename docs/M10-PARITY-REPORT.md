@@ -63,6 +63,11 @@ Oracle authority: `packages/coding-agent/src/core/settings-manager.ts:85-175`
 and `packages/coding-agent/src/core/agent-session-services.ts:141-183`.
 Go evidence: `internal/runtime/runtime.go` and its provider precedence tests.
 
+The side-by-side installer now forwards Azure resource/API-version settings and
+`YEN_AGENT_DIR` through both service wrappers, preserving the provider and
+global-resource boundaries in deployed runtimes. Evidence: `deploy/install-side-by-side.sh`
+and `sh -n deploy/install-side-by-side.sh`.
+
 The coding-agent bash boundary now records both the oracle's bounded automatic
 working-note command log and a durable `bashExecution` session message with
 the full command, output, exit code, cancellation, truncation, and
