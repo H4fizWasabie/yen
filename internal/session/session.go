@@ -578,6 +578,29 @@ func estimateMessageTokens(message Message) int {
 
 // EstimateContextTokens uses the same conservative estimate for a context.
 func EstimateContextTokens(messages []Message) int {
+	lastUsage := -1
+	usageTokens := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message.Role != "assistant" || message.Usage == nil || message.StopReason == "error" || message.StopReason == "aborted" {
+			continue
+		}
+		usageTokens = message.Usage.TotalTokens
+		if usageTokens == 0 {
+			usageTokens = message.Usage.Input + message.Usage.Output + message.Usage.CacheRead + message.Usage.CacheWrite
+		}
+		if usageTokens > 0 {
+			lastUsage = i
+			break
+		}
+	}
+	if lastUsage >= 0 {
+		total := usageTokens
+		for _, message := range messages[lastUsage+1:] {
+			total += estimateContextMessageTokens(message)
+		}
+		return total
+	}
 	total := 0
 	for _, message := range messages {
 		total += estimateContextMessageTokens(message)

@@ -137,6 +137,21 @@ func TestEstimateContextTokensIncludesImages(t *testing.T) {
 	}
 }
 
+func TestEstimateContextTokensUsesLatestAssistantUsage(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: strings.Repeat("old", 500)},
+		{Role: "assistant", Content: "done", Usage: &Usage{Input: 80, Output: 10, TotalTokens: 90}},
+		{Role: "user", Content: "new"},
+	}
+	if got := EstimateContextTokens(messages); got != 91 {
+		t.Fatalf("tokens=%d, want 91", got)
+	}
+	messages[1].StopReason = "error"
+	if got := EstimateContextTokens(messages); got <= 91 {
+		t.Fatalf("error usage should be ignored, got %d", got)
+	}
+}
+
 func TestOpenSessionContinuesParentChain(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
