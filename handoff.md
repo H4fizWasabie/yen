@@ -67,6 +67,10 @@ behavior; `TestTelegramBotSendsTypingActionDuringTurn` covers the lifecycle.
 Plain Telegram output now uses the pinned TypeScript 4,000-character limit;
 `TestChunkTelegramTextMatchesTypeScriptLimit` covers the boundary.
 
+Telegram message and quoted-reply handling now falls back from `text` to
+`caption`, matching the pinned TypeScript extractor; the behavior is covered
+by `TestTelegramBotUsesCaptionForMessageAndReply`.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

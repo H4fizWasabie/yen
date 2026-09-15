@@ -215,6 +215,36 @@ func TestTelegramBotCarriesReplyContextAndReplyTarget(t *testing.T) {
 	}
 }
 
+func TestTelegramBotUsesCaptionForMessageAndReply(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &replyCaptureProvider{}
+	runner := runtime.New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	update := telegramUpdate{Message: &telegramMessage{Caption: "answer this caption"}}
+	update.Message.Chat.ID = 42
+	update.Message.ReplyToMessage = &telegramMessage{Caption: "quoted caption"}
+	if err := bot.HandleUpdate(context.Background(), update); err != nil {
+		t.Fatal(err)
+	}
+	want := "[Quoted message context]\nquoted caption\n[/Quoted message context]\n\nanswer this caption"
+	if provider.seen != want {
+		t.Fatalf("prompt=%q", provider.seen)
+	}
+}
+
 func TestTelegramBotPollsUpdatesAdvancesOffsetAndStops(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))

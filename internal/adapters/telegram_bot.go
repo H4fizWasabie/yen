@@ -36,6 +36,7 @@ type telegramMessage struct {
 		ID int64 `json:"id"`
 	} `json:"chat"`
 	Text           string           `json:"text"`
+	Caption        string           `json:"caption"`
 	ReplyToMessage *telegramMessage `json:"reply_to_message,omitempty"`
 }
 type telegramResponse struct {
@@ -78,7 +79,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		return nil
 	}
 	chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
-	text := strings.TrimSpace(update.Message.Text)
+	text := strings.TrimSpace(telegramMessageText(update.Message))
 	if text == "" {
 		return nil
 	}
@@ -95,7 +96,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	}
 	replyContext := ""
 	if update.Message.ReplyToMessage != nil {
-		replyContext = update.Message.ReplyToMessage.Text
+		replyContext = telegramMessageText(update.Message.ReplyToMessage)
 	}
 	stopTyping := b.startTyping(ctx, chatID)
 	result, err := b.Adapter.HandleMessageWithReply(ctx, chatID, text, replyContext)
@@ -104,6 +105,16 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
+}
+
+func telegramMessageText(message *telegramMessage) string {
+	if message == nil || message.Text == "" {
+		if message == nil {
+			return ""
+		}
+		return message.Caption
+	}
+	return message.Text
 }
 
 func (b *TelegramBot) startTyping(ctx context.Context, chatID string) func() {
