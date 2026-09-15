@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/auth"
 )
 
@@ -38,6 +39,32 @@ func TestCloudflareProvidersUseYenCredentialsAndRouting(t *testing.T) {
 	}
 	if client.BaseURL != server.URL+"/v1/account/gateway" {
 		t.Fatalf("base URL=%q", client.BaseURL)
+	}
+}
+
+func TestGoogleVertexUsesProjectEndpointAndYenAPIKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/projects/project/locations/asia-southeast1/publishers/google/models/fixture-model:streamGenerateContent" {
+			t.Fatalf("path=%q", r.URL.Path)
+		}
+		if r.URL.Query().Get("key") != "vertex-key" {
+			t.Fatalf("key=%q", r.URL.Query().Get("key"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n"))
+	}))
+	defer server.Close()
+	t.Setenv("YEN_GOOGLE_VERTEX_BASE_URL", server.URL+"/v1/projects/project/locations/asia-southeast1/publishers/google")
+	t.Setenv("YEN_GOOGLE_CLOUD_API_KEY", "vertex-key")
+	configured, err := NewConfigured("google-vertex", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := configured.(GoogleGenerativeAI)
+	client.Client = server.Client()
+	result, err := client.Next(context.Background(), []agent.Message{{Role: "user", Content: "hello"}}, nil)
+	if err != nil || result.Provider != "google-vertex" || result.Text != "ok" {
+		t.Fatalf("result=%#v err=%v", result, err)
 	}
 }
 

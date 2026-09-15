@@ -79,6 +79,24 @@ var providerKeyEnvs = map[string]string{
 	"vercel-ai-gateway":          "YEN_VERCEL_AI_GATEWAY_API_KEY",
 	"cloudflare-workers-ai":      "YEN_CLOUDFLARE_API_KEY",
 	"cloudflare-ai-gateway":      "YEN_CLOUDFLARE_API_KEY",
+	"google-vertex":              "YEN_GOOGLE_CLOUD_API_KEY",
+}
+
+func googleVertexConfigured(model string) GoogleGenerativeAI {
+	baseURL := os.Getenv("YEN_GOOGLE_VERTEX_BASE_URL")
+	if baseURL == "" {
+		project := strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_PROJECT"))
+		location := strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_LOCATION"))
+		baseURL = "https://aiplatform.googleapis.com/v1/projects/" + project + "/locations/" + location + "/publishers/google"
+	}
+	key := os.Getenv("YEN_GOOGLE_CLOUD_API_KEY")
+	if key == "" {
+		key = storedCredentialKey("google-vertex")
+	}
+	client := NewGoogleGenerativeAI(baseURL, key, model)
+	client.ProviderName = "google-vertex"
+	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+	return client
 }
 
 func cloudflareConfigured(providerID, model string) OpenAICompletions {
@@ -187,6 +205,13 @@ func ConfiguredFromEnv() agent.Provider {
 		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 		return client
 	}
+	if providerID == "google-vertex" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gemini-2.5-flash"
+		}
+		return googleVertexConfigured(model)
+	}
 	if providerID == "minimax" || providerID == "minimax-cn" || providerID == "vercel-ai-gateway" {
 		baseURL := providerDefaults[providerID]
 		model := os.Getenv("YEN_MODEL")
@@ -233,6 +258,15 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 			model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 		}
 		return cloudflareConfigured(providerID, model), nil
+	}
+	if providerID == "google-vertex" {
+		if model == "" {
+			model = "gemini-2.5-flash"
+		}
+		if os.Getenv("YEN_GOOGLE_VERTEX_BASE_URL") == "" && (strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_PROJECT")) == "" || strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_LOCATION")) == "") {
+			return nil, errors.New("google vertex requires YEN_GOOGLE_CLOUD_PROJECT and YEN_GOOGLE_CLOUD_LOCATION")
+		}
+		return googleVertexConfigured(model), nil
 	}
 	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
 		if model == "" {
@@ -354,7 +388,11 @@ func Describe(p agent.Provider) (string, string) {
 		}
 		return name, client.Model
 	case GoogleGenerativeAI:
-		return "google", client.Model
+		name := client.ProviderName
+		if name == "" {
+			name = "google"
+		}
+		return name, client.Model
 	case OpenAIResponses:
 		return client.name(), client.Model
 	default:

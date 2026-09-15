@@ -23,6 +23,7 @@ type GoogleGenerativeAI struct {
 	BaseURL       string
 	APIKey        string
 	Model         string
+	ProviderName  string
 	ThinkingLevel string
 	Client        *http.Client
 	MaxRetries    int
@@ -189,7 +190,11 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 		}
 	}
 	defer response.Body.Close()
-	result := agent.Response{Provider: "google", Model: p.Model}
+	providerName := p.ProviderName
+	if providerName == "" {
+		providerName = "google"
+	}
+	result := agent.Response{Provider: providerName, Model: p.Model}
 	partial := agent.Message{Role: "assistant", Provider: result.Provider, Model: result.Model}
 	if emit != nil {
 		emit(agent.StreamEvent{Type: "start", Partial: partial})
