@@ -88,6 +88,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
 		return codingagent.NewToolsForSession(workspace, current)
 	}
+	runner.SessionToolFactoryWithProvider = func(workspace string, current *session.Session, client agent.Provider) []agent.Tool {
+		return codingagent.NewToolsForSessionWithProvider(workspace, current, client)
+	}
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()
 	runner.AutoCompactKeepRecentTokens = runtime.AutoCompactKeepRecentTokensFromEnv()

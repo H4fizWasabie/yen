@@ -12,14 +12,18 @@ import (
 )
 
 func NewTools(workspace string) []agent.Tool {
-	return newTools(workspace, nil)
+	return newTools(workspace, nil, nil)
 }
 
 func NewToolsForSession(workspace string, current *session.Session) []agent.Tool {
-	return newTools(workspace, current)
+	return newTools(workspace, current, nil)
 }
 
-func newTools(workspace string, current *session.Session) []agent.Tool {
+func NewToolsForSessionWithProvider(workspace string, current *session.Session, provider agent.Provider) []agent.Tool {
+	return newTools(workspace, current, provider)
+}
+
+func newTools(workspace string, current *session.Session, provider agent.Provider) []agent.Tool {
 	result := []agent.Tool{
 		tools.NewReadTool(workspace),
 		tools.NewBashTool(workspace),
@@ -32,6 +36,9 @@ func newTools(workspace string, current *session.Session) []agent.Tool {
 		convertDocTool{cwd: workspace},
 		NewWebSearchTool(),
 		generateImageTool{client: nil},
+	}
+	if provider != nil {
+		result = append(result, newExploreTool(workspace, provider))
 	}
 	if current != nil {
 		result[1] = newSessionBashTool(workspace, current)

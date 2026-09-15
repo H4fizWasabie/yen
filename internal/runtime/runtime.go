@@ -21,22 +21,23 @@ import (
 )
 
 type Runner struct {
-	Queue                       *conversation.Queue
-	Provider                    agent.Provider
-	ToolFactory                 func(workspace string) []agent.Tool
-	SessionToolFactory          func(workspace string, current *session.Session) []agent.Tool
-	SessionPath                 func(turn conversation.Turn) string
-	Checkpoints                 *memory.Checkpoints
-	Memory                      *memory.Engine
-	SharedMemory                bool
-	AutoCompactTurns            int
-	AutoCompactMaxHistoryTurns  int
-	AutoCompactKeepRecentTokens int
-	AutoCompactContextWindow    int
-	AutoCompactReserveTokens    int
-	AutoCompactDisabled         bool
-	AutoCompactOnOverflow       bool
-	AutoConsolidate             bool
+	Queue                          *conversation.Queue
+	Provider                       agent.Provider
+	ToolFactory                    func(workspace string) []agent.Tool
+	SessionToolFactory             func(workspace string, current *session.Session) []agent.Tool
+	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
+	SessionPath                    func(turn conversation.Turn) string
+	Checkpoints                    *memory.Checkpoints
+	Memory                         *memory.Engine
+	SharedMemory                   bool
+	AutoCompactTurns               int
+	AutoCompactMaxHistoryTurns     int
+	AutoCompactKeepRecentTokens    int
+	AutoCompactContextWindow       int
+	AutoCompactReserveTokens       int
+	AutoCompactDisabled            bool
+	AutoCompactOnOverflow          bool
+	AutoConsolidate                bool
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -375,7 +376,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		history = append([]agent.Message{codingagent.WorkingNoteMessage(note)}, history...)
 	}
 	var tools []agent.Tool
-	if r.SessionToolFactory != nil {
+	if r.SessionToolFactoryWithProvider != nil {
+		tools = r.SessionToolFactoryWithProvider(turn.WorkspaceID, current, r.Provider)
+	} else if r.SessionToolFactory != nil {
 		tools = r.SessionToolFactory(turn.WorkspaceID, current)
 	} else if r.ToolFactory != nil {
 		tools = r.ToolFactory(turn.WorkspaceID)

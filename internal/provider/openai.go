@@ -441,6 +441,11 @@ func toolParameters(name string) map[string]any {
 		return optional(map[string]any{"query": stringProperty("The web search query")}, "query")
 	case "generate_image":
 		return optional(map[string]any{"prompt": stringProperty("Detailed description of the image to generate")}, "prompt")
+	case "explore":
+		return optional(map[string]any{
+			"question": stringProperty("The single scouting question to answer"),
+			"tier":     stringProperty("quick-scan or deep-map"),
+		}, "question")
 	default:
 		return map[string]any{"type": "object"}
 	}
