@@ -211,30 +211,13 @@ func parseConsolidationResponse(raw string) (struct {
 		Edges   []json.RawMessage `json:"edges"`
 		Episode json.RawMessage   `json:"episode"`
 	}
-	cleaned := strings.TrimSpace(raw)
-	if strings.HasPrefix(cleaned, "```") {
-		if newline := strings.IndexByte(cleaned, '\n'); newline >= 0 {
-			cleaned = strings.TrimSpace(cleaned[newline+1:])
-		}
-		cleaned = strings.TrimSuffix(cleaned, "```")
-		cleaned = strings.TrimSpace(cleaned)
-	}
-	if start, end := strings.IndexByte(cleaned, '{'), strings.LastIndexByte(cleaned, '}'); start >= 0 && end > start {
-		cleaned = cleaned[start : end+1]
-	}
-	if err := json.Unmarshal([]byte(cleaned), &envelope); err != nil {
-		repaired := repairJSONStringLiterals(stripTrailingCommas(cleaned))
-		if repaired != cleaned && json.Unmarshal([]byte(repaired), &envelope) == nil {
-			goto parsed
-		}
+	if err := decodeStructuredJSON(raw, "Memory consolidation", &envelope); err != nil {
 		return struct {
 			Facts   []ConsolidatedFact
 			Edges   []ConsolidatedEdge
 			Episode ConsolidatedEpisode
 		}{}, fmt.Errorf("consolidation JSON: %w", err)
 	}
-
-parsed:
 	if len(envelope.Episode) == 0 || string(envelope.Episode) == "null" {
 		return struct {
 			Facts   []ConsolidatedFact
@@ -257,7 +240,7 @@ parsed:
 			Subject string `json:"subject"`
 			Body    string `json:"body"`
 		}
-		if json.Unmarshal(rawFact, &fact) == nil && fact.ID != "" && fact.Subject != "" {
+		if json.Unmarshal(rawFact, &fact) == nil {
 			facts = append(facts, ConsolidatedFact{ID: fact.ID, Subject: fact.Subject, Body: fact.Body})
 		}
 	}
@@ -268,25 +251,11 @@ parsed:
 			To   string `json:"to"`
 			Rel  string `json:"rel"`
 		}
-		if json.Unmarshal(rawEdge, &edge) == nil && edge.From != "" && edge.To != "" {
+		if json.Unmarshal(rawEdge, &edge) == nil {
 			if _, ok := allowedEdgeRelations[edge.Rel]; ok {
 				edges = append(edges, ConsolidatedEdge{From: edge.From, To: edge.To, Rel: edge.Rel})
 			}
 		}
-	}
-	if strings.TrimSpace(episode.Summary) == "" {
-		return struct {
-			Facts   []ConsolidatedFact
-			Edges   []ConsolidatedEdge
-			Episode ConsolidatedEpisode
-		}{}, errors.New("consolidation episode summary is required")
-	}
-	if strings.TrimSpace(episode.StartedAt) == "" || strings.TrimSpace(episode.EndedAt) == "" {
-		return struct {
-			Facts   []ConsolidatedFact
-			Edges   []ConsolidatedEdge
-			Episode ConsolidatedEpisode
-		}{}, errors.New("consolidation episode timestamps are required")
 	}
 	var related []string
 	for _, rawID := range episode.RelatedFactIDs {

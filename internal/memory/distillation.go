@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -54,22 +53,11 @@ func DistillMemory(ctx context.Context, provider agent.Provider, turns []Consoli
 }
 
 func ParseDistillationResponse(raw string) (DistilledMemory, error) {
-	cleaned := strings.TrimSpace(raw)
-	if strings.HasPrefix(cleaned, "```") {
-		if newline := strings.IndexByte(cleaned, '\n'); newline >= 0 {
-			cleaned = strings.TrimSpace(cleaned[newline+1:])
-		}
-		cleaned = strings.TrimSpace(strings.TrimSuffix(cleaned, "```"))
-	}
-	if start, end := strings.IndexAny(cleaned, "[{"), maxJSONEnd(cleaned); start >= 0 && end > start {
-		cleaned = cleaned[start : end+1]
-	}
 	var value any
-	if err := json.Unmarshal([]byte(cleaned), &value); err != nil {
-		repaired := repairJSONStringLiterals(stripTrailingCommas(cleaned))
-		if repaired == cleaned || json.Unmarshal([]byte(repaired), &value) != nil {
-			return DistilledMemory{}, fmt.Errorf("distillation JSON: %w", err)
-		}
+	if parsed, err := parseStructuredJSON(raw, "Memory distillation"); err != nil {
+		return DistilledMemory{}, fmt.Errorf("distillation JSON: %w", err)
+	} else {
+		value = parsed
 	}
 	result := DistilledMemory{}
 	var values []any
@@ -101,18 +89,4 @@ func ParseDistillationResponse(raw string) (DistilledMemory, error) {
 		}
 	}
 	return result, nil
-}
-
-func maxJSONEnd(text string) int {
-	return maxInt(strings.LastIndexByte(text, ']'), strings.LastIndexByte(text, '}'))
-}
-
-func maxInt(values ...int) int {
-	result := -1
-	for _, value := range values {
-		if value > result {
-			result = value
-		}
-	}
-	return result
 }
