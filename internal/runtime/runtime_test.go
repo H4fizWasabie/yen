@@ -101,6 +101,48 @@ func TestRunnerRetriesTransientAssistantFailure(t *testing.T) {
 	}
 }
 
+type assistantRetryStopsProvider struct{ calls int }
+
+func (p *assistantRetryStopsProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	message := "overloaded_error"
+	if p.calls > 1 {
+		message = "invalid request"
+	}
+	return agent.Response{StopReason: "error", ErrorMessage: message}, nil
+}
+
+func TestRunnerRetryFailureReportsActualAttempt(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &assistantRetryStopsProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoRetryEnabled = true
+	runner.AutoRetryMaxRetries = 3
+	runner.AutoRetryBaseDelay = 0
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "retry-attempt", WorkspaceID: dir}
+	turn, err := runner.Submit(link, "retry this")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var final agent.Event
+	_, _, err = runner.RunSubmittedWithEvents(context.Background(), turn, nil, func(event agent.Event) {
+		if event.Type == "auto_retry_end" && !event.Success {
+			final = event
+		}
+	})
+	if err == nil || provider.calls != 2 {
+		t.Fatalf("err=%v calls=%d", err, provider.calls)
+	}
+	if final.Attempt != 1 {
+		t.Fatalf("final retry attempt=%d, want 1", final.Attempt)
+	}
+}
+
 func (p *autoConsolidationProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
 	p.calls++
 	if p.calls == 1 {
