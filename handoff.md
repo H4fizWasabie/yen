@@ -96,8 +96,8 @@ For short single-section replies, the status message is edited in place into
 the final answer, with rich-edit then classic-edit fallback.
 
 Telegram supports the oracle's `/on tool call(s)` and `/off tool call(s)`
-commands with bounded command/path/query previews. The preference is currently
-process-local; persistence remains deferred.
+commands with bounded command/path/query previews. The preference persists in
+Yen's data directory as `telegram-preferences.json`.
 
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot

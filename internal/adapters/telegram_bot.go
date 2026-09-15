@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,14 +21,16 @@ import (
 )
 
 type TelegramBot struct {
-	Adapter     Telegram
-	Token       string
-	OwnerChatID string
-	APIBase     string
-	Client      *http.Client
-	Offset      int64
-	toolMu      sync.Mutex
-	toolDetail  bool
+	Adapter            Telegram
+	Token              string
+	OwnerChatID        string
+	APIBase            string
+	Client             *http.Client
+	Offset             int64
+	ToolPreferencePath string
+	toolMu             sync.Mutex
+	toolDetail         bool
+	toolOnce           sync.Once
 }
 
 const telegramMessageLimit = 4000
@@ -101,6 +104,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	if update.Message == nil || strconv.FormatInt(update.Message.Chat.ID, 10) != b.OwnerChatID {
 		return nil
 	}
+	b.loadToolDetail()
 	chatID := strconv.FormatInt(update.Message.Chat.ID, 10)
 	text := strings.TrimSpace(telegramMessageText(update.Message))
 	if text == "" {
@@ -118,9 +122,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		return b.sendMessage(ctx, chatID, "No active turn.", messageReplyID(update.Message.MessageID))
 	}
 	if enabled, ok := telegramToolDetailToggle(text); ok {
-		b.toolMu.Lock()
-		b.toolDetail = enabled
-		b.toolMu.Unlock()
+		b.setToolDetail(enabled)
 		state := "off"
 		if enabled {
 			state = "on"
@@ -155,6 +157,48 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		}
 	}
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
+}
+
+func (b *TelegramBot) setToolDetail(enabled bool) {
+	b.toolMu.Lock()
+	b.toolDetail = enabled
+	b.toolMu.Unlock()
+	b.saveToolDetail()
+}
+
+func (b *TelegramBot) loadToolDetail() {
+	b.toolOnce.Do(func() {
+		if b.ToolPreferencePath == "" {
+			return
+		}
+		data, err := os.ReadFile(b.ToolPreferencePath)
+		if err != nil {
+			return
+		}
+		var preference struct {
+			ToolCallDetail bool `json:"toolCallDetail"`
+		}
+		if json.Unmarshal(data, &preference) == nil {
+			b.toolMu.Lock()
+			b.toolDetail = preference.ToolCallDetail
+			b.toolMu.Unlock()
+		}
+	})
+}
+
+func (b *TelegramBot) saveToolDetail() {
+	if b.ToolPreferencePath == "" {
+		return
+	}
+	b.toolMu.Lock()
+	data, err := json.Marshal(struct {
+		ToolCallDetail bool `json:"toolCallDetail"`
+	}{ToolCallDetail: b.toolDetail})
+	b.toolMu.Unlock()
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(b.ToolPreferencePath, append(data, '\n'), 0600)
 }
 
 func telegramToolDetailToggle(text string) (bool, bool) {

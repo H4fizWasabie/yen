@@ -414,6 +414,20 @@ func TestTelegramToolDetailToggleAndPreview(t *testing.T) {
 	}
 }
 
+func TestTelegramToolDetailPreferenceSurvivesReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "telegram-preferences.json")
+	first := &TelegramBot{ToolPreferencePath: path}
+	first.setToolDetail(true)
+	second := &TelegramBot{ToolPreferencePath: path}
+	second.loadToolDetail()
+	second.toolMu.Lock()
+	got := second.toolDetail
+	second.toolMu.Unlock()
+	if !got {
+		t.Fatal("tool detail preference was not persisted")
+	}
+}
+
 func TestTelegramBotPollsUpdatesAdvancesOffsetAndStops(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
