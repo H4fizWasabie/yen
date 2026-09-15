@@ -39,6 +39,7 @@ var providerDefaults = map[string]string{
 	"xai":                        "https://api.x.ai/v1",
 	"zai":                        "https://api.z.ai/api/coding/paas/v4",
 	"zai-coding-cn":              "https://open.bigmodel.cn/api/coding/paas/v4",
+	"vercel-ai-gateway":          "https://ai-gateway.vercel.sh",
 }
 
 var providerKeyEnvs = map[string]string{
@@ -69,6 +70,7 @@ var providerKeyEnvs = map[string]string{
 	"xai":                        "YEN_XAI_API_KEY",
 	"zai":                        "YEN_ZAI_API_KEY",
 	"zai-coding-cn":              "YEN_ZAI_CODING_CN_API_KEY",
+	"vercel-ai-gateway":          "YEN_VERCEL_AI_GATEWAY_API_KEY",
 }
 
 func NewFromEnv() OpenAICompletions {
@@ -150,11 +152,14 @@ func ConfiguredFromEnv() agent.Provider {
 		}
 		return NewGoogleGenerativeAI(baseURL, key, model)
 	}
-	if providerID == "minimax" || providerID == "minimax-cn" {
+	if providerID == "minimax" || providerID == "minimax-cn" || providerID == "vercel-ai-gateway" {
 		baseURL := providerDefaults[providerID]
 		model := os.Getenv("YEN_MODEL")
 		if model == "" {
 			model = "MiniMax-M2.5"
+			if providerID == "vercel-ai-gateway" {
+				model = "claude-sonnet-4"
+			}
 		}
 		key := os.Getenv(providerKeyEnvs[providerID])
 		if key == "" {
@@ -222,9 +227,12 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		}
 		return NewGoogleGenerativeAI(baseURL, key, model), nil
 	}
-	if providerID == "minimax" || providerID == "minimax-cn" {
+	if providerID == "minimax" || providerID == "minimax-cn" || providerID == "vercel-ai-gateway" {
 		if model == "" {
 			model = "MiniMax-M2.5"
+			if providerID == "vercel-ai-gateway" {
+				model = "claude-sonnet-4"
+			}
 		}
 		key := os.Getenv(providerKeyEnvs[providerID])
 		if key == "" {

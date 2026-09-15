@@ -437,6 +437,11 @@ pinned native Anthropic Messages endpoints and Yen-owned API-key variables.
 controls and diagnostics. Configuration tests cover both mappings; the full
 gate is now 248 tests plus race/vet/diff.
 
+Vercel AI Gateway is now mapped to the native Anthropic Messages client with
+`YEN_VERCEL_AI_GATEWAY_API_KEY`; the side-by-side installer passes this key,
+plus the MiniMax keys, through its isolated service environment. Configuration
+and shell syntax checks pass; the full gate is now 249 tests plus race/vet/diff.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

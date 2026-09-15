@@ -106,6 +106,18 @@ func TestNewConfiguredSupportsMiniMaxAnthropicProviders(t *testing.T) {
 	}
 }
 
+func TestNewConfiguredSupportsVercelAIGateway(t *testing.T) {
+	t.Setenv("YEN_VERCEL_AI_GATEWAY_API_KEY", "gateway-key")
+	configured, err := NewConfigured("vercel-ai-gateway", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(AnthropicMessages)
+	if !ok || client.ProviderName != "vercel-ai-gateway" || client.BaseURL != providerDefaults["vercel-ai-gateway"] || client.APIKey != "gateway-key" || client.Model != "fixture-model" {
+		t.Fatalf("provider=%#v", configured)
+	}
+}
+
 func TestNewConfiguredReadsOnlyExplicitYenAuthFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	if _, err := auth.Open(path).Modify("openrouter", func(*auth.Credential) (*auth.Credential, error) {
