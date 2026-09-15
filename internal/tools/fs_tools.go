@@ -130,7 +130,12 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 		for i, line := range lines {
 			if !re.MatchString(line) { continue }
 			start, end := max(0, i-contextLines), min(len(lines), i+contextLines+1)
-			for j := start; j < end; j++ { out = append(out, fmt.Sprintf("%s:%d: %s", rel, j+1, truncateGrepLine(lines[j]))); if len(out) >= limit { return errGrepLimit } }
+			for j := start; j < end; j++ {
+				separator := ":"
+				if j != i { separator = "-" }
+				out = append(out, fmt.Sprintf("%s%s%d%s %s", rel, separator, j+1, separator, truncateGrepLine(lines[j])))
+				if len(out) >= limit { return errGrepLimit }
+			}
 		}
 		return nil
 	})

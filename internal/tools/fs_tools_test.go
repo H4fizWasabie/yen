@@ -136,6 +136,18 @@ func TestGrepToolUsesOracleMatchSpacing(t *testing.T) {
 	}
 }
 
+func TestGrepToolFormatsContextLinesLikeOracle(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "context.txt"), []byte("before\nneedle\nafter\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle", "context": 1})
+	if err != nil || !strings.Contains(got, "context.txt-1- before") || !strings.Contains(got, "context.txt:2: needle") || !strings.Contains(got, "context.txt-3- after") {
+		t.Fatalf("grep=%q err=%v", got, err)
+	}
+}
+
 func TestGrepToolReportsMatchLimit(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.txt", "b.txt"} {
