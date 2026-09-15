@@ -34,7 +34,7 @@ implementations and committed tests:
 
 | Surface | Evidence | Remaining boundary |
 |---|---|---|
-| Cross-channel identity | `8629abf`, default `yen-primary` plus environment override | final live cross-channel replay trace |
+| Cross-channel identity | `8629abf`, default `yen-primary` plus environment override | live VPS read-back on 2026-09-15: `conversations.jsonl` maps Telegram, CLI, and dashboard adapter records to the same conversation ID; authenticated dashboard `/api/sessions` deduplicates the shared record; final live cross-channel replay trace remains open |
 | Dashboard branches | `bb39d8b`, durable branch marker, tree API, branch UI, reopen test | browser-level acceptance and richer tree presentation |
 | RPC | `12a739c`, `808ff64`, JSONL server/client, prompt/steer/follow-up/events/state/messages/abort with image payloads, bash, durable `bashExecution` records plus working-note logging, new-session/clone/export, branch/artifact/session-name/fork/import/switch/fork-message/stats/set-model/cycle-model/model-catalog/thinking-level/retry controls, queue-mode state/behavior and persistence, built-in command discovery, Unix socket | complete command matrix and extension UI protocol |
 | CLI | `packages/coding-agent/src/modes/interactive/interactive-mode.ts:2800-2920`, `:5889-5910`, `/name`, `/session`, `/compact`, `/stats`, `/model`, `/thinking`, `/retry`, `/trust`, `/tree`, and `/artifacts` command behavior | `cmd/theoses/main.go`, shared `session.Stats`, provider control helpers, trust store, session tree/artifact read-back, and command tests; full TUI rendering, selectors, and remaining slash commands remain open |

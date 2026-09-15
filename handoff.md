@@ -375,6 +375,13 @@ The authorized side-by-side VPS deployment now runs `/opt/yen/releases/0f97e38`.
 `active`; Yen `/healthz` returns `{"ok":true}`. The Theoses2 services were not
 restarted or modified.
 
+The 2026-09-15 authenticated read-only VPS check confirmed the shared-channel
+identity in `/var/lib/yen/conversations.jsonl`: Telegram, CLI, and dashboard
+links all point to `conv-5955b65fd7cbaf4f869df7af7f6c1fb6`, and dashboard
+`/api/sessions` returns one deduplicated shared session with 56 messages. A
+new cross-channel prompt/replay acceptance is still required before claiming
+full live session parity.
+
 Yen now has `internal/auth`, a mode-0600 atomic JSON credential store with
 serialized per-process mutation, secret-free listing metadata, API-key/OAuth
 record shapes, and explicit `YEN_AUTH_FILE` fallback wiring for provider
