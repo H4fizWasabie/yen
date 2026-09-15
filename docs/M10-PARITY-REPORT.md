@@ -67,6 +67,12 @@ signatures for multi-turn replay. TypeScript authority:
 `internal/provider/theoses_messages.go` and
 `TestTheosesMessagesPreservesThinkingSignature`.
 
+Radius terminal error events now preserve their response ID and usage
+metadata, matching the TypeScript error-event converter. TypeScript
+authority: `packages/ai/src/api/theoses-messages.ts:68-77,197-205`; Go
+evidence: `internal/provider/theoses_messages.go` and
+`TestTheosesMessagesPreservesErrorMetadata`.
+
 Bedrock Converse usage now preserves cache-read and cache-write token
 breakdowns and falls back to the component sum when the service omits total
 tokens. TypeScript authority:

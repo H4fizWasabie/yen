@@ -190,6 +190,8 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 		case "error":
 			result.StopReason = "error"
 			result.ErrorMessage = event.ErrorMessage
+			result.ResponseID = event.ResponseID
+			result.Usage = event.Usage.agentUsage()
 		}
 	}
 	if err := scanner.Err(); err != nil {
