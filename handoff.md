@@ -71,6 +71,9 @@ Telegram message and quoted-reply handling now falls back from `text` to
 `caption`, matching the pinned TypeScript extractor; the behavior is covered
 by `TestTelegramBotUsesCaptionForMessageAndReply`.
 
+Telegram stop controls now accept the pinned case-insensitive `stop`, `halt`,
+`/stop`, and `/cancel` forms, retaining Yen's existing `/abort` alias.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

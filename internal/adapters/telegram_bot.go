@@ -83,7 +83,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	if text == "" {
 		return nil
 	}
-	if text == "/stop" || text == "/abort" {
+	if isTelegramStopCommand(text) {
 		if link, linked := b.Adapter.Service.Registry.Get("telegram", chatID); linked {
 			if turn, ok := b.Adapter.Service.Runner.Active(link.ConversationID); ok {
 				if err := b.Adapter.Service.Runner.Cancel(turn.ID); err != nil {
@@ -105,6 +105,15 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
+}
+
+func isTelegramStopCommand(text string) bool {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "stop", "halt", "/stop", "/cancel", "/abort":
+		return true
+	default:
+		return false
+	}
 }
 
 func telegramMessageText(message *telegramMessage) string {

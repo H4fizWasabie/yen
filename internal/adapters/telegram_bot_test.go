@@ -245,6 +245,19 @@ func TestTelegramBotUsesCaptionForMessageAndReply(t *testing.T) {
 	}
 }
 
+func TestTelegramBotRecognizesStopAliases(t *testing.T) {
+	for _, command := range []string{"stop", "HALT", "/STOP", "/cancel", "/abort"} {
+		if !isTelegramStopCommand(command) {
+			t.Errorf("command %q was not recognized", command)
+		}
+	}
+	for _, text := range []string{"", "stop now", "/stopping"} {
+		if isTelegramStopCommand(text) {
+			t.Errorf("text %q was recognized", text)
+		}
+	}
+}
+
 func TestTelegramBotPollsUpdatesAdvancesOffsetAndStops(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
