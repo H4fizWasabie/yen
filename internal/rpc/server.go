@@ -126,6 +126,14 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			}
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"active": ok}, nil)
+	case "abort_retry", "abort_bash":
+		turn, ok := s.Runner.Active(link.ConversationID)
+		if ok {
+			if err := s.Runner.Cancel(turn.ID); err != nil {
+				return err
+			}
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"active": ok}, nil)
 	case "get_state":
 		session, err := s.Runner.OpenSession(link)
 		if err != nil {
@@ -138,6 +146,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			"provider":      func() string { name, _ := providerpkg.Describe(s.Runner.Provider); return name }(),
 			"model":         func() string { _, model := providerpkg.Describe(s.Runner.Provider); return model }(),
 			"thinkingLevel": providerpkg.ThinkingLevel(s.Runner.Provider),
+			"autoRetry":     providerpkg.RetryEnabled(s.Runner.Provider),
 			"messageCount":  len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
 	case "get_messages":
@@ -277,6 +286,16 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		s.Runner.Provider = configured
 		return s.response(output, request.ID, request.Type, true, map[string]any{"level": providerpkg.ThinkingLevel(configured)}, nil)
+	case "set_auto_retry":
+		if request.Enabled == nil {
+			return errors.New("enabled is required")
+		}
+		configured, err := providerpkg.SetRetryEnabled(s.Runner.Provider, *request.Enabled)
+		if err != nil {
+			return err
+		}
+		s.Runner.Provider = configured
+		return s.response(output, request.ID, request.Type, true, map[string]any{"enabled": providerpkg.RetryEnabled(configured)}, nil)
 	case "get_available_thinking_levels":
 		return s.response(output, request.ID, request.Type, true, map[string]any{"levels": providerpkg.ThinkingLevels}, nil)
 	case "cycle_thinking_level":

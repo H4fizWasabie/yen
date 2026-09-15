@@ -56,3 +56,14 @@ func TestSetThinkingLevelShapesProviderState(t *testing.T) {
 		t.Fatalf("provider=%#v err=%v", configured, err)
 	}
 }
+
+func TestSetRetryEnabledControlsSupportedProviders(t *testing.T) {
+	configured, err := SetRetryEnabled(NewOpenAICompletions("http://fixture", "key", "model"), true)
+	if err != nil || !RetryEnabled(configured) {
+		t.Fatalf("provider=%#v err=%v", configured, err)
+	}
+	configured, err = SetRetryEnabled(configured, false)
+	if err != nil || RetryEnabled(configured) {
+		t.Fatalf("provider=%#v err=%v", configured, err)
+	}
+}

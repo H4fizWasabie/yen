@@ -170,6 +170,41 @@ func ThinkingLevel(p agent.Provider) string {
 	}
 }
 
+func SetRetryEnabled(p agent.Provider, enabled bool) (agent.Provider, error) {
+	const defaultRetries = 3
+	switch client := p.(type) {
+	case OpenAICompletions:
+		if enabled && client.MaxRetries == 0 {
+			client.MaxRetries = defaultRetries
+		}
+		if !enabled {
+			client.MaxRetries = 0
+		}
+		return client, nil
+	case AnthropicMessages:
+		if enabled && client.MaxRetries == 0 {
+			client.MaxRetries = defaultRetries
+		}
+		if !enabled {
+			client.MaxRetries = 0
+		}
+		return client, nil
+	default:
+		return nil, errors.New("provider does not support retry control")
+	}
+}
+
+func RetryEnabled(p agent.Provider) bool {
+	switch client := p.(type) {
+	case OpenAICompletions:
+		return client.MaxRetries > 0
+	case AnthropicMessages:
+		return client.MaxRetries > 0
+	default:
+		return false
+	}
+}
+
 func firstEnv(names ...string) string {
 	for _, name := range names {
 		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
