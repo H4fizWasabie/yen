@@ -115,16 +115,17 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		converted = normalizeMistralMessages(converted)
 	}
 	payload := struct {
-		Model           string            `json:"model"`
-		Messages        []openAIMessage   `json:"messages"`
-		Tools           []map[string]any  `json:"tools,omitempty"`
-		Stream          bool              `json:"stream"`
-		ResponseFormat  map[string]string `json:"response_format,omitempty"`
-		Reasoning       map[string]any    `json:"reasoning,omitempty"`
-		Thinking        map[string]any    `json:"thinking,omitempty"`
-		EnableThinking  *bool             `json:"enable_thinking,omitempty"`
-		ToolStream      bool              `json:"tool_stream,omitempty"`
-		ReasoningEffort string            `json:"reasoning_effort,omitempty"`
+		Model            string            `json:"model"`
+		Messages         []openAIMessage   `json:"messages"`
+		Tools            []map[string]any  `json:"tools,omitempty"`
+		Stream           bool              `json:"stream"`
+		ResponseFormat   map[string]string `json:"response_format,omitempty"`
+		Reasoning        map[string]any    `json:"reasoning,omitempty"`
+		Thinking         map[string]any    `json:"thinking,omitempty"`
+		EnableThinking   *bool             `json:"enable_thinking,omitempty"`
+		ToolStream       bool              `json:"tool_stream,omitempty"`
+		ChatTemplateArgs map[string]any    `json:"chat_template_args,omitempty"`
+		ReasoningEffort  string            `json:"reasoning_effort,omitempty"`
 	}{Model: p.Model, Messages: converted, Stream: true}
 	if p.ReasoningEffort != "" {
 		if p.ProviderName == "mistral" {
@@ -140,6 +141,8 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		} else if p.ProviderName == "together" {
 			payload.Reasoning = map[string]any{"enabled": true}
 			payload.ReasoningEffort = p.ReasoningEffort
+		} else if p.ProviderName == "baseten" && basetenUsesChatTemplate(p.Model) {
+			payload.ChatTemplateArgs = map[string]any{"enable_thinking": true}
 		} else {
 			payload.Reasoning = map[string]any{"effort": p.ReasoningEffort}
 		}
@@ -150,6 +153,9 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		payload.Thinking = map[string]any{"type": "disabled"}
 	} else if p.ProviderName == "together" {
 		payload.Reasoning = map[string]any{"enabled": false}
+	}
+	if p.ProviderName == "baseten" && basetenUsesChatTemplate(p.Model) && p.ReasoningEffort == "" {
+		payload.ChatTemplateArgs = map[string]any{"enable_thinking": false}
 	}
 	if jsonMode {
 		payload.ResponseFormat = map[string]string{"type": "json_object"}
@@ -487,6 +493,10 @@ func hasMessageImages(messages []agent.Message) bool {
 
 func isQwenTokenPlan(provider string) bool {
 	return provider == "qwen-token-plan" || provider == "qwen-token-plan-cn" || provider == "qwen-token-plan-individual"
+}
+
+func basetenUsesChatTemplate(model string) bool {
+	return strings.HasPrefix(model, "moonshotai/") || strings.HasPrefix(model, "nvidia/") || strings.HasPrefix(model, "zai-org/GLM-4.7") || strings.HasPrefix(model, "zai-org/GLM-5")
 }
 
 func openAIContentDelta(raw json.RawMessage) (text, thinking string) {
