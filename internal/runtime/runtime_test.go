@@ -348,52 +348,52 @@ func TestRunnerUsesCompactionAwareContext(t *testing.T) {
 }
 
 func TestAutoCompactKeepRecentTokensFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "2048")
+	t.Setenv("YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS", "2048")
 	if got := AutoCompactKeepRecentTokensFromEnv(); got != 2048 {
 		t.Fatalf("tokens=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "0")
+	t.Setenv("YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS", "0")
 	if got := AutoCompactKeepRecentTokensFromEnv(); got != 0 {
 		t.Fatalf("disabled tokens=%d", got)
 	}
 }
 
 func TestAutoCompactContextSettingsFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW", "8192")
+	t.Setenv("YEN_AUTO_COMPACT_CONTEXT_WINDOW", "8192")
 	if got := AutoCompactContextWindowFromEnv(); got != 8192 {
 		t.Fatalf("context window=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS", "4096")
+	t.Setenv("YEN_AUTO_COMPACT_RESERVE_TOKENS", "4096")
 	if got := AutoCompactReserveTokensFromEnv(); got != 4096 {
 		t.Fatalf("reserve tokens=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW", "0")
+	t.Setenv("YEN_AUTO_COMPACT_CONTEXT_WINDOW", "0")
 	if got := AutoCompactContextWindowFromEnv(); got != 0 {
 		t.Fatalf("disabled context window=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS", "0")
+	t.Setenv("YEN_AUTO_COMPACT_RESERVE_TOKENS", "0")
 	if got := AutoCompactReserveTokensFromEnv(); got != 16384 {
 		t.Fatalf("default reserve tokens=%d", got)
 	}
 }
 
 func TestAutoCompactMaxHistoryTurnsFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "3")
+	t.Setenv("YEN_AUTO_COMPACT_MAX_HISTORY_TURNS", "3")
 	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 3 {
 		t.Fatalf("max history turns=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "0")
+	t.Setenv("YEN_AUTO_COMPACT_MAX_HISTORY_TURNS", "0")
 	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 0 {
 		t.Fatalf("disabled max history turns=%d", got)
 	}
 }
 
 func TestAutoCompactDisabledFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_ENABLED", "false")
+	t.Setenv("YEN_AUTO_COMPACT_ENABLED", "false")
 	if !AutoCompactDisabledFromEnv() {
 		t.Fatal("expected automatic compaction to be disabled")
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_ENABLED", "true")
+	t.Setenv("YEN_AUTO_COMPACT_ENABLED", "true")
 	if AutoCompactDisabledFromEnv() {
 		t.Fatal("expected automatic compaction to be enabled")
 	}
