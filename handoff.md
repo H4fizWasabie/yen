@@ -475,6 +475,11 @@ Context discovery now includes the oracle's `AGENTS.MD` and `CLAUDE.md`
 resource names in addition to Yen's existing guidance files. The focused
 resource test and full 258-test gate pass.
 
+Dashboard API authentication now fails closed when `YEN_DASHBOARD_TOKEN` is
+unset, returning the oracle-compatible 503 response. An integration test
+covers the unconfigured-token case; the full gate is now 259 tests plus
+race/vet/diff.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

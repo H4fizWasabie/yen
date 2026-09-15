@@ -88,7 +88,8 @@ func dashboardSessions(registry *conversation.Registry, runner *runtime.Runner) 
 
 func (h DashboardHTTP) authorized(w http.ResponseWriter, r *http.Request) bool {
 	if h.AccessToken == "" {
-		return true
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Dashboard access token is not configured"})
+		return false
 	}
 	candidate := bearerToken(r.Header.Get("Authorization"))
 	if candidate == "" {

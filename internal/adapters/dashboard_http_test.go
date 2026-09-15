@@ -19,6 +19,14 @@ import (
 	"github.com/H4fizWasabie/yen/internal/session"
 )
 
+type dashboardAuthTransport struct{ base http.RoundTripper }
+
+func (t dashboardAuthTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.Header.Set("Authorization", "Bearer secret")
+	return t.base.RoundTrip(clone)
+}
+
 func TestDashboardHTTPRequiresAndAcceptsBearerToken(t *testing.T) {
 	registry, err := conversation.OpenRegistry(filepath.Join(t.TempDir(), "links.jsonl"))
 	if err != nil {
@@ -72,6 +80,19 @@ func TestDashboardHTTPRequiresAndAcceptsBearerToken(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("authorized status=%d", response.StatusCode)
+	}
+}
+
+func TestDashboardHTTPRejectsUnconfiguredAccessToken(t *testing.T) {
+	server := httptest.NewServer(DashboardHTTP{})
+	defer server.Close()
+	response, err := http.Get(server.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d, want %d", response.StatusCode, http.StatusServiceUnavailable)
 	}
 }
 
@@ -162,10 +183,11 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	handler := DashboardHTTP{Dashboard: Dashboard{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}}
+	handler := DashboardHTTP{AccessToken: "secret", Dashboard: Dashboard{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}}
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	response, err := http.Get(server.URL + "/healthz")
+	client := &http.Client{Transport: dashboardAuthTransport{base: http.DefaultTransport}}
+	response, err := client.Get(server.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +195,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("health status=%d", response.StatusCode)
 	}
-	response, err = http.Post(server.URL+"/api/sessions", "application/json", bytes.NewBufferString("{}"))
+	response, err = client.Post(server.URL+"/api/sessions", "application/json", bytes.NewBufferString("{}"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +207,11 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusCreated || link.ConversationID == "" {
 		t.Fatalf("new session=%#v status=%d", link, response.StatusCode)
 	}
-	response, err = http.Post(server.URL+"/api/sessions/"+link.ConversationID+"/messages", "application/json", bytes.NewBufferString(`{"message":"hello","replyContext":"quoted"}`))
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/sessions/"+link.ConversationID+"/messages", bytes.NewBufferString(`{"message":"hello","replyContext":"quoted"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = client.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +223,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusOK || result["text"] != "http stream" {
 		t.Fatalf("message=%#v status=%d", result, response.StatusCode)
 	}
-	response, err = http.Get(server.URL + "/api/sessions/" + link.ConversationID)
+	response, err = client.Get(server.URL + "/api/sessions/" + link.ConversationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +235,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if response.StatusCode != http.StatusOK || len(readback["messages"].([]any)) != 2 || len(readback["history"].([]any)) != 2 {
 		t.Fatalf("readback=%#v status=%d", readback, response.StatusCode)
 	}
-	response, err = http.Get(server.URL + "/api/sessions")
+	response, err = client.Get(server.URL + "/api/sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +262,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if _, err := registry.ResolveShared("telegram", "chat-1", dir, link.ConversationID); err != nil {
 		t.Fatal(err)
 	}
-	response, err = http.Get(server.URL + "/api/sessions")
+	response, err = client.Get(server.URL + "/api/sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,12 +277,12 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if sessions["sessions"].([]any)[0].(map[string]any)["id"] != link.ConversationID {
 		t.Fatalf("session view=%#v", sessions["sessions"])
 	}
-	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/sessions/"+link.ConversationID+"/messages", bytes.NewBufferString(`{"message":"stream"}`))
+	request, err = http.NewRequest(http.MethodPost, server.URL+"/api/sessions/"+link.ConversationID+"/messages", bytes.NewBufferString(`{"message":"stream"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Header.Set("Accept", "text/event-stream")
-	response, err = http.DefaultClient.Do(request)
+	response, err = client.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
