@@ -100,6 +100,13 @@ authority: `packages/coding-agent/src/core/prompt-templates.ts:16-95`; Go
 evidence: `internal/codingagent/prompt_templates.go` and focused substitution
 tests; the full 269-test race/vet/diff gate passes.
 
+Skill resource loading now falls back to the containing directory name when
+`SKILL.md` omits frontmatter `name`, matching the oracle's declared-skill
+loader. TypeScript authority:
+`packages/coding-agent/src/core/skills.ts:307-323`; Go evidence:
+`internal/codingagent/prompt.go`, `internal/codingagent/prompt_templates.go`,
+and focused resource tests; the full 270-test race/vet/diff gate passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

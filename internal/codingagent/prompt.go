@@ -112,7 +112,7 @@ func SkillsMessage(workspace string) (agent.Message, bool) {
 			if readErr != nil {
 				return nil
 			}
-			name, description := parseSkillFrontmatter(string(data))
+			name, description := parseSkillFile(path, string(data))
 			if name != "" && description != "" {
 				skills = append(skills, skillInfo{Name: name, Description: description, Path: path})
 			}
@@ -133,6 +133,14 @@ func SkillsMessage(workspace string) (agent.Message, bool) {
 		content = string([]rune(content)[:8000]) + "\n</available_skills>"
 	}
 	return agent.Message{Role: "system", Content: content}, true
+}
+
+func parseSkillFile(path, content string) (name, description string) {
+	name, description = parseSkillFrontmatter(content)
+	if name == "" {
+		name = filepath.Base(filepath.Dir(path))
+	}
+	return name, description
 }
 
 // SkillCommands exposes the same local skill discovery to headless command
@@ -172,7 +180,7 @@ func SkillCommands(workspace string) []map[string]any {
 			if readErr != nil {
 				return nil
 			}
-			name, description := parseSkillFrontmatter(string(data))
+			name, description := parseSkillFile(path, string(data))
 			if name != "" && description != "" {
 				commands = append(commands, map[string]any{
 					"name": "skill:" + name, "description": description, "source": "skill",

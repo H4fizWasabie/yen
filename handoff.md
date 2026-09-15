@@ -549,6 +549,10 @@ placeholders, defaults, and argument slices in the same substitution pass as
 the oracle. Focused template tests and the full 269-test race/vet/diff gate
 pass.
 
+Skill discovery and explicit skill expansion now use the containing directory
+name when `SKILL.md` omits frontmatter `name`, matching the oracle fallback.
+Focused resource coverage and the full 270-test race/vet/diff gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

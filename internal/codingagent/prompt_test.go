@@ -70,3 +70,25 @@ func TestSkillsMessageListsLazySkillFiles(t *testing.T) {
 		t.Fatal("skill body should remain lazy")
 	}
 }
+
+func TestSkillsUseParentDirectoryWhenNameIsOmitted(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, ".agents", "skills", "release")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("---\ndescription: Ship carefully\n---\nBody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := SkillsMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "<name>release</name>") {
+		t.Fatalf("message=%#v", message)
+	}
+	commands := SkillCommands(workspace)
+	if len(commands) != 1 || commands[0]["name"] != "skill:release" {
+		t.Fatalf("commands=%#v", commands)
+	}
+	if !strings.Contains(ExpandPrompt(workspace, "/skill:release"), "<skill name=\"release\"") {
+		t.Fatal("skill command did not expand")
+	}
+}

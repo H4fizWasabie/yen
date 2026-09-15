@@ -221,7 +221,7 @@ func findSkillPath(workspace, name string) string {
 			if !entry.IsDir() && entry.Name() == "SKILL.md" {
 				data, readErr := os.ReadFile(path)
 				if readErr == nil {
-					declared, description := parseSkillFrontmatter(string(data))
+					declared, description := parseSkillFile(path, string(data))
 					if declared == name && description != "" {
 						found = path
 					}
