@@ -49,7 +49,8 @@ not use the newer checkout as an unqualified oracle.
   v3: IDs and parent links are assigned, `hookMessage` becomes `custom`, and
   TypeScript flat compaction entries are read. Raw extension entries and
   message metadata survive migration; branch semantics and malformed-line
-  recovery remain open.
+  recovery remain open. V2 sessions retain their existing tree links during
+  the v2-to-v3 role/version migration.
   Assistant provider usage now round-trips through the session log.
   Compaction entries, active-context projection, and provider-backed
   `Runner.Compact` are supported. Set `THEOSES_AUTO_COMPACT_TURNS` to enable

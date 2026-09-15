@@ -165,6 +165,45 @@ func TestOpenMigratesLegacyTypeScriptSessionToV3(t *testing.T) {
 	}
 }
 
+func TestOpenV2MigrationPreservesExistingTreeLinks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v2.jsonl")
+	raw := strings.Join([]string{
+		`{"type":"session","version":2,"id":"v2","timestamp":"2026-01-01T00:00:00Z","cwd":"/workspace"}`,
+		`{"type":"message","id":"root","parentId":null,"timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"root"}}`,
+		`{"type":"message","id":"branch-a","parentId":"root","timestamp":"2026-01-01T00:00:02Z","message":{"role":"user","content":"branch a"}}`,
+		`{"type":"message","id":"branch-b","parentId":"root","timestamp":"2026-01-01T00:00:03Z","message":{"role":"hookMessage","content":"branch b"}}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"version":3`) {
+		t.Fatalf("v2 session was not rewritten: %s", text)
+	}
+	var branchB map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		var entry map[string]any
+		if json.Unmarshal([]byte(line), &entry) == nil && entry["id"] == "branch-b" {
+			branchB = entry
+		}
+	}
+	if branchB["parentId"] != "root" {
+		t.Fatalf("v2 tree was rewritten incorrectly: %s", text)
+	}
+	if opened.Messages()[2].Role != "custom" {
+		t.Fatalf("hook message role=%q", opened.Messages()[2].Role)
+	}
+}
+
 func TestSessionReadbackPreservesToolTurnBoundary(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	s := New(path, Header{ID: "session-1", CWD: "/workspace", Channel: "cli", ChannelSessionID: "/workspace"})

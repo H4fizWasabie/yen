@@ -219,17 +219,19 @@ func migrateSession(s *Session) bool {
 	var parent *string
 	for i := range s.entries {
 		entry := &s.entries[i]
-		if entry.ID == "" {
-			entry.ID = newEntryID(s.entries)
+		if version < 2 {
+			if entry.ID == "" {
+				entry.ID = newEntryID(s.entries)
+			}
+			entry.ParentID = parent
+			current := entry.ID
+			parent = &current
 		}
-		entry.ParentID = parent
-		current := entry.ID
-		parent = &current
 		if entry.Message != nil && entry.Message.Role == "hookMessage" {
 			entry.Message.Role = "custom"
 		}
 		s.normalizeCompaction(entry)
-		if entry.Compaction != nil && entry.FirstKeptEntryIndex != nil {
+		if version < 2 && entry.Compaction != nil && entry.FirstKeptEntryIndex != nil {
 			index := *entry.FirstKeptEntryIndex
 			// TypeScript counts the header in the JSONL entry array; Go stores it separately.
 			index--
