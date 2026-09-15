@@ -175,7 +175,17 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		_, err = fmt.Fprintf(stdout, "Session name set: %s\n", current.SessionName())
 		return true, err
 	case text == "/session":
-		_, err := fmt.Fprintf(stdout, "Session: %s\nPath: %s\n", current.Header().ID, current.Path())
+		stats := session.Stats(current)
+		_, err := fmt.Fprintf(stdout, "Session Info\n\nName: %s\nFile: %s\nID: %s\nMessages: %v\n", current.SessionName(), current.Path(), current.Header().ID, stats["totalMessages"])
+		return true, err
+	case text == "/working-note":
+		note := current.WorkingNote()
+		if note == "" {
+			note = "Working Note is empty"
+		} else {
+			note = "Working Note\n\n" + note
+		}
+		_, err := fmt.Fprintln(stdout, note)
 		return true, err
 	case text == "/stats":
 		data, err := json.Marshal(session.Stats(current))

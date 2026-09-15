@@ -142,4 +142,8 @@ func TestInteractiveSessionCommands(t *testing.T) {
 	if err != nil || !handled || !strings.Contains(output.String(), "session-1") {
 		t.Fatalf("session command handled=%v err=%v output=%q", handled, err, output.String())
 	}
+	handled, err = handleInteractiveCommand("/working-note", current, runner, link, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "Working Note is empty") {
+		t.Fatalf("working note command handled=%v err=%v output=%q", handled, err, output.String())
+	}
 }
