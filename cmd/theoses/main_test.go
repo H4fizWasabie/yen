@@ -206,6 +206,28 @@ func TestInteractiveSessionExportAndImport(t *testing.T) {
 	}
 }
 
+func TestInteractiveCloneCreatesFork(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	current := session.New(path, session.Header{ID: "session-1", CWD: dir})
+	if _, err := current.Append(session.Message{Role: "user", Content: "before"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	clonePath := filepath.Join(dir, "clone.jsonl")
+	var output bytes.Buffer
+	handled, err := handleInteractiveCommand("/clone "+clonePath, current, &runtime.Runner{}, conversation.Link{}, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), clonePath) {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	cloned, err := session.Open(clonePath)
+	if err != nil || len(cloned.Messages()) != 2 {
+		t.Fatalf("clone=%#v err=%v", cloned, err)
+	}
+}
+
 func TestInteractiveProviderAndTrustCommands(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", ConversationID: "conv-1", CWD: dir})

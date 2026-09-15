@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
@@ -308,6 +309,19 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 			return true, err
 		}
 		_, err := fmt.Fprintf(stdout, "Session imported from: %s\n", path)
+		return true, err
+	case text == "/clone" || strings.HasPrefix(text, "/clone "):
+		path := strings.TrimSpace(strings.TrimPrefix(text, "/clone"))
+		if path == "" {
+			path = filepath.Join(filepath.Dir(current.Path()), fmt.Sprintf("clone-%d.jsonl", time.Now().UnixNano()))
+		}
+		header := current.Header()
+		header.ID = "clone-" + fmt.Sprint(time.Now().UnixNano())
+		cloned, err := current.Fork(path, current.LeafID(), header)
+		if err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintf(stdout, "Session cloned to: %s\n", cloned.Path())
 		return true, err
 	case text == "/working-note":
 		note := current.WorkingNote()
