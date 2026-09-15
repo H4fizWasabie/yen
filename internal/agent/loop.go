@@ -62,13 +62,16 @@ type Result struct {
 }
 
 type Event struct {
-	Type    string
-	ID      string
-	Name    string
-	Args    map[string]any
-	Result  string
-	IsError bool
-	Usage   Usage
+	Type       string
+	ID         string
+	Name       string
+	Args       map[string]any
+	Result     string
+	IsError    bool
+	Usage      Usage
+	Message    *Message
+	Delta      string
+	StopReason string
 }
 
 type EventFunc func(Event)
@@ -188,9 +191,10 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			result.Events = append(result.Events, "message_end:assistant:"+stopReason, "turn_end", "agent_end", "agent_settled")
 			return result, err
 		}
-		result.Messages = append(result.Messages, Message{Role: "assistant", Content: response.Text, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage})
+		assistant := Message{Role: "assistant", Content: response.Text, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
+		result.Messages = append(result.Messages, assistant)
 		if onEvent != nil {
-			onEvent(Event{Type: "usage", Usage: response.Usage})
+			onEvent(Event{Type: "usage", Usage: response.Usage, Message: &assistant, StopReason: response.StopReason})
 		}
 		if len(response.ToolCalls) > 0 {
 			result.Events = append(result.Events, "message_end:assistant:toolUse")
@@ -223,17 +227,18 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 
 		for _, call := range response.ToolCalls {
 			if onEvent != nil {
-				onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args})
-				onEvent(Event{Type: "tool_execution_start", ID: call.ID, Name: call.Name, Args: call.Args})
+				onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args, Message: &assistant})
+				onEvent(Event{Type: "tool_execution_start", ID: call.ID, Name: call.Name, Args: call.Args, Message: &assistant})
 			}
 			if response.StopReason == "length" {
 				result.Events = append(result.Events, "tool_execution_start:"+call.ID)
 				content := `Tool call "` + call.Name + `" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
-				result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
+				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+				result.Messages = append(result.Messages, toolMessage)
 				if onEvent != nil {
-					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true})
-					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true})
+					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
+					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
 				}
 				result.Events = append(result.Events, "message_end:toolResult")
 				continue
@@ -243,10 +248,11 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_start:"+call.ID, "tool_execution_end:"+call.ID)
 				result.Events = append(result.Events, "message_start:toolResult")
 				content := (&UnknownToolError{Name: call.Name}).Error()
-				result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
+				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+				result.Messages = append(result.Messages, toolMessage)
 				if onEvent != nil {
-					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true})
-					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true})
+					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
+					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
 				}
 				result.Events = append(result.Events, "message_end:toolResult")
 				continue
@@ -257,10 +263,11 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 				if ctx.Err() != nil {
 					result.Events = append(result.Events, "message_start:toolResult")
-					result.Messages = append(result.Messages, Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID})
+					toolMessage := Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID}
+					result.Messages = append(result.Messages, toolMessage)
 					if onEvent != nil {
-						onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true})
-						onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true})
+						onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true, Message: &toolMessage})
+						onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true, Message: &toolMessage})
 					}
 					result.Events = append(result.Events, "message_end:toolResult", "turn_end", "agent_end", "agent_settled")
 					return result, ctx.Err()
@@ -270,10 +277,11 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 			}
 			result.Events = append(result.Events, "message_start:toolResult")
-			result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
+			toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+			result.Messages = append(result.Messages, toolMessage)
 			if onEvent != nil {
-				onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil})
-				onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil})
+				onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage})
+				onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage})
 			}
 			result.Events = append(result.Events, "message_end:toolResult")
 		}
@@ -295,8 +303,9 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 		outcomes[i].call = call
 		result.Events = append(result.Events, "tool_execution_start:"+call.ID)
 		if onEvent != nil {
-			onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args})
-			onEvent(Event{Type: "tool_execution_start", ID: call.ID, Name: call.Name, Args: call.Args})
+			assistant := result.Messages[len(result.Messages)-1]
+			onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args, Message: &assistant})
+			onEvent(Event{Type: "tool_execution_start", ID: call.ID, Name: call.Name, Args: call.Args, Message: &assistant})
 		}
 		wait.Add(1)
 		go func(i int, call ToolCall) {
@@ -324,10 +333,11 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 			}
 		}
 		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
-		result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: outcome.call.ID})
+		toolMessage := Message{Role: "tool", Content: content, ToolCallID: outcome.call.ID}
+		result.Messages = append(result.Messages, toolMessage)
 		if onEvent != nil {
-			onEvent(Event{Type: "tool_execution_end", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError})
-			onEvent(Event{Type: "tool_result", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError})
+			onEvent(Event{Type: "tool_execution_end", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage})
+			onEvent(Event{Type: "tool_result", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage})
 		}
 		result.Events = append(result.Events, "message_end:toolResult")
 	}

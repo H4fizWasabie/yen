@@ -209,6 +209,12 @@ func TestRunWithEventsReportsDashboardToolAndUsageEvents(t *testing.T) {
 	if events[3].Result != "README contents" || events[3].IsError || events[4].Result != "README contents" || events[4].IsError {
 		t.Fatalf("tool result = %#v", events[3:5])
 	}
+	if events[0].Message == nil || events[0].Message.Role != "assistant" || events[0].StopReason != "toolUse" {
+		t.Fatalf("usage payload = %#v", events[0])
+	}
+	if events[1].Message == nil || len(events[1].Message.ToolCalls) != 1 || events[3].Message == nil || events[3].Message.Role != "tool" || events[3].Message.ToolCallID != "read-1" {
+		t.Fatalf("message payloads = %#v %#v", events[1].Message, events[3].Message)
+	}
 }
 
 func TestRunNormalizedTracesMatchGoldenOutcomes(t *testing.T) {
