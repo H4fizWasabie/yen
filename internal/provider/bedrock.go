@@ -2,14 +2,17 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	bedrockdocument "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
@@ -19,16 +22,44 @@ import (
 
 // BedrockConverse implements the AWS credential-chain ConverseStream API.
 type BedrockConverse struct {
-	Region       string
-	Profile      string
-	BaseURL      string
-	Model        string
-	ProviderName string
-	Client       *bedrockruntime.Client
+	Region        string
+	Profile       string
+	BaseURL       string
+	Model         string
+	ProviderName  string
+	Client        *bedrockruntime.Client
+	CatalogClient *bedrock.Client
 }
 
 func NewBedrockConverse(region, model string) BedrockConverse {
 	return BedrockConverse{Region: region, Model: model, ProviderName: "amazon-bedrock"}
+}
+
+func (p BedrockConverse) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	client := p.CatalogClient
+	if client == nil {
+		cfg, err := p.awsConfig(ctx)
+		if err != nil {
+			return nil, err
+		}
+		client = bedrock.NewFromConfig(cfg)
+	}
+	out, err := client.ListFoundationModels(ctx, &bedrock.ListFoundationModelsInput{})
+	if err != nil {
+		return nil, err
+	}
+	providerName := p.ProviderName
+	if providerName == "" {
+		providerName = "amazon-bedrock"
+	}
+	models := make([]ModelInfo, 0, len(out.ModelSummaries))
+	for _, summary := range out.ModelSummaries {
+		if summary.ModelId != nil && strings.TrimSpace(*summary.ModelId) != "" {
+			models = append(models, ModelInfo{Provider: providerName, ID: *summary.ModelId})
+		}
+	}
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	return models, nil
 }
 
 func (p BedrockConverse) Next(ctx context.Context, messages []agent.Message, tools []string) (agent.Response, error) {
@@ -53,14 +84,7 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	}
 	client := p.Client
 	if client == nil {
-		region := p.Region
-		if region == "" {
-			region = os.Getenv("AWS_REGION")
-		}
-		if region == "" {
-			region = "us-east-1"
-		}
-		cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region), awsconfig.WithSharedConfigProfile(p.Profile))
+		cfg, err := p.awsConfig(ctx)
 		if err != nil {
 			return agent.Response{}, err
 		}
@@ -88,6 +112,7 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	}
 	toolArgs := make(map[int]string)
 	toolCalls := make(map[int]agent.ToolCall)
+	redactedReasoning := make(map[int][]byte)
 	for event := range out.GetStream().Events() {
 		switch event := event.(type) {
 		case *bedrocktypes.ConverseStreamOutputMemberContentBlockStart:
@@ -120,6 +145,18 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 					if emit != nil {
 						emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: index, Delta: text.Value, Partial: partial})
 					}
+				} else if signature, ok := delta.Value.(*bedrocktypes.ReasoningContentBlockDeltaMemberSignature); ok {
+					result.ThinkingSignature += signature.Value
+					partial.ThinkingSignature += signature.Value
+				} else if redacted, ok := delta.Value.(*bedrocktypes.ReasoningContentBlockDeltaMemberRedactedContent); ok {
+					redactedReasoning[index] = append(redactedReasoning[index], redacted.Value...)
+					if !strings.Contains(result.Thinking, "[Reasoning redacted]") {
+						result.Thinking += "[Reasoning redacted]"
+						partial.Thinking += "[Reasoning redacted]"
+					}
+					if emit != nil {
+						emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: index, Delta: "[Reasoning redacted]", Partial: partial})
+					}
 				}
 			}
 		case *bedrocktypes.ConverseStreamOutputMemberMessageStop:
@@ -135,7 +172,26 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	if err := out.GetStream().Err(); err != nil {
 		return agent.Response{}, err
 	}
-	for index, call := range toolCalls {
+	if len(redactedReasoning) > 0 {
+		indices := make([]int, 0, len(redactedReasoning))
+		for index := range redactedReasoning {
+			indices = append(indices, index)
+		}
+		sort.Ints(indices)
+		var opaque []byte
+		for _, index := range indices {
+			opaque = append(opaque, redactedReasoning[index]...)
+		}
+		result.ThinkingSignature = base64.StdEncoding.EncodeToString(opaque)
+		partial.ThinkingSignature = result.ThinkingSignature
+	}
+	indices := make([]int, 0, len(toolCalls))
+	for index := range toolCalls {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	for _, index := range indices {
+		call := toolCalls[index]
 		if err := json.Unmarshal([]byte(toolArgs[index]), &call.Args); err != nil {
 			return agent.Response{}, fmt.Errorf("bedrock tool %s arguments: %w", call.Name, err)
 		}
@@ -154,6 +210,24 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	return result, nil
 }
 
+func (p BedrockConverse) awsConfig(ctx context.Context) (aws.Config, error) {
+	region := p.Region
+	if region == "" {
+		region = os.Getenv("AWS_REGION")
+	}
+	if region == "" {
+		region = os.Getenv("AWS_DEFAULT_REGION")
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(region)}
+	if p.Profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(p.Profile))
+	}
+	return awsconfig.LoadDefaultConfig(ctx, options...)
+}
+
 func bedrockInput(messages []agent.Message, toolNames []string, model string) (*bedrockruntime.ConverseStreamInput, error) {
 	input := &bedrockruntime.ConverseStreamInput{ModelId: aws.String(model)}
 	for _, message := range messages {
@@ -167,10 +241,14 @@ func bedrockInput(messages []agent.Message, toolNames []string, model string) (*
 		if message.Role == "assistant" {
 			role = "assistant"
 		}
-		if strings.TrimSpace(message.Content) == "" {
+		content, err := bedrockMessageContent(message, model)
+		if err != nil {
+			return nil, err
+		}
+		if len(content) == 0 {
 			continue
 		}
-		input.Messages = append(input.Messages, bedrocktypes.Message{Role: bedrocktypes.ConversationRole(role), Content: []bedrocktypes.ContentBlock{&bedrocktypes.ContentBlockMemberText{Value: message.Content}}})
+		input.Messages = append(input.Messages, bedrocktypes.Message{Role: bedrocktypes.ConversationRole(role), Content: content})
 	}
 	if len(input.Messages) == 0 {
 		return nil, errors.New("amazon bedrock requires a user message")
@@ -182,6 +260,75 @@ func bedrockInput(messages []agent.Message, toolNames []string, model string) (*
 		}
 	}
 	return input, nil
+}
+
+func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.ContentBlock, error) {
+	if message.ToolCallID != "" {
+		content := []bedrocktypes.ToolResultContentBlock{&bedrocktypes.ToolResultContentBlockMemberText{Value: nonEmpty(message.Content)}}
+		for _, image := range message.Images {
+			if block, ok := bedrockImage(image); ok {
+				content = append(content, &bedrocktypes.ToolResultContentBlockMemberImage{Value: block})
+			}
+		}
+		status := bedrocktypes.ToolResultStatusSuccess
+		if message.ErrorMessage != "" {
+			status = bedrocktypes.ToolResultStatusError
+			content[0] = &bedrocktypes.ToolResultContentBlockMemberText{Value: nonEmpty(message.ErrorMessage)}
+		}
+		return []bedrocktypes.ContentBlock{&bedrocktypes.ContentBlockMemberToolResult{Value: bedrocktypes.ToolResultBlock{ToolUseId: aws.String(message.ToolCallID), Status: status, Content: content}}}, nil
+	}
+	content := make([]bedrocktypes.ContentBlock, 0, 1+len(message.Images)+len(message.ToolCalls))
+	if message.Thinking != "" {
+		if strings.HasPrefix(message.Thinking, "[Reasoning redacted]") {
+			if opaque, err := base64.StdEncoding.DecodeString(message.ThinkingSignature); err == nil && len(opaque) > 0 {
+				content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberRedactedContent{Value: opaque}})
+			}
+		}
+		if len(content) == 0 {
+			thinking := bedrocktypes.ReasoningTextBlock{Text: aws.String(message.Thinking)}
+			if message.ThinkingSignature != "" && strings.Contains(strings.ToLower(model), "claude") {
+				thinking.Signature = aws.String(message.ThinkingSignature)
+			}
+			content = append(content, &bedrocktypes.ContentBlockMemberReasoningContent{Value: &bedrocktypes.ReasoningContentBlockMemberReasoningText{Value: thinking}})
+		}
+	}
+	if strings.TrimSpace(message.Content) != "" {
+		content = append(content, &bedrocktypes.ContentBlockMemberText{Value: message.Content})
+	}
+	for _, image := range message.Images {
+		if block, ok := bedrockImage(image); ok {
+			content = append(content, &bedrocktypes.ContentBlockMemberImage{Value: block})
+		}
+	}
+	for _, call := range message.ToolCalls {
+		content = append(content, &bedrocktypes.ContentBlockMemberToolUse{Value: bedrocktypes.ToolUseBlock{
+			ToolUseId: aws.String(call.ID), Name: aws.String(call.Name), Input: bedrockdocument.NewLazyDocument(call.Args),
+		}})
+	}
+	return content, nil
+}
+
+func bedrockImage(value string) (bedrocktypes.ImageBlock, bool) {
+	mime, encoded, ok := parseDataImage(value)
+	if !ok {
+		return bedrocktypes.ImageBlock{}, false
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return bedrocktypes.ImageBlock{}, false
+	}
+	format := bedrocktypes.ImageFormat(strings.TrimPrefix(mime, "image/"))
+	if format != bedrocktypes.ImageFormatPng && format != bedrocktypes.ImageFormatJpeg {
+		return bedrocktypes.ImageBlock{}, false
+	}
+	return bedrocktypes.ImageBlock{Format: format, Source: &bedrocktypes.ImageSourceMemberBytes{Value: data}}, true
+}
+
+func nonEmpty(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "<empty>"
+	}
+	return value
 }
 
 func stringValue(value *string) string {

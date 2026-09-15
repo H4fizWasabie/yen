@@ -36,6 +36,7 @@ var providerDefaults = map[string]string{
 	"qwen-token-plan":            "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
 	"qwen-token-plan-cn":         "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
 	"qwen-token-plan-individual": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+	"radius":                     "",
 	"together":                   "https://api.together.ai/v1",
 	"xiaomi":                     "https://api.xiaomimimo.com/v1",
 	"xiaomi-token-plan-ams":      "https://token-plan-ams.xiaomimimo.com/v1",
@@ -88,6 +89,7 @@ var providerKeyEnvs = map[string]string{
 	"google-vertex":              "YEN_GOOGLE_CLOUD_API_KEY",
 	"github-copilot":             "YEN_COPILOT_GITHUB_TOKEN",
 	"openai-codex":               "YEN_OPENAI_CODEX_ACCESS_TOKEN",
+	"radius":                     "YEN_RADIUS_API_KEY",
 	"azure-openai-responses":     "YEN_AZURE_OPENAI_API_KEY",
 }
 
@@ -166,6 +168,16 @@ func bedrockConfigured(model string) BedrockConverse {
 	return client
 }
 
+func radiusConfigured(model string) TheosesMessages {
+	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_RADIUS_BASE_URL")), "/")
+	client := NewTheosesMessages(baseURL, os.Getenv("YEN_RADIUS_API_KEY"), model)
+	client.GatewayURL = strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_RADIUS_GATEWAY")), "/")
+	if client.APIKey == "" {
+		client.APIKey = storedCredentialKey("radius")
+	}
+	return client
+}
+
 func codexConfigured(model string) (OpenAIResponses, error) {
 	token := os.Getenv("YEN_OPENAI_CODEX_ACCESS_TOKEN")
 	if token == "" {
@@ -189,6 +201,27 @@ func codexConfigured(model string) (OpenAIResponses, error) {
 	}
 	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 	return client, nil
+}
+
+func nativeResponsesConfigured(providerID, model string) OpenAIResponses {
+	baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
+	if providerID == "xai" {
+		baseURL = os.Getenv("YEN_XAI_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = os.Getenv("YEN_OPENAI_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = providerDefaults[providerID]
+	}
+	key := os.Getenv(providerKeyEnvs[providerID])
+	if key == "" {
+		key = storedCredentialKey(providerID)
+	}
+	client := NewOpenAIResponses(baseURL, key, model)
+	client.ProviderName = providerID
+	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+	return client
 }
 
 func cloudflareConfigured(providerID, model string) OpenAICompletions {
@@ -253,6 +286,13 @@ func NewFromEnv() OpenAICompletions {
 
 func ConfiguredFromEnv() agent.Provider {
 	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
+	if providerID == "radius" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "auto"
+		}
+		return radiusConfigured(model)
+	}
 	if providerID == "amazon-bedrock" {
 		model := os.Getenv("YEN_MODEL")
 		if model == "" {
@@ -277,6 +317,16 @@ func ConfiguredFromEnv() agent.Provider {
 			return NewFromEnv()
 		}
 		return client
+	}
+	if providerID == "openai" || providerID == "xai" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gpt-5.5"
+			if providerID == "xai" {
+				model = "grok-4.6"
+			}
+		}
+		return nativeResponsesConfigured(providerID, model)
 	}
 	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
 		baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
@@ -384,6 +434,16 @@ func ConfiguredFromEnv() agent.Provider {
 func NewConfigured(providerID, model string) (agent.Provider, error) {
 	providerID = strings.ToLower(strings.TrimSpace(providerID))
 	model = strings.TrimSpace(model)
+	if providerID == "radius" {
+		if model == "" {
+			model = "auto"
+		}
+		client := radiusConfigured(model)
+		if client.BaseURL == "" {
+			return nil, errors.New("radius requires YEN_RADIUS_BASE_URL")
+		}
+		return client, nil
+	}
 	if providerID == "amazon-bedrock" {
 		if model == "" {
 			model = "us.anthropic.claude-opus-4-6-v1"
@@ -401,6 +461,15 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 			model = "gpt-5"
 		}
 		return codexConfigured(model)
+	}
+	if providerID == "openai" || providerID == "xai" {
+		if model == "" {
+			model = "gpt-5.5"
+			if providerID == "xai" {
+				model = "grok-4.6"
+			}
+		}
+		return nativeResponsesConfigured(providerID, model), nil
 	}
 	if providerID == "cloudflare-workers-ai" || providerID == "cloudflare-ai-gateway" {
 		if model == "" {
@@ -563,6 +632,8 @@ func Describe(p agent.Provider) (string, string) {
 			name = "amazon-bedrock"
 		}
 		return name, client.Model
+	case TheosesMessages:
+		return client.providerName(), client.Model
 	default:
 		return "", ""
 	}
@@ -596,6 +667,9 @@ func SetModel(p agent.Provider, model string) (agent.Provider, error) {
 		client.Model = model
 		return client, nil
 	case BedrockConverse:
+		client.Model = model
+		return client, nil
+	case TheosesMessages:
 		client.Model = model
 		return client, nil
 	default:

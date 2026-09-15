@@ -1,9 +1,16 @@
 package provider
 
 import (
+	"context"
+	"encoding/base64"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	sdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
@@ -44,5 +51,78 @@ func TestNewConfiguredSupportsAmazonBedrock(t *testing.T) {
 	name, model := Describe(configured)
 	if name != "amazon-bedrock" || model != "model-1" {
 		t.Fatalf("provider=%q model=%q", name, model)
+	}
+}
+
+func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
+	input, err := bedrockInput([]agent.Message{
+		{Role: "assistant", ToolCalls: []agent.ToolCall{{ID: "call-1", Name: "read", Args: map[string]any{"path": "x"}}}, Thinking: "inspect", ThinkingSignature: "sig"},
+		{Role: "tool", ToolCallID: "call-1", Content: "contents", Images: []string{"data:image/png;base64,AQ=="}},
+	}, nil, "anthropic.claude-3-7-sonnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Messages) != 2 {
+		t.Fatalf("messages=%#v", input.Messages)
+	}
+	assistantReasoning, ok := input.Messages[0].Content[0].(*bedrocktypes.ContentBlockMemberReasoningContent)
+	if !ok || assistantReasoning.Value == nil {
+		t.Fatalf("assistant content=%#v", input.Messages[0].Content)
+	}
+	assistantTool, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberToolUse)
+	if !ok || assistantTool.Value.ToolUseId == nil || *assistantTool.Value.ToolUseId != "call-1" {
+		t.Fatalf("tool content=%#v", input.Messages[0].Content)
+	}
+	toolResult, ok := input.Messages[1].Content[0].(*bedrocktypes.ContentBlockMemberToolResult)
+	if !ok || toolResult.Value.ToolUseId == nil || *toolResult.Value.ToolUseId != "call-1" || len(toolResult.Value.Content) != 2 {
+		t.Fatalf("tool result=%#v", input.Messages[1].Content)
+	}
+	image, ok := toolResult.Value.Content[1].(*bedrocktypes.ToolResultContentBlockMemberImage)
+	if !ok || len(image.Value.Source.(*bedrocktypes.ImageSourceMemberBytes).Value) != 1 {
+		t.Fatalf("image=%#v", toolResult.Value.Content[1])
+	}
+}
+
+func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString([]byte{1, 2, 3})
+	input, err := bedrockInput([]agent.Message{{Role: "assistant", Thinking: "[Reasoning redacted]", ThinkingSignature: encoded, ToolCalls: []agent.ToolCall{{ID: "call-2", Name: "read", Args: map[string]any{"path": "x"}}}}}, nil, "openai.gpt-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, ok := input.Messages[0].Content[0].(*bedrocktypes.ContentBlockMemberReasoningContent)
+	if !ok {
+		t.Fatalf("content=%#v", input.Messages[0].Content)
+	}
+	redacted, ok := block.Value.(*bedrocktypes.ReasoningContentBlockMemberRedactedContent)
+	if !ok || string(redacted.Value) != string([]byte{1, 2, 3}) {
+		t.Fatalf("reasoning=%#v", block.Value)
+	}
+	if tool, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberToolUse); !ok || *tool.Value.ToolUseId != "call-2" {
+		t.Fatalf("redacted reasoning dropped tool call: %#v", input.Messages[0].Content)
+	}
+}
+
+func TestBedrockListsModelsFromAWSCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/foundation-models" {
+			t.Fatalf("method=%s path=%q", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"modelSummaries":[{"modelId":"z-model"},{"modelId":"a-model"},{"modelId":""}]}`))
+	}))
+	defer server.Close()
+	cfg := sdk.Config{
+		Region:       "us-east-1",
+		BaseEndpoint: sdk.String(server.URL),
+		Credentials:  credentials.NewStaticCredentialsProvider("access", "secret", ""),
+	}
+	provider := NewBedrockConverse("us-east-1", "model")
+	provider.CatalogClient = bedrock.NewFromConfig(cfg)
+	models, err := provider.ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "a-model" || models[1].ID != "z-model" || models[0].Provider != "amazon-bedrock" {
+		t.Fatalf("models=%#v", models)
 	}
 }
