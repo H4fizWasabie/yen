@@ -26,10 +26,20 @@ func TestSessionToolsOwnWorkingNoteAndOperationalNotes(t *testing.T) {
 	if working == nil || notes == nil {
 		t.Fatalf("session tools missing: working=%v notes=%v", working != nil, notes != nil)
 	}
+	for _, tool := range tools {
+		if tool.Name() == "bash" {
+			if _, err := tool.Execute(context.Background(), map[string]any{"command": "printf ok"}); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(s.WorkingNote(), "ran: printf ok") {
+				t.Fatalf("bash note=%q", s.WorkingNote())
+			}
+		}
+	}
 	if _, err := working.Execute(context.Background(), map[string]any{"note": "remember path"}); err != nil {
 		t.Fatal(err)
 	}
-	if s.WorkingNote() != "remember path" {
+	if !strings.Contains(s.WorkingNote(), "remember path") {
 		t.Fatalf("note=%q", s.WorkingNote())
 	}
 	if _, err := notes.Execute(context.Background(), map[string]any{"section": "System Status", "content": "healthy"}); err != nil {

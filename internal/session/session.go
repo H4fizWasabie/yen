@@ -99,6 +99,7 @@ type sessionEntry struct {
 	ParentID            *string     `json:"parentId"`
 	Message             *Message    `json:"message,omitempty"`
 	Note                string      `json:"note,omitempty"`
+	Outcome             string      `json:"outcome,omitempty"`
 	Compaction          *Compaction `json:"compaction,omitempty"`
 	Summary             string      `json:"summary,omitempty"`
 	FirstKeptEntryID    string      `json:"firstKeptEntryId,omitempty"`
@@ -351,6 +352,54 @@ func (s *Session) AppendWorkingNote(line string) (string, error) {
 }
 
 func (s *Session) ClearWorkingNote() (string, error) { return s.appendWorkingNote("") }
+
+func (s *Session) IsWorkingNoteStale() bool {
+	if s.WorkingNote() == "" {
+		return false
+	}
+	entries := s.activeEntries()
+	boundary := 0
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Type == "working_note" {
+			boundary = i + 1
+			break
+		}
+	}
+	userTurns := 0
+	for _, entry := range entries[boundary:] {
+		if entry.Message != nil && entry.Message.Role == "user" {
+			userTurns++
+		}
+	}
+	return userTurns > 5
+}
+
+func (s *Session) AppendOperationFinished(outcome string) (string, error) {
+	if outcome != "completed" && outcome != "aborted" && outcome != "failed" {
+		return "", fmt.Errorf("invalid operation outcome %q", outcome)
+	}
+	id := newEntryID(s.entries)
+	var parentID *string
+	if len(s.entries) > 0 {
+		parent := s.entries[len(s.entries)-1].ID
+		parentID = &parent
+	}
+	entry := sessionEntry{Type: "operation_finished", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Outcome: outcome}
+	s.entries = append(s.entries, entry)
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
+}
+
+func (s *Session) LastOperationOutcome() string {
+	for i := len(s.activeEntries()) - 1; i >= 0; i-- {
+		if entry := s.activeEntries()[i]; entry.Type == "operation_finished" {
+			return entry.Outcome
+		}
+	}
+	return ""
+}
 
 func (s *Session) appendWorkingNote(note string) (string, error) {
 	id := newEntryID(s.entries)

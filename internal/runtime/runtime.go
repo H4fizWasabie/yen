@@ -366,6 +366,11 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		}
 	}
 	history := toAgentMessages(current.ContextMessages())
+	if current.IsWorkingNoteStale() {
+		if _, err := current.ClearWorkingNote(); err != nil {
+			return agent.Result{}, err
+		}
+	}
 	if note := current.WorkingNote(); note != "" {
 		history = append([]agent.Message{codingagent.WorkingNoteMessage(note)}, history...)
 	}
@@ -396,7 +401,17 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
 		}
 	}
-	if runErr == nil && current.WorkingNote() != "" {
+	outcome := "completed"
+	if runErr != nil {
+		outcome = "failed"
+		if ctx.Err() != nil {
+			outcome = "aborted"
+		}
+	}
+	if _, err := current.AppendOperationFinished(outcome); err != nil {
+		return result, err
+	}
+	if outcome == "completed" && current.WorkingNote() != "" {
 		if _, err := current.ClearWorkingNote(); err != nil {
 			return result, err
 		}

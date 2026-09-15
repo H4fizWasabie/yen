@@ -31,6 +31,7 @@ func newTools(workspace string, current *session.Session) []agent.Tool {
 		tools.NewListTool(workspace),
 	}
 	if current != nil {
+		result[1] = newSessionBashTool(workspace, current)
 		result = append(result,
 			newWorkingNoteTool(current),
 			operationalNotesTool{path: filepath.Join(workspace, ".theoses-go", "operational-notes.md")},
