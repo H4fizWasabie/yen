@@ -162,6 +162,20 @@ func TestInteractiveSessionCommands(t *testing.T) {
 	}
 }
 
+func TestInteractiveBashCommandsPersistOutputAndExclusion(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})
+	var output bytes.Buffer
+	handled, err := handleInteractiveCommand("!!printf hidden", current, &runtime.Runner{}, conversation.Link{}, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "hidden") {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	messages := current.Messages()
+	if len(messages) != 1 || messages[0].Role != "bashExecution" || !messages[0].ExcludeFromContext || messages[0].Command != "printf hidden" {
+		t.Fatalf("messages=%#v", messages)
+	}
+}
+
 func TestInteractiveProviderAndTrustCommands(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", ConversationID: "conv-1", CWD: dir})

@@ -401,6 +401,14 @@ closes its child, and deferred tools close their underlying resources. The
 cleanup seam has a regression test; the full gate is now 240 tests plus
 race/vet/diff.
 
+## Latest pickup: interactive CLI bash
+
+The interactive CLI now ports the TypeScript `!command` and `!!command` path:
+it executes in the session workspace, prints output, records a durable
+`bashExecution` message, and marks `!!` output excluded from model context.
+`cmd/theoses/main_test.go` covers the excluded form. The full gate is now 241
+tests; run the complete race/vet gate before the next parity slice.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future

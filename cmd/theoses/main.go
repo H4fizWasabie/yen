@@ -19,6 +19,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
 	"github.com/H4fizWasabie/yen/internal/settings"
+	"github.com/H4fizWasabie/yen/internal/tools"
 )
 
 func main() {
@@ -162,6 +163,32 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func handleInteractiveCommand(input string, current *session.Session, runner *runtime.Runner, link conversation.Link, stdout io.Writer) (bool, error) {
 	text := strings.TrimSpace(input)
+	if strings.HasPrefix(text, "!") {
+		excludeFromContext := strings.HasPrefix(text, "!!")
+		command := strings.TrimSpace(strings.TrimPrefix(text, "!"))
+		if excludeFromContext {
+			command = strings.TrimSpace(strings.TrimPrefix(text, "!!"))
+		}
+		if command == "" {
+			return true, nil
+		}
+		cwd := current.Header().CWD
+		result, err := tools.NewBashTool(cwd).Execute(context.Background(), map[string]any{"command": command})
+		message := session.Message{Role: "bashExecution", Command: command, Output: result, ExcludeFromContext: excludeFromContext}
+		if _, appendErr := current.Append(message); appendErr != nil {
+			return true, appendErr
+		}
+		if result != "" {
+			if _, writeErr := fmt.Fprintln(stdout, result); writeErr != nil {
+				return true, writeErr
+			}
+		}
+		if err != nil {
+			_, writeErr := fmt.Fprintln(stdout, err)
+			return true, writeErr
+		}
+		return true, nil
+	}
 	switch {
 	case text == "/model" || strings.HasPrefix(text, "/model "):
 		model := strings.TrimSpace(strings.TrimPrefix(text, "/model"))
