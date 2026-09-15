@@ -58,6 +58,8 @@ not use the newer checkout as an unqualified oracle.
   across runner processes.
 - `internal/adapters`: deterministic Telegram message and dashboard HTTP
   adapter seams sharing the canonical registry, runner, and memory engine.
+  Dashboard API authentication now supports the TypeScript-compatible Bearer
+  and cookie login boundary when `THEOSES_DASHBOARD_TOKEN` is configured.
 - `cmd/theoses-dashboard`: local dashboard process with `/healthz`; a local
   start/readiness check has passed on `127.0.0.1:18789`.
 - `cmd/theoses-telegram`: standard-library Bot API polling process with an
@@ -132,6 +134,10 @@ queue slices are now implemented and locally verified. Work in this order:
 5. Retry the Telegram pilot only with a valid replacement token; then verify
    visible delivery, restart/resume, shared memory, and rollback before any
    cutover decision.
+
+6. Exercise the configured dashboard token through `/api/login`, Bearer and
+   cookie requests in the side-by-side pilot before claiming live dashboard
+   authentication parity.
 
 ## Important deferred product change
 
