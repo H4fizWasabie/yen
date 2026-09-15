@@ -48,6 +48,7 @@ func main() {
 	runner.AutoCompactKeepRecentTokens = runtime.AutoCompactKeepRecentTokensFromEnv()
 	runner.AutoCompactContextWindow = runtime.AutoCompactContextWindowFromEnv()
 	runner.AutoCompactReserveTokens = runtime.AutoCompactReserveTokensFromEnv()
+	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
 	runner.SharedMemory = os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID") != ""
