@@ -117,6 +117,17 @@ func TestBedrockInputRejectsUnsupportedOrInvalidImages(t *testing.T) {
 	}
 }
 
+func TestBedrockInputAcceptsJPGImageAlias(t *testing.T) {
+	input, err := bedrockInput([]agent.Message{{Role: "user", Content: "look", Images: []string{"data:image/jpg;base64,AQ=="}}}, nil, "model-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberImage)
+	if !ok || image.Value.Format != bedrocktypes.ImageFormatJpeg {
+		t.Fatalf("image=%#v", input.Messages[0].Content)
+	}
+}
+
 func TestBedrockListsModelsFromAWSCatalog(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/foundation-models" {

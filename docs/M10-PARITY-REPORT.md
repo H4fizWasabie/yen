@@ -29,6 +29,11 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+Bedrock image conversion now maps the oracle-supported `image/jpg` MIME alias
+to the AWS JPEG format, matching
+`packages/ai/src/api/bedrock-converse-stream.ts:1270-1278`. Go evidence:
+`TestBedrockInputAcceptsJPGImageAlias`.
+
 Overflow recovery now also recognizes successful responses whose input plus
 cache usage exceeds the configured context window, and Xiaomi-style `length`
 stops with zero output when the window is at least 99% full. This matches
