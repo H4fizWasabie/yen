@@ -14,6 +14,9 @@ import (
 const ConsolidationTurnCeiling = 70
 const MaxConsolidationTranscriptChars = 100000
 const consolidationFailureCooldown = 15 * time.Minute
+const consolidationMaxRetries = 3
+
+var consolidationRetryDelay = 2 * time.Second
 
 var consolidationTriggerPhrases = []string{"thanks", "thank you", "great job", "good work", "nice work", "perfect", "awesome", "that's all", "all done"}
 
@@ -44,7 +47,7 @@ func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnI
 	if err != nil {
 		return err
 	}
-	response, err := provider.Next(ctx, []agent.Message{{Role: "user", Content: prompt}}, nil)
+	response, err := retryConsolidationCall(ctx, provider, []agent.Message{{Role: "user", Content: prompt}})
 	if err != nil {
 		return err
 	}
@@ -62,6 +65,25 @@ func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnI
 		result.Episode.EndedAt = turns[len(turns)-1].Timestamp
 	}
 	return e.ApplyConsolidation(turnID, conversationID, workspaceID, adapter, result.Facts, result.Edges, result.Episode)
+}
+
+func retryConsolidationCall(ctx context.Context, provider agent.Provider, messages []agent.Message) (agent.Response, error) {
+	for attempt := 0; ; attempt++ {
+		response, err := provider.Next(ctx, messages, nil)
+		if err == nil || attempt >= consolidationMaxRetries {
+			return response, err
+		}
+		delay := consolidationRetryDelay * time.Duration(1<<attempt)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return agent.Response{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 // ConsolidateIfTriggered runs the pinned completion/ceiling trigger without

@@ -112,8 +112,8 @@ matter, episodic SQLite records, durable checkpoints, an engine that records
 canonical turns, explicit additive migration helpers, and agent-facing
 `remember`/`save_note` tools plus bounded session-scoped `recall_turns`.
 The engine also applies extracted fact/edge/episode batches idempotently before
-advancing a checkpoint, and exposes an explicit one-provider-call
-`Consolidate` path for structured JSON extraction.
+advancing a checkpoint, and exposes an explicit provider-backed `Consolidate`
+path for structured JSON extraction.
 Consolidation edge writes now enforce the TypeScript closed relation vocabulary
 (`prefers`, `attributed_to`, `depends_on`, `located_at`, `requires`,
 `supersedes`, `used_in`, `maintains`).
@@ -122,7 +122,8 @@ Opt-in runtime consolidation is now available with
 the pinned 70-message trigger ceiling, and a 15-minute failure cooldown so it
 does not overwrite durable turn checkpoints. Its transcript is also capped at
 100,000 characters from the tail, matching the pinned memory-consolidation
-ceiling.
+ceiling, and its provider call retries up to three times with exponential
+2-second-base delays without changing ordinary agent-turn retry behavior.
 Migration accepts semantic Markdown or the legacy JSONL memory file explicitly;
 it is never automatic and leaves source stores intact.
 

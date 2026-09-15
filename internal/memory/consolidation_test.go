@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,6 +20,16 @@ func (p consolidationProvider) Next(context.Context, []agent.Message, []string) 
 type captureConsolidationProvider struct {
 	text string
 	seen string
+}
+
+type retryConsolidationProvider struct{ calls int }
+
+func (p *retryConsolidationProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{}, errors.New("temporary consolidation provider failure")
+	}
+	return agent.Response{Text: `{"episode":{"summary":"recovered"}}`, StopReason: "stop"}, nil
 }
 
 func (p *captureConsolidationProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
@@ -122,5 +133,23 @@ func TestConsolidationPromptCapsTranscriptCharacters(t *testing.T) {
 	}
 	if len(provider.seen) > MaxConsolidationTranscriptChars+2000 || !strings.Contains(provider.seen, strings.Repeat("x", 100)) {
 		t.Fatalf("consolidation prompt length=%d", len(provider.seen))
+	}
+}
+
+func TestConsolidationRetriesProviderFailureOnlyWithinConsolidation(t *testing.T) {
+	oldDelay := consolidationRetryDelay
+	consolidationRetryDelay = 0
+	defer func() { consolidationRetryDelay = oldDelay }()
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	provider := &retryConsolidationProvider{}
+	if err := engine.Consolidate(context.Background(), provider, "turn-retry", "conv-retry", "work", "cli", []ConsolidationTurn{{Role: "user", Content: "hello"}}); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls=%d, want 2", provider.calls)
 	}
 }
