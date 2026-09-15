@@ -72,6 +72,22 @@ func TestTheosesMessagesPreservesThinkingSignature(t *testing.T) {
 	}
 }
 
+func TestTheosesMessagesPreservesErrorMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"error\",\"reason\":\"error\",\"responseId\":\"resp-error\",\"errorMessage\":\"upstream failed\",\"usage\":{\"input\":4,\"output\":2,\"totalTokens\":6}}\n\n"))
+	}))
+	defer server.Close()
+
+	result, err := NewTheosesMessages(server.URL, "radius-key", "auto").Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StopReason != "error" || result.ErrorMessage != "upstream failed" || result.ResponseID != "resp-error" || result.Usage.TotalTokens != 6 {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
 func TestTheosesMessagesListsGatewayModelsDeterministically(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/config" || r.Header.Get("Authorization") != "Bearer radius-key" {
