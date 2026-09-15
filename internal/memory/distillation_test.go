@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -11,6 +12,27 @@ type distillationProvider struct{ text string }
 
 func (p distillationProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
 	return agent.Response{Text: p.text, StopReason: "stop"}, nil
+}
+
+type retryDistillationProvider struct{ calls int }
+
+func (p *retryDistillationProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{}, errors.New("temporary overloaded_error")
+	}
+	return agent.Response{Text: `[{"fact":"prefers Go","confidence":0.9}]`, StopReason: "stop"}, nil
+}
+
+func TestDistillMemoryRetriesTransientProviderFailure(t *testing.T) {
+	previous := distillationRetryDelay
+	distillationRetryDelay = 0
+	t.Cleanup(func() { distillationRetryDelay = previous })
+	provider := &retryDistillationProvider{}
+	result, err := DistillMemory(context.Background(), provider, []ConsolidationTurn{{Role: "user", Content: "I prefer Go"}})
+	if err != nil || provider.calls != 2 || len(result.Facts) != 1 {
+		t.Fatalf("calls=%d result=%#v err=%v", provider.calls, result, err)
+	}
 }
 
 func TestParseDistillationResponseFiltersConfidenceAndAcceptsEpisodeArray(t *testing.T) {
