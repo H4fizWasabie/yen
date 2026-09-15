@@ -41,6 +41,7 @@ func main() {
 		model = "gpt-4o-mini"
 	}
 	client := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
+	client.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()

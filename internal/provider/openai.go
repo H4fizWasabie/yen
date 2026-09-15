@@ -31,12 +31,13 @@ type openAIToolCall struct {
 }
 
 type OpenAICompletions struct {
-	BaseURL       string
-	APIKey        string
-	Model         string
-	Client        *http.Client
-	MaxRetries    int
-	MaxRetryDelay time.Duration
+	BaseURL         string
+	APIKey          string
+	Model           string
+	ReasoningEffort string
+	Client          *http.Client
+	MaxRetries      int
+	MaxRetryDelay   time.Duration
 }
 
 func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
@@ -64,7 +65,11 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		Tools          []map[string]any  `json:"tools,omitempty"`
 		Stream         bool              `json:"stream"`
 		ResponseFormat map[string]string `json:"response_format,omitempty"`
+		Reasoning      map[string]string `json:"reasoning,omitempty"`
 	}{Model: p.Model, Messages: convertMessages(messages), Stream: true}
+	if p.ReasoningEffort != "" {
+		payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
+	}
 	if jsonMode {
 		payload.ResponseFormat = map[string]string{"type": "json_object"}
 	}

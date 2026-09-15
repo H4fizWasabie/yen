@@ -64,6 +64,7 @@ exec env -i PATH=/usr/bin:/bin HOME=/root \\
   THEOSES_DATA_DIR="$data_dir" \\
   THEOSES_OPENAI_BASE_URL="\${YEN_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
   THEOSES_MODEL="\${YEN_MODEL:-z-ai/glm-5.3-flash}" \\
+  THEOSES_REASONING_EFFORT="\${YEN_REASONING_EFFORT:-}" \\
   "$release_dir/theoses-telegram"
 EOF
 
@@ -84,6 +85,7 @@ exec env -i PATH=/usr/bin:/bin HOME=/root \\
   THEOSES_DATA_DIR="$data_dir" \\
   THEOSES_OPENAI_BASE_URL="\${YEN_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
   THEOSES_MODEL="\${YEN_MODEL:-z-ai/glm-5.3-flash}" \\
+  THEOSES_REASONING_EFFORT="\${YEN_REASONING_EFFORT:-}" \\
   "$release_dir/theoses-dashboard" -addr "$dashboard_addr"
 EOF
 chmod 0755 "$release_dir/run-telegram" "$release_dir/run-dashboard"
