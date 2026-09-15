@@ -161,6 +161,13 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 			if emit != nil {
 				emit(agent.StreamEvent{Type: event.Type, ContentIndex: index, Delta: event.Delta, Partial: partial})
 			}
+		case "thinking_end":
+			if event.Content != "" {
+				result.Thinking = event.Content
+				partial.Thinking = event.Content
+			}
+			result.ThinkingSignature = event.ContentSignature
+			partial.ThinkingSignature = event.ContentSignature
 		case "toolcall_start":
 			toolCalls[index] = agent.ToolCall{ID: event.ID, Name: event.ToolName}
 			if emit != nil {
@@ -248,16 +255,18 @@ func radiusTools(names []string) []map[string]any {
 }
 
 type radiusEvent struct {
-	Type         string          `json:"type"`
-	ContentIndex int             `json:"contentIndex"`
-	Delta        string          `json:"delta"`
-	ID           string          `json:"id"`
-	ToolName     string          `json:"toolName"`
-	Reason       string          `json:"reason"`
-	ResponseID   string          `json:"responseId"`
-	Usage        radiusUsage     `json:"usage"`
-	ErrorMessage string          `json:"errorMessage"`
-	ToolCall     *radiusToolCall `json:"toolCall"`
+	Type             string          `json:"type"`
+	ContentIndex     int             `json:"contentIndex"`
+	Delta            string          `json:"delta"`
+	Content          string          `json:"content"`
+	ContentSignature string          `json:"contentSignature"`
+	ID               string          `json:"id"`
+	ToolName         string          `json:"toolName"`
+	Reason           string          `json:"reason"`
+	ResponseID       string          `json:"responseId"`
+	Usage            radiusUsage     `json:"usage"`
+	ErrorMessage     string          `json:"errorMessage"`
+	ToolCall         *radiusToolCall `json:"toolCall"`
 }
 
 type radiusToolCall struct {

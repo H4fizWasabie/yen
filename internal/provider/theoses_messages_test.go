@@ -52,6 +52,26 @@ func TestTheosesMessagesStreamsTextToolCallAndUsage(t *testing.T) {
 	}
 }
 
+func TestTheosesMessagesPreservesThinkingSignature(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"thinking_start\",\"contentIndex\":0}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"thinking_delta\",\"contentIndex\":0,\"delta\":\"plan\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"thinking_end\",\"contentIndex\":0,\"content\":\"plan\",\"contentSignature\":\"sig-1\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"done\",\"reason\":\"stop\",\"usage\":{}}\n\n"))
+	}))
+	defer server.Close()
+
+	provider := NewTheosesMessages(server.URL, "radius-key", "auto")
+	result, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "think"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Thinking != "plan" || result.ThinkingSignature != "sig-1" {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
 func TestTheosesMessagesListsGatewayModelsDeterministically(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/config" || r.Header.Get("Authorization") != "Bearer radius-key" {
