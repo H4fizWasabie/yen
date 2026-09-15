@@ -572,6 +572,15 @@ func estimateMessageTokens(message Message) int {
 	return (len(data) + 3) / 4
 }
 
+// EstimateContextTokens uses the same conservative estimate for a context.
+func EstimateContextTokens(messages []Message) int {
+	total := 0
+	for _, message := range messages {
+		total += estimateMessageTokens(message)
+	}
+	return total
+}
+
 func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, usage *Usage) (string, error) {
 	if summary == "" || firstKeptEntryID == "" {
 		return "", fmt.Errorf("compaction summary and first kept entry are required")

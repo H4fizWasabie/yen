@@ -15,6 +15,7 @@ Required root environment files:
 - `YEN_CHANNEL_ENV_FILE` — Telegram chat/token, canonical conversation ID, and
   optional dashboard/compaction settings, including
   `YEN_AUTO_COMPACT_TURNS`, `YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS`,
+  `YEN_AUTO_COMPACT_CONTEXT_WINDOW`, `YEN_AUTO_COMPACT_RESERVE_TOKENS`,
   `YEN_AUTO_COMPACT_OVERFLOW`, and optional
   `YEN_AUTO_CONSOLIDATE`. Defaults to `/etc/yen/yen.env`.
 - `YEN_PROVIDER_ENV_FILE` — Yen-only provider credentials and optional

@@ -29,6 +29,8 @@ type Runner struct {
 	SharedMemory                bool
 	AutoCompactTurns            int
 	AutoCompactKeepRecentTokens int
+	AutoCompactContextWindow    int
+	AutoCompactReserveTokens    int
 	AutoCompactOnOverflow       bool
 	AutoConsolidate             bool
 
@@ -53,6 +55,22 @@ func AutoCompactKeepRecentTokensFromEnv() int {
 	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS"))
 	if err != nil || value < 1 {
 		return 0
+	}
+	return value
+}
+
+func AutoCompactContextWindowFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW"))
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value
+}
+
+func AutoCompactReserveTokensFromEnv() int {
+	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS"))
+	if err != nil || value < 1 {
+		return 16384
 	}
 	return value
 }
@@ -253,8 +271,12 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		return err
 	}
 	var plan session.CompactionPlan
-	if r.AutoCompactKeepRecentTokens > 0 {
-		plan, err = current.PrepareCompactionByTokens(r.AutoCompactKeepRecentTokens)
+	keepRecentTokens := r.AutoCompactKeepRecentTokens
+	if keepRecentTokens < 1 && r.AutoCompactContextWindow > 0 {
+		keepRecentTokens = 20000
+	}
+	if keepRecentTokens > 0 {
+		plan, err = current.PrepareCompactionByTokens(keepRecentTokens)
 	} else {
 		plan, err = current.PrepareCompaction(keepRecentTurns)
 	}
@@ -305,6 +327,17 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		current, err = openOrCreate(path, turn)
 		if err != nil {
 			return agent.Result{}, err
+		}
+	} else if r.AutoCompactContextWindow > 0 {
+		threshold := r.AutoCompactContextWindow - r.AutoCompactReserveTokens
+		if session.EstimateContextTokens(current.ContextMessages()) > threshold {
+			if err := r.compactConversation(ctx, turn.ConversationID, 0); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
+				return agent.Result{}, err
+			}
+			current, err = openOrCreate(path, turn)
+			if err != nil {
+				return agent.Result{}, err
+			}
 		}
 	}
 	history := toAgentMessages(current.ContextMessages())
