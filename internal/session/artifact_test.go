@@ -32,3 +32,30 @@ func TestStoreArtifactPersistsBoundedCatalog(t *testing.T) {
 		t.Fatal("empty artifact unexpectedly accepted")
 	}
 }
+
+func TestArtifactCatalogUsesLiveNewestUniquePaths(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	s := New(path, Header{ID: "session-1", CWD: dir})
+	livePath := filepath.Join(dir, "live.txt")
+	if err := os.WriteFile(livePath, []byte("live"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.appendArtifact(Artifact{Label: "old label", Path: livePath, Size: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.appendArtifact(Artifact{Label: "new label", Path: livePath, Size: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.appendArtifact(Artifact{Label: "stale label", Path: filepath.Join(dir, "gone.txt"), Size: 4}); err != nil {
+		t.Fatal(err)
+	}
+
+	catalog := s.ArtifactCatalog(1000)
+	if !strings.Contains(catalog, "- new label (4 bytes): "+livePath) {
+		t.Fatalf("catalog=%q", catalog)
+	}
+	if strings.Contains(catalog, "old label") || strings.Contains(catalog, "stale label") {
+		t.Fatalf("catalog retained stale artifact entries: %q", catalog)
+	}
+}

@@ -616,20 +616,36 @@ func (s *Session) ArtifactCatalog(maxBytes int) string {
 	if maxBytes <= 0 {
 		maxBytes = 4000
 	}
-	artifacts := s.Artifacts()
-	if len(artifacts) == 0 {
-		return ""
-	}
-	var builder strings.Builder
-	builder.WriteString("Live document artifacts:\n")
-	for _, artifact := range artifacts {
-		line := fmt.Sprintf("- %s (%d bytes) %s\n", artifact.Label, artifact.Size, artifact.Path)
-		if builder.Len()+len(line) > maxBytes {
+	entries := s.activeEntries()
+	lines := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	used := 0
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry := entries[i]
+		if entry.Type != "artifact" || entry.Path == "" || entry.Size <= 0 {
+			continue
+		}
+		if _, ok := seen[entry.Path]; ok {
+			continue
+		}
+		if _, err := os.Stat(entry.Path); err != nil {
+			continue
+		}
+		line := fmt.Sprintf("- %s (%d bytes): %s", entry.Label, entry.Size, entry.Path)
+		if used+len(line)+1 > maxBytes {
 			break
 		}
-		builder.WriteString(line)
+		seen[entry.Path] = struct{}{}
+		lines = append(lines, line)
+		used += len(line) + 1
 	}
-	return strings.TrimSpace(builder.String())
+	if len(lines) == 0 {
+		return ""
+	}
+	for left, right := 0, len(lines)-1; left < right; left, right = left+1, right-1 {
+		lines[left], lines[right] = lines[right], lines[left]
+	}
+	return "Live document artifacts:\n" + strings.Join(lines, "\n")
 }
 
 func (s *Session) appendArtifact(artifact Artifact) (string, error) {
