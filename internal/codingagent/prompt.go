@@ -41,11 +41,13 @@ func appendContextFiles(sections []string, dir string) []string {
 			break
 		}
 	}
-	path := filepath.Join(dir, "YEN.md")
-	if data, err := os.ReadFile(path); err == nil {
-		content := stripUTF8BOM(string(data))
-		if strings.TrimSpace(content) != "" {
-			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
+	for _, persona := range []string{"THEOSES.md", "YEN.md"} {
+		path := filepath.Join(dir, persona)
+		if data, err := os.ReadFile(path); err == nil {
+			content := stripUTF8BOM(string(data))
+			if strings.TrimSpace(content) != "" {
+				sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
+			}
 		}
 	}
 	return sections
