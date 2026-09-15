@@ -44,6 +44,7 @@ var providerDefaults = map[string]string{
 	"vercel-ai-gateway":          "https://ai-gateway.vercel.sh",
 	"cloudflare-workers-ai":      "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
 	"cloudflare-ai-gateway":      "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
+	"github-copilot":             "https://api.individual.githubcopilot.com",
 }
 
 var providerKeyEnvs = map[string]string{
@@ -80,6 +81,7 @@ var providerKeyEnvs = map[string]string{
 	"cloudflare-workers-ai":      "YEN_CLOUDFLARE_API_KEY",
 	"cloudflare-ai-gateway":      "YEN_CLOUDFLARE_API_KEY",
 	"google-vertex":              "YEN_GOOGLE_CLOUD_API_KEY",
+	"github-copilot":             "YEN_COPILOT_GITHUB_TOKEN",
 }
 
 func googleVertexConfigured(model string) GoogleGenerativeAI {
@@ -216,6 +218,20 @@ func ConfiguredFromEnv() agent.Provider {
 		}
 		return googleVertexConfigured(model)
 	}
+	if providerID == "github-copilot" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gpt-4o"
+		}
+		baseURL := os.Getenv("YEN_COPILOT_BASE_URL")
+		if baseURL == "" {
+			baseURL = providerDefaults[providerID]
+		}
+		client := NewOpenAICompletions(baseURL, os.Getenv("YEN_COPILOT_GITHUB_TOKEN"), model)
+		client.ProviderName = providerID
+		client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
+		return client
+	}
 	if providerID == "minimax" || providerID == "minimax-cn" || providerID == "vercel-ai-gateway" {
 		baseURL := providerDefaults[providerID]
 		model := os.Getenv("YEN_MODEL")
@@ -271,6 +287,19 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 			return nil, errors.New("google vertex requires YEN_GOOGLE_CLOUD_PROJECT and YEN_GOOGLE_CLOUD_LOCATION")
 		}
 		return googleVertexConfigured(model), nil
+	}
+	if providerID == "github-copilot" {
+		if model == "" {
+			model = "gpt-4o"
+		}
+		baseURL := os.Getenv("YEN_COPILOT_BASE_URL")
+		if baseURL == "" {
+			baseURL = providerDefaults[providerID]
+		}
+		client := NewOpenAICompletions(baseURL, os.Getenv("YEN_COPILOT_GITHUB_TOKEN"), model)
+		client.ProviderName = providerID
+		client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
+		return client, nil
 	}
 	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
 		if model == "" {

@@ -90,6 +90,29 @@ func TestGoogleVertexUsesYenBearerTokenWithoutAPIKeyQuery(t *testing.T) {
 	}
 }
 
+func TestGitHubCopilotUsesDynamicHeadersAndYenToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer copilot-token" || r.Header.Get("X-Initiator") != "agent" || r.Header.Get("Openai-Intent") != "conversation-edits" || r.Header.Get("Copilot-Vision-Request") != "true" {
+			t.Fatalf("path=%q authorization=%q initiator=%q intent=%q vision=%q", r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("X-Initiator"), r.Header.Get("Openai-Intent"), r.Header.Get("Copilot-Vision-Request"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+	t.Setenv("YEN_COPILOT_BASE_URL", server.URL)
+	t.Setenv("YEN_COPILOT_GITHUB_TOKEN", "copilot-token")
+	configured, err := NewConfigured("github-copilot", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := configured.(OpenAICompletions)
+	client.Client = server.Client()
+	result, err := client.Next(context.Background(), []agent.Message{{Role: "assistant", Content: "prior", Images: []string{"data:image/png;base64,AA=="}}}, nil)
+	if err != nil || result.Provider != "github-copilot" || result.Text != "ok" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestNewFromEnvPrefersYenProviderCredentials(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "openrouter")
 	t.Setenv("YEN_MODEL", "z-ai/glm-5.3-flash")

@@ -149,6 +149,13 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			return agent.Response{}, err
 		}
 		request.Header.Set("Content-Type", "application/json")
+		if p.ProviderName == "github-copilot" {
+			request.Header.Set("X-Initiator", copilotInitiator(messages))
+			request.Header.Set("Openai-Intent", "conversation-edits")
+			if hasMessageImages(messages) {
+				request.Header.Set("Copilot-Vision-Request", "true")
+			}
+		}
 		if p.APIKey != "" {
 			request.Header.Set("Authorization", "Bearer "+p.APIKey)
 		}
@@ -405,6 +412,22 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		result.StopReason = "toolUse"
 	}
 	return result, nil
+}
+
+func copilotInitiator(messages []agent.Message) string {
+	if len(messages) > 0 && messages[len(messages)-1].Role != "user" {
+		return "agent"
+	}
+	return "user"
+}
+
+func hasMessageImages(messages []agent.Message) bool {
+	for _, message := range messages {
+		if len(message.Images) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func toolParameters(name string) map[string]any {
