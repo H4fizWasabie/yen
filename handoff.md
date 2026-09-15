@@ -46,8 +46,9 @@ not use the newer checkout as an unqualified oracle.
 - `internal/session`: v3 JSONL creation, deferred first publication, parent
   links, open, append, and restart continuation.
   Assistant provider usage now round-trips through the session log.
-  Compaction entries and active-context projection are supported; automatic
-  model-driven summarization is still deferred.
+  Compaction entries, active-context projection, and provider-backed
+  `Runner.Compact` are supported; automatic threshold scheduling is still
+  deferred.
 - `internal/agent`: tool-turn loop and normalized event collection.
 - `internal/provider`: one OpenAI-compatible SSE client with fragmented tool
   call argument assembly.
