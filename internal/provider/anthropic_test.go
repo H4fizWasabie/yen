@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -46,5 +47,23 @@ func TestAnthropicMessagesReconstructsToolCallsAndImages(t *testing.T) {
 	result, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "inspect", Images: []string{image}}}, []string{"read"})
 	if err != nil || len(result.ToolCalls) != 1 || result.ToolCalls[0].Name != "read" || result.ToolCalls[0].Args["path"] != "README.md" {
 		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
+func TestAnthropicMessagesRetriesTransientResponses(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}`)
+	}))
+	defer server.Close()
+	provider := NewAnthropicMessages(server.URL, "key", "claude-test")
+	provider.MaxRetries = 1
+	if _, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "hi"}}, nil); err != nil || calls.Load() != 2 {
+		t.Fatalf("calls=%d err=%v", calls.Load(), err)
 	}
 }

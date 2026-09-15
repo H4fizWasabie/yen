@@ -10,15 +10,17 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 type AnthropicMessages struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	Client  *http.Client
+	BaseURL    string
+	APIKey     string
+	Model      string
+	Client     *http.Client
+	MaxRetries int
 }
 
 func NewAnthropicMessages(baseURL, apiKey, model string) AnthropicMessages {
@@ -72,15 +74,40 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 	if client == nil {
 		client = http.DefaultClient
 	}
-	response, err := client.Do(request)
-	if err != nil {
-		return agent.Response{}, err
+	var response *http.Response
+	for attempt := 0; ; attempt++ {
+		if attempt > 0 && request.GetBody != nil {
+			request.Body, err = request.GetBody()
+			if err != nil {
+				return agent.Response{}, err
+			}
+		}
+		response, err = client.Do(request)
+		if err != nil {
+			return agent.Response{}, err
+		}
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			break
+		}
+		retryable := response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500
+		if !retryable || attempt >= p.MaxRetries {
+			message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+			response.Body.Close()
+			return agent.Response{}, fmt.Errorf("anthropic messages returned %s: %s", response.Status, strings.TrimSpace(string(message)))
+		}
+		response.Body.Close()
+		delay := 200 * time.Millisecond * time.Duration(1<<attempt)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return agent.Response{}, ctx.Err()
+		case <-timer.C:
+		}
 	}
 	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-		return agent.Response{}, fmt.Errorf("anthropic messages returned %s: %s", response.Status, strings.TrimSpace(string(message)))
-	}
 	result := agent.Response{Provider: "anthropic", Model: p.Model}
 	partial := agent.Message{Role: "assistant", Provider: result.Provider, Model: result.Model}
 	toolArgs := map[int]string{}
