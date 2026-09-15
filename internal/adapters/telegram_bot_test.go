@@ -235,6 +235,17 @@ func TestSplitTelegramSectionsMatchesTypeScriptBoundary(t *testing.T) {
 	}
 }
 
+func TestFormatTelegramHTMLCoversClassicFallback(t *testing.T) {
+	got := formatTelegramHTML("# Title\n- **bold** `code`\n~~old~~ [link](https://example.com)")
+	want := "<b>Title</b>\n• <b>bold</b> <code>code</code>\n<s>old</s> <a href=\"https://example.com\">link</a>"
+	if got != want {
+		t.Fatalf("formatted=%q, want %q", got, want)
+	}
+	if got := formatTelegramHTML("```\n<safe>\n```"); got != "<pre><code>&lt;safe&gt;\n</code></pre>" {
+		t.Fatalf("fenced=%q", got)
+	}
+}
+
 func TestChunkTelegramTextMatchesTypeScriptLimit(t *testing.T) {
 	chunks := chunkTelegramText(strings.Repeat("x", 4001))
 	if len(chunks) != 2 || len([]rune(chunks[0])) != 4000 || len([]rune(chunks[1])) != 1 {

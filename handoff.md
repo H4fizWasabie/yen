@@ -85,6 +85,9 @@ Telegram poll batches now dispatch concurrently while the runtime queue keeps
 same-conversation turns FIFO; this lets stop/control updates reach an active
 turn without serial poll-loop blocking.
 
+Classic Telegram fallback now escapes and formats common Markdown constructs as
+HTML before `sendMessage`; the rich path remains preferred.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
