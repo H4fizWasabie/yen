@@ -16,6 +16,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/runtime"
+	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 type longTelegramProvider struct{}
@@ -543,6 +544,50 @@ func TestTelegramBotPassesPhotoToProviderAsImageContent(t *testing.T) {
 	}
 	if len(provider.images) != 1 || !strings.HasPrefix(provider.images[0], "data:image/jpeg;base64,") {
 		t.Fatalf("images=%#v", provider.images)
+	}
+}
+
+func TestTelegramBotRecordsDocumentInSharedSessionArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, &replyCaptureProvider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottoken/getFile":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_path":"documents/report.txt"}}`))
+		case "/file/bottoken/documents/report.txt":
+			_, _ = w.Write([]byte("attachment contents"))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9}}`))
+		}
+	}))
+	defer server.Close()
+
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL, ArtifactDir: filepath.Join(dir, "legacy-artifacts")}
+	message := &telegramMessage{MessageID: 4, Caption: "inspect this", Document: &telegramFile{FileID: "file-1", FileName: "report.txt", MimeType: "text/plain"}}
+	message.Chat.ID = 42
+	if err := bot.HandleUpdate(context.Background(), telegramUpdate{Message: message}); err != nil {
+		t.Fatal(err)
+	}
+
+	link, ok := registry.Get("telegram", "42")
+	if !ok {
+		t.Fatal("telegram link was not created")
+	}
+	opened, err := session.Open(filepath.Join(dir, link.ConversationID+".jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := opened.ArtifactCatalog(1000); !strings.Contains(got, "telegram document") || !strings.Contains(got, "report.txt") {
+		t.Fatalf("artifact catalog=%q", got)
 	}
 }
 
