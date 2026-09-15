@@ -421,6 +421,14 @@ runner path to the clone. `/new` creates and switches to a fresh session while
 preserving the canonical conversation identity. Focused clone/new tests and
 the full 244-test gate pass.
 
+## Latest pickup: credential-store process locking
+
+The Yen-owned auth store now uses an OS file lock around every read and the
+entire read-modify-write mutation, so separate Yen processes sharing
+`YEN_AUTH_FILE` cannot overwrite each other. A concurrent two-store regression
+test passes; the full gate is now 245 tests plus race/vet/diff. The lock is
+per-file by design; split per-provider only if contention is measured.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future

@@ -34,7 +34,12 @@ func Open(path string) *Store { return &Store{path: path} }
 func (s *Store) Read(provider string) (Credential, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	credentials, err := s.load()
+	var credentials map[string]Credential
+	err := s.withFileLock(false, func() error {
+		var err error
+		credentials, err = s.load()
+		return err
+	})
 	if err != nil {
 		return Credential{}, false, err
 	}
@@ -45,7 +50,12 @@ func (s *Store) Read(provider string) (Credential, bool, error) {
 func (s *Store) List() ([]Info, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	credentials, err := s.load()
+	var credentials map[string]Credential
+	err := s.withFileLock(false, func() error {
+		var err error
+		credentials, err = s.load()
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -62,39 +72,46 @@ func (s *Store) Modify(provider string, fn func(*Credential) (*Credential, error
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	credentials, err := s.load()
-	if err != nil {
-		return Credential{}, err
-	}
-	current, exists := credentials[provider]
-	if !exists {
-		current = Credential{}
-	}
-	next, err := fn(func() *Credential {
+	var result Credential
+	err := s.withFileLock(true, func() error {
+		credentials, err := s.load()
+		if err != nil {
+			return err
+		}
+		current, exists := credentials[provider]
 		if !exists {
-			return nil
+			current = Credential{}
 		}
-		copy := current
-		return &copy
-	}())
+		next, err := fn(func() *Credential {
+			if !exists {
+				return nil
+			}
+			copy := current
+			return &copy
+		}())
+		if err != nil {
+			return err
+		}
+		if next == nil {
+			delete(credentials, provider)
+		} else {
+			if next.Type != "api_key" && next.Type != "oauth" {
+				return fmt.Errorf("unsupported credential type %q", next.Type)
+			}
+			credentials[provider] = *next
+		}
+		if err := s.save(credentials); err != nil {
+			return err
+		}
+		if next != nil {
+			result = *next
+		}
+		return nil
+	})
 	if err != nil {
 		return Credential{}, err
 	}
-	if next == nil {
-		delete(credentials, provider)
-	} else {
-		if next.Type != "api_key" && next.Type != "oauth" {
-			return Credential{}, fmt.Errorf("unsupported credential type %q", next.Type)
-		}
-		credentials[provider] = *next
-	}
-	if err := s.save(credentials); err != nil {
-		return Credential{}, err
-	}
-	if next == nil {
-		return Credential{}, nil
-	}
-	return *next, nil
+	return result, nil
 }
 
 func (s *Store) Delete(provider string) error {
