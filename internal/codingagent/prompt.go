@@ -135,7 +135,7 @@ func SkillsMessage(workspace string) (agent.Message, bool) {
 				return nil
 			}
 			name, description := parseSkillFile(path, string(data))
-			if name != "" && description != "" {
+			if name != "" && description != "" && !skillDisablesModelInvocation(string(data)) {
 				skills = append(skills, skillInfo{Name: name, Description: description, Path: path})
 			}
 			return nil
@@ -163,6 +163,23 @@ func parseSkillFile(path, content string) (name, description string) {
 		name = filepath.Base(filepath.Dir(path))
 	}
 	return name, description
+}
+
+func skillDisablesModelInvocation(content string) bool {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return false
+	}
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == "---" {
+			return false
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if ok && strings.TrimSpace(key) == "disable-model-invocation" {
+			return strings.Trim(strings.TrimSpace(value), "\"'") == "true"
+		}
+	}
+	return false
 }
 
 // SkillCommands exposes the same local skill discovery to headless command
