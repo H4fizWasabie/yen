@@ -318,6 +318,9 @@ func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *tel
 		fileID, name, kind, mime = message.Photo[len(message.Photo)-1].FileID, "photo.jpg", "photo", "image/jpeg"
 	} else {
 		file := message.Document
+		if file != nil {
+			kind = "document"
+		}
 		if file == nil {
 			file = message.Audio
 		}
@@ -355,7 +358,14 @@ func (b *TelegramBot) storeAttachmentWithImage(ctx context.Context, message *tel
 		}
 		image = "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 	}
-	return fmt.Sprintf("User sent a %s; it was stored at `%s`. Use the read tool if needed.", kind, path), image, nil
+	if strings.TrimSpace(telegramMessageText(message)) != "" {
+		return "", image, nil
+	}
+	if mime == "" {
+		mime = "unknown"
+	}
+	note := fmt.Sprintf("User sent a %s without a caption: %q (mime type %s, %d bytes). ", kind, filepath.Base(name), mime, len(data))
+	return note + fmt.Sprintf("It was stored at `%s`. Use the read tool if needed.", path), image, nil
 }
 
 func (b *TelegramBot) downloadAttachment(ctx context.Context, fileID, name string) (string, []byte, error) {
