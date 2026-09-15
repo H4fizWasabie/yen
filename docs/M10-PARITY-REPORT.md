@@ -323,6 +323,10 @@ parsing or displaying resource content, matching the oracle's `stripBom`
 boundary. Go evidence: `internal/codingagent/prompt.go`,
 `internal/codingagent/prompt_templates.go`, and the BOM regression tests.
 
+Explicit skill directories from Yen settings now work for both skill discovery
+and `/skill:name` expansion, keeping advertisement and execution on the same
+resource set. Go evidence: `TestSkillPromptExpansionUsesConfiguredSkillDirs`.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 
