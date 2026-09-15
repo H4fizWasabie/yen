@@ -45,6 +45,12 @@ pass.
 
 ## Checkpoint update: 2026-09-16
 
+The Radius/Theoses-messages adapter now preserves `thinking_end` content
+signatures for multi-turn replay. TypeScript authority:
+`packages/ai/src/api/theoses-messages.ts:57-64,228-233`; Go evidence:
+`internal/provider/theoses_messages.go` and
+`TestTheosesMessagesPreservesThinkingSignature`.
+
 Bedrock Converse usage now preserves cache-read and cache-write token
 breakdowns and falls back to the component sum when the service omits total
 tokens. TypeScript authority:
