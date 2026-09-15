@@ -3,6 +3,7 @@ package codingagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 )
@@ -99,6 +101,19 @@ func TestMCPStdioLoadsAndCallsTools(t *testing.T) {
 	result, err := tools[0].Execute(context.Background(), map[string]any{})
 	if err != nil || !strings.Contains(result, "UNTRUSTED EXTERNAL CONTENT") {
 		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+func TestMCPStdioCancellationClosesChild(t *testing.T) {
+	client := &mcpStdioClient{command: "sh", args: []string{"-c", "while IFS= read -r line; do sleep 10; done"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := client.request(ctx, "initialize", map[string]any{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err=%v", err)
+	}
+	if client.cmd != nil {
+		t.Fatal("MCP child remains attached after cancellation")
 	}
 }
 

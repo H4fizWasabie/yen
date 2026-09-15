@@ -199,6 +199,27 @@ type mcpStdioClient struct {
 	nextID  int64
 }
 
+func (c *mcpStdioClient) closeLocked() error {
+	if c.cmd == nil {
+		return nil
+	}
+	if c.stdin != nil {
+		_ = c.stdin.Close()
+	}
+	if c.cmd.Process != nil {
+		_ = c.cmd.Process.Kill()
+	}
+	err := c.cmd.Wait()
+	c.cmd, c.stdin = nil, nil
+	return err
+}
+
+func (c *mcpStdioClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeLocked()
+}
+
 func loadMCPStdio(command string, args []string) []agent.Tool {
 	client := &mcpStdioClient{command: command, args: args}
 	if _, err := client.request(context.Background(), "initialize", map[string]any{
@@ -270,30 +291,53 @@ func (c *mcpStdioClient) request(ctx context.Context, method string, params map[
 	if _, err := fmt.Fprintf(c.stdin, "%s\n", payload); err != nil {
 		return nil, err
 	}
-	for c.scanner.Scan() {
-		var message struct {
-			ID     float64 `json:"id"`
-			Result any     `json:"result"`
-			Error  *struct {
-				Message string `json:"message"`
-			} `json:"error"`
+	responses := make(chan struct {
+		value any
+		err   error
+	}, 1)
+	go func() {
+		for c.scanner.Scan() {
+			var message struct {
+				ID     float64 `json:"id"`
+				Result any     `json:"result"`
+				Error  *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if json.Unmarshal(c.scanner.Bytes(), &message) != nil || int64(message.ID) != id {
+				continue
+			}
+			if message.Error != nil {
+				responses <- struct {
+					value any
+					err   error
+				}{err: fmt.Errorf("MCP stdio: %s", message.Error.Message)}
+				return
+			}
+			responses <- struct {
+				value any
+				err   error
+			}{value: message.Result}
+			return
 		}
-		if json.Unmarshal(c.scanner.Bytes(), &message) != nil || int64(message.ID) != id {
-			continue
+		if err := c.scanner.Err(); err != nil {
+			responses <- struct {
+				value any
+				err   error
+			}{err: err}
+			return
 		}
-		if message.Error != nil {
-			return nil, fmt.Errorf("MCP stdio: %s", message.Error.Message)
-		}
-		return message.Result, nil
-	}
-	if err := c.scanner.Err(); err != nil {
-		return nil, err
-	}
+		responses <- struct {
+			value any
+			err   error
+		}{err: errors.New("MCP stdio process closed")}
+	}()
 	select {
+	case response := <-responses:
+		return response.value, response.err
 	case <-ctx.Done():
+		_ = c.closeLocked()
 		return nil, ctx.Err()
-	default:
-		return nil, errors.New("MCP stdio process closed")
 	}
 }
 
