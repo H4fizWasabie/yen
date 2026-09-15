@@ -195,16 +195,17 @@ func parseConsolidationResponse(raw string) (struct {
 	Edges   []ConsolidatedEdge
 	Episode ConsolidatedEpisode
 }, error) {
-	var result struct {
-		Facts   []ConsolidatedFact `json:"facts"`
-		Edges   []ConsolidatedEdge `json:"edges"`
-		Episode struct {
-			Summary        string   `json:"summary"`
-			StartedAt      string   `json:"startedAt"`
-			EndedAt        string   `json:"endedAt"`
-			RelatedFactIDs []string `json:"relatedFactIds"`
-			RelatedNodeIDs []string `json:"relatedSemanticNodeIds"`
-		} `json:"episode"`
+	type episodePayload struct {
+		Summary        string            `json:"summary"`
+		StartedAt      string            `json:"startedAt"`
+		EndedAt        string            `json:"endedAt"`
+		RelatedFactIDs []json.RawMessage `json:"relatedFactIds"`
+		RelatedNodeIDs []json.RawMessage `json:"relatedSemanticNodeIds"`
+	}
+	var envelope struct {
+		Facts   []json.RawMessage `json:"facts"`
+		Edges   []json.RawMessage `json:"edges"`
+		Episode json.RawMessage   `json:"episode"`
 	}
 	cleaned := strings.TrimSpace(raw)
 	if strings.HasPrefix(cleaned, "```") {
@@ -217,34 +218,84 @@ func parseConsolidationResponse(raw string) (struct {
 	if start, end := strings.IndexByte(cleaned, '{'), strings.LastIndexByte(cleaned, '}'); start >= 0 && end > start {
 		cleaned = cleaned[start : end+1]
 	}
-	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
+	if err := json.Unmarshal([]byte(cleaned), &envelope); err != nil {
 		return struct {
 			Facts   []ConsolidatedFact
 			Edges   []ConsolidatedEdge
 			Episode ConsolidatedEpisode
 		}{}, fmt.Errorf("consolidation JSON: %w", err)
 	}
-	if strings.TrimSpace(result.Episode.Summary) == "" {
+	if len(envelope.Episode) == 0 || string(envelope.Episode) == "null" {
+		return struct {
+			Facts   []ConsolidatedFact
+			Edges   []ConsolidatedEdge
+			Episode ConsolidatedEpisode
+		}{}, errors.New("consolidation response is missing an episode")
+	}
+	var episode episodePayload
+	if err := json.Unmarshal(envelope.Episode, &episode); err != nil {
+		return struct {
+			Facts   []ConsolidatedFact
+			Edges   []ConsolidatedEdge
+			Episode ConsolidatedEpisode
+		}{}, errors.New("consolidation response is missing an episode")
+	}
+	var facts []ConsolidatedFact
+	for _, rawFact := range envelope.Facts {
+		var fact struct {
+			ID      string `json:"id"`
+			Subject string `json:"subject"`
+			Body    string `json:"body"`
+		}
+		if json.Unmarshal(rawFact, &fact) == nil && fact.ID != "" && fact.Subject != "" {
+			facts = append(facts, ConsolidatedFact{ID: fact.ID, Subject: fact.Subject, Body: fact.Body})
+		}
+	}
+	var edges []ConsolidatedEdge
+	for _, rawEdge := range envelope.Edges {
+		var edge struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+			Rel  string `json:"rel"`
+		}
+		if json.Unmarshal(rawEdge, &edge) == nil && edge.From != "" && edge.To != "" {
+			if _, ok := allowedEdgeRelations[edge.Rel]; ok {
+				edges = append(edges, ConsolidatedEdge{From: edge.From, To: edge.To, Rel: edge.Rel})
+			}
+		}
+	}
+	if strings.TrimSpace(episode.Summary) == "" {
 		return struct {
 			Facts   []ConsolidatedFact
 			Edges   []ConsolidatedEdge
 			Episode ConsolidatedEpisode
 		}{}, errors.New("consolidation episode summary is required")
 	}
-	if strings.TrimSpace(result.Episode.StartedAt) == "" || strings.TrimSpace(result.Episode.EndedAt) == "" {
+	if strings.TrimSpace(episode.StartedAt) == "" || strings.TrimSpace(episode.EndedAt) == "" {
 		return struct {
 			Facts   []ConsolidatedFact
 			Edges   []ConsolidatedEdge
 			Episode ConsolidatedEpisode
 		}{}, errors.New("consolidation episode timestamps are required")
 	}
-	related := result.Episode.RelatedFactIDs
+	var related []string
+	for _, rawID := range episode.RelatedFactIDs {
+		var id string
+		if json.Unmarshal(rawID, &id) == nil {
+			related = append(related, id)
+		}
+	}
 	if len(related) == 0 {
-		related = result.Episode.RelatedNodeIDs
+		for _, rawID := range episode.RelatedNodeIDs {
+			var id string
+			if json.Unmarshal(rawID, &id) == nil {
+				related = append(related, id)
+			}
+		}
 	}
 	return struct {
 		Facts   []ConsolidatedFact
 		Edges   []ConsolidatedEdge
 		Episode ConsolidatedEpisode
-	}{Facts: result.Facts, Edges: result.Edges, Episode: ConsolidatedEpisode{Summary: result.Episode.Summary, StartedAt: result.Episode.StartedAt, EndedAt: result.Episode.EndedAt, RelatedSemanticNodeIDs: related}}, nil
+	}{Facts: facts, Edges: edges, Episode: ConsolidatedEpisode{Summary: episode.Summary, StartedAt: episode.StartedAt, EndedAt: episode.EndedAt, RelatedSemanticNodeIDs: related}}, nil
 }

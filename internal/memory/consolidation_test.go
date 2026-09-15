@@ -136,6 +136,29 @@ func TestEngineConsolidateRequiresEpisodeTimestamps(t *testing.T) {
 	}
 }
 
+func TestParseConsolidationResponseFiltersMalformedMembers(t *testing.T) {
+	parsed, err := parseConsolidationResponse(`{"facts":[{"id":"f1","subject":"kept"},{"id":3,"subject":"ignored"},{"subject":"missing id"}],"edges":[{"from":"f1","to":"f2","rel":"prefers"},{"from":3,"to":"f2","rel":"prefers"},{"from":"f1","to":"f2","rel":"unknown"}],"episode":{"summary":"window","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z","relatedFactIds":["f1",4]}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Facts) != 1 || parsed.Facts[0].ID != "f1" {
+		t.Fatalf("facts=%#v", parsed.Facts)
+	}
+	if len(parsed.Edges) != 1 || parsed.Edges[0].Rel != "prefers" {
+		t.Fatalf("edges=%#v", parsed.Edges)
+	}
+	if len(parsed.Episode.RelatedSemanticNodeIDs) != 1 || parsed.Episode.RelatedSemanticNodeIDs[0] != "f1" {
+		t.Fatalf("related=%#v", parsed.Episode.RelatedSemanticNodeIDs)
+	}
+}
+
+func TestParseConsolidationResponseRequiresEpisodeObject(t *testing.T) {
+	_, err := parseConsolidationResponse(`{"facts":[],"episode":"not an object"}`)
+	if err == nil || !strings.Contains(err.Error(), "missing an episode") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestEngineConsolidatesOnlyWhenTriggeredAndTracksSeparateState(t *testing.T) {
 	engine, err := OpenEngine(t.TempDir())
 	if err != nil {
