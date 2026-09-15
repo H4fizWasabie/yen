@@ -51,10 +51,9 @@ set -eu
 set -a
 . "$provider_env"
 set +a
-api_key="\${YEN_OPENAI_API_KEY:-\${YEN_OPENROUTER_API_KEY:-}}"
 exec env -i PATH=/usr/bin:/bin HOME=/root \\
-	  OPENAI_API_KEY="\$api_key" \\
-	  OPENROUTER_API_KEY="\$api_key" \\
+	  OPENAI_API_KEY="\${YEN_OPENAI_API_KEY:-}" \\
+	  OPENROUTER_API_KEY="\${YEN_OPENROUTER_API_KEY:-}" \\
   THEOSES_TELEGRAM_BOT_TOKEN="\${YEN_TELEGRAM_BOT_TOKEN:-}" \\
   THEOSES_TELEGRAM_CHAT_ID="\${YEN_TELEGRAM_CHAT_ID:-}" \\
   THEOSES_CANONICAL_CONVERSATION_ID="\${YEN_CANONICAL_CONVERSATION_ID:-}" \\
@@ -81,10 +80,9 @@ set -eu
 set -a
 . "$provider_env"
 set +a
-api_key="\${YEN_OPENAI_API_KEY:-\${YEN_OPENROUTER_API_KEY:-}}"
 exec env -i PATH=/usr/bin:/bin HOME=/root \\
-	  OPENAI_API_KEY="\$api_key" \\
-	  OPENROUTER_API_KEY="\$api_key" \\
+	  OPENAI_API_KEY="\${YEN_OPENAI_API_KEY:-}" \\
+	  OPENROUTER_API_KEY="\${YEN_OPENROUTER_API_KEY:-}" \\
   THEOSES_CANONICAL_CONVERSATION_ID="\${YEN_CANONICAL_CONVERSATION_ID:-}" \\
   THEOSES_DASHBOARD_TOKEN="\${YEN_DASHBOARD_TOKEN:-}" \\
   THEOSES_AUTO_COMPACT_TURNS="\${YEN_AUTO_COMPACT_TURNS:-}" \\
