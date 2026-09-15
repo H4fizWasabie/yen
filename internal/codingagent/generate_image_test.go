@@ -1,8 +1,11 @@
 package codingagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -49,5 +52,23 @@ func TestGenerateImageRichResultOmitsUndecodableImage(t *testing.T) {
 func TestGeneratedImageRejectsOversizedInlinePayload(t *testing.T) {
 	if generatedImageIsDecodable(make([]byte, int(generatedImageMaxInlineBytes)), "image/webp") {
 		t.Fatal("oversized image accepted for inline attachment")
+	}
+}
+
+func TestGeneratedImageResizesOversizedDimensions(t *testing.T) {
+	var input bytes.Buffer
+	if err := png.Encode(&input, image.NewRGBA(image.Rect(0, 0, 2400, 1000))); err != nil {
+		t.Fatal(err)
+	}
+	data, mimeType, ok := resizeGeneratedImage(input.Bytes(), "image/png")
+	if !ok || mimeType != "image/png" {
+		t.Fatalf("mime=%q ok=%v", mimeType, ok)
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Width != 2000 || config.Height != 833 {
+		t.Fatalf("dimensions=%dx%d, want 2000x833", config.Width, config.Height)
 	}
 }
