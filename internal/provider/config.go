@@ -203,6 +203,8 @@ func bedrockConfigured(model string) BedrockConverse {
 	client := NewBedrockConverse(region, model)
 	client.Profile = strings.TrimSpace(os.Getenv("AWS_PROFILE"))
 	client.BaseURL = strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_AWS_BEDROCK_BASE_URL")), "/")
+	client.BearerToken = strings.TrimSpace(os.Getenv("YEN_AWS_BEARER_TOKEN_BEDROCK"))
+	client.SkipAuth = os.Getenv("YEN_AWS_BEDROCK_SKIP_AUTH") == "1"
 	return client
 }
 

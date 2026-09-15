@@ -12,10 +12,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	bedrockdocument "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+	smithybearer "github.com/aws/smithy-go/auth/bearer"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 )
@@ -25,6 +27,8 @@ type BedrockConverse struct {
 	Region        string
 	Profile       string
 	BaseURL       string
+	BearerToken   string
+	SkipAuth      bool
 	Model         string
 	ProviderName  string
 	Client        *bedrockruntime.Client
@@ -234,7 +238,30 @@ func (p BedrockConverse) awsConfig(ctx context.Context) (aws.Config, error) {
 	if p.Profile != "" {
 		options = append(options, awsconfig.WithSharedConfigProfile(p.Profile))
 	}
-	return awsconfig.LoadDefaultConfig(ctx, options...)
+	if token := p.bearerToken(); token != "" {
+		options = append(options, awsconfig.WithBearerAuthTokenProvider(smithybearer.StaticTokenProvider{Token: smithybearer.Token{Value: token}}))
+	}
+	if p.SkipAuth {
+		options = append(options, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("dummy-access-key", "dummy-secret-key", "")))
+	}
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
+	if err != nil {
+		return aws.Config{}, err
+	}
+	if p.bearerToken() != "" && !p.SkipAuth {
+		cfg.AuthSchemePreference = []string{"httpBearerAuth"}
+	}
+	return cfg, nil
+}
+
+func (p BedrockConverse) bearerToken() string {
+	if p.BearerToken != "" {
+		return p.BearerToken
+	}
+	if token := os.Getenv("YEN_AWS_BEARER_TOKEN_BEDROCK"); token != "" {
+		return token
+	}
+	return os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
 }
 
 func bedrockInput(messages []agent.Message, toolNames []string, model string) (*bedrockruntime.ConverseStreamInput, error) {
