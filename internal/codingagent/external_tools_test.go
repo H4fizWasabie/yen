@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -73,6 +74,37 @@ func TestMCPHTTPLoadsAndCallsTools(t *testing.T) {
 	}
 	result, err := tools[0].Execute(context.Background(), map[string]any{})
 	if err != nil || !strings.Contains(result, "UNTRUSTED EXTERNAL CONTENT") {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+func TestMCPHTTPAcceptsEventStreamResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		result := any(map[string]any{})
+		switch request["method"] {
+		case "initialize":
+			result = map[string]any{"protocolVersion": "2025-06-18"}
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]any{"name": "sse_echo", "inputSchema": map[string]any{"type": "object"}}}}
+		case "tools/call":
+			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "sse result"}}}
+		}
+		message := map[string]any{"jsonrpc": "2.0", "id": request["id"], "result": result}
+		encoded, _ := json.Marshal(message)
+		_, _ = fmt.Fprintf(w, "event: message\ndata: %s\n\n", encoded)
+	}))
+	defer server.Close()
+	tools := loadMCPHTTP(server.URL)
+	if len(tools) != 1 || tools[0].Name() != "sse_echo" {
+		t.Fatalf("tools=%#v", tools)
+	}
+	result, err := tools[0].Execute(context.Background(), map[string]any{})
+	if err != nil || !strings.Contains(result, "sse result") {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
 }
