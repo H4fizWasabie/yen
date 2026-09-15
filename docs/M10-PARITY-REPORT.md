@@ -387,8 +387,10 @@ evidence: `internal/tools/fs_tools.go` and
 The `find` and `grep` tools now ask Git to exclude paths ignored by repository
 `.gitignore` rules, matching the oracle's default file-search behavior while
 retaining searches outside Git repositories; `grep` also skips binary files as
-the oracle's ripgrep JSON path does. Go evidence: `internal/tools/fs_tools.go`,
-`TestFindToolRespectsGitignore`, and `TestGrepToolSkipsBinaryFiles`.
+the oracle's ripgrep JSON path does and removes standalone carriage returns
+from displayed lines. Go evidence: `internal/tools/fs_tools.go`,
+`TestFindToolRespectsGitignore`, `TestGrepToolSkipsBinaryFiles`, and
+`TestGrepToolRemovesCarriageReturns`.
 
 The `ls` tool now follows entry targets while listing and skips entries that
 cannot be statted, matching the oracle's broken-symlink behavior. TypeScript

@@ -136,7 +136,7 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 	if glob != "" && !matchFindPattern(glob, rel) { return nil }
 	data, err := os.ReadFile(path); if err != nil { return nil }
 	if bytes.IndexByte(data, 0) >= 0 { return nil }
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", ""), "\n")
 		for i, line := range lines {
 			if !re.MatchString(line) { continue }
 			matchCount++
