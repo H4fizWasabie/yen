@@ -327,6 +327,10 @@ Explicit skill directories from Yen settings now work for both skill discovery
 and `/skill:name` expansion, keeping advertisement and execution on the same
 resource set. Go evidence: `TestSkillPromptExpansionUsesConfiguredSkillDirs`.
 
+Context discovery now stops at the first existing candidate in each directory,
+even when that higher-priority file is empty, matching the oracle's precedence
+rule. Go evidence: `TestContextMessageEmptyHigherPriorityFileShadowsLowerPriority`.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 
@@ -354,7 +358,7 @@ implementations and committed tests:
 | OpenAI Codex Responses routing | `packages/ai/src/providers/openai-codex.ts`, `packages/ai/src/api/openai-codex-responses.ts:220-240,1541-1595` | `5c6d153` adds Yen-owned Codex token/base URL configuration, JWT account-claim extraction, `/codex/responses` routing, and account/experimental headers; `internal/provider/config_test.go` verifies the streamed request | partial; Codex OAuth login, WebSocket transport, compression, and full model catalog remain open |
 | Episodic migration | `a513983` | enriched legacy SQLite rows preserve optional workspace, conversation, channel, and turn metadata; broader historical migration policy remains explicit-only |
 
-The current verified code gate is 328 tests, race tests, vet, and diff checks.
+The current verified code gate is 350 tests, race tests, vet, and diff checks.
 The 2026-09-16 side-by-side VPS read-back places the active pilot release at
 `/opt/yen/releases/1ba4476`; `yen-telegram-pilot.service`,
 `yen-dashboard-pilot.service`, `theoses2-telegram.service`, and

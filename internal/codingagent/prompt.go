@@ -34,8 +34,10 @@ func appendContextFiles(sections []string, dir string) []string {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
 		content := stripUTF8BOM(string(data))
-		if err == nil && strings.TrimSpace(content) != "" {
-			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
+		if err == nil {
+			if strings.TrimSpace(content) != "" {
+				sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
+			}
 			break
 		}
 	}
