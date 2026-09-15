@@ -114,6 +114,20 @@ func (p *overflowRecoveryProvider) Next(context.Context, []agent.Message, []stri
 	}
 }
 
+type silentOverflowRecoveryProvider struct{ calls int }
+
+func (p *silentOverflowRecoveryProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	switch p.calls {
+	case 1:
+		return agent.Response{Text: "accepted overflow", StopReason: "stop", Usage: agent.Usage{Input: 101}}, nil
+	case 2:
+		return agent.Response{Text: "silent overflow summary", StopReason: "stop"}, nil
+	default:
+		return agent.Response{Text: "recovered", StopReason: "stop"}, nil
+	}
+}
+
 type lengthRecoveryProvider struct{ calls int }
 
 func (p *lengthRecoveryProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
@@ -704,6 +718,41 @@ func TestRunnerRetriesOnceAfterOptInContextOverflow(t *testing.T) {
 	}
 	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "overflow summary") {
 		t.Fatalf("context=%#v", reopened.ContextMessages())
+	}
+}
+
+func TestRunnerCompactsAfterSilentContextOverflow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-silent-overflow.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-silent-overflow", ConversationID: "conv-silent-overflow", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &silentOverflowRecoveryProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactOnOverflow = true
+	runner.AutoCompactContextWindow = 100
+	runner.AutoCompactKeepRecentTokens = 4
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-silent-overflow", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "recover"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "recovered" {
+		t.Fatalf("result=%#v err=%v calls=%d", result, err, provider.calls)
+	}
+	if provider.calls != 3 {
+		t.Fatalf("provider calls=%d, want overflow, summary, retry", provider.calls)
 	}
 }
 
