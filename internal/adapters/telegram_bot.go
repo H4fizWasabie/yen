@@ -23,7 +23,7 @@ type TelegramBot struct {
 	Offset      int64
 }
 
-const telegramMessageLimit = 4096
+const telegramMessageLimit = 4000
 const telegramTypingInterval = 4 * time.Second
 
 type telegramUpdate struct {

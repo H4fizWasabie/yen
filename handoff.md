@@ -64,6 +64,9 @@ seconds while a turn runs, stopping it when the turn completes. Errors from
 the indicator are intentionally non-fatal, matching the pinned TypeScript
 behavior; `TestTelegramBotSendsTypingActionDuringTurn` covers the lifecycle.
 
+Plain Telegram output now uses the pinned TypeScript 4,000-character limit;
+`TestChunkTelegramTextMatchesTypeScriptLimit` covers the boundary.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

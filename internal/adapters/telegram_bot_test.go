@@ -172,6 +172,13 @@ func TestTelegramBotChunksLongReplies(t *testing.T) {
 	}
 }
 
+func TestChunkTelegramTextMatchesTypeScriptLimit(t *testing.T) {
+	chunks := chunkTelegramText(strings.Repeat("x", 4001))
+	if len(chunks) != 2 || len([]rune(chunks[0])) != 4000 || len([]rune(chunks[1])) != 1 {
+		t.Fatalf("chunks=%d lengths=%d,%d", len(chunks), len([]rune(chunks[0])), len([]rune(chunks[1])))
+	}
+}
+
 func TestTelegramBotCarriesReplyContextAndReplyTarget(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
