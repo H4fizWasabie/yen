@@ -80,14 +80,18 @@ func (a Dashboard) NewSession() (conversation.Link, error) {
 }
 
 func (a Dashboard) Send(ctx context.Context, conversationID, text string) (agent.Result, error) {
-	return a.send(ctx, conversationID, text, nil)
+	return a.send(ctx, conversationID, text, nil, nil)
 }
 
 func (a Dashboard) SendStream(ctx context.Context, conversationID, text string, onUpdate func(string)) (agent.Result, error) {
-	return a.send(ctx, conversationID, text, onUpdate)
+	return a.send(ctx, conversationID, text, onUpdate, nil)
 }
 
-func (a Dashboard) send(ctx context.Context, conversationID, text string, onUpdate func(string)) (agent.Result, error) {
+func (a Dashboard) SendStreamWithEvents(ctx context.Context, conversationID, text string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
+	return a.send(ctx, conversationID, text, onUpdate, onEvent)
+}
+
+func (a Dashboard) send(ctx context.Context, conversationID, text string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	link, ok := a.Service.Registry.FindConversationFor("dashboard", conversationID)
 	if !ok {
 		return agent.Result{}, errors.New("dashboard conversation not found")
@@ -96,7 +100,7 @@ func (a Dashboard) send(ctx context.Context, conversationID, text string, onUpda
 	if err != nil {
 		return agent.Result{}, err
 	}
-	_, result, err := a.Service.Runner.RunSubmittedWithUpdates(ctx, turn, onUpdate)
+	_, result, err := a.Service.Runner.RunSubmittedWithEvents(ctx, turn, onUpdate, onEvent)
 	return result, err
 }
 

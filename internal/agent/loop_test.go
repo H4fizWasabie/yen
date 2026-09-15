@@ -115,6 +115,23 @@ func TestRunExecutesToolThenContinues(t *testing.T) {
 	}
 }
 
+func TestRunWithEventsReportsDashboardToolAndUsageEvents(t *testing.T) {
+	var events []Event
+	_, err := RunFromWithQueuesAndEvents(context.Background(), &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-1", Name: "read"}}, StopReason: "toolUse", Usage: Usage{Input: 2, Output: 3, TotalTokens: 5}},
+		{Text: "done", StopReason: "stop", Usage: Usage{Input: 4, Output: 1, TotalTokens: 5}},
+	}}, []Tool{readTool{}}, nil, "hello", nil, nil, func(event Event) { events = append(events, event) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 4 || events[0].Type != "usage" || events[1].Type != "tool_call" || events[2].Type != "tool_result" || events[3].Type != "usage" {
+		t.Fatalf("events = %#v", events)
+	}
+	if events[2].Result != "README contents" || events[2].IsError {
+		t.Fatalf("tool result = %#v", events[2])
+	}
+}
+
 func TestRunNormalizedTracesMatchGoldenOutcomes(t *testing.T) {
 	tests := []struct {
 		name     string

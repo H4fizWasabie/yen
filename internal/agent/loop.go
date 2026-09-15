@@ -59,6 +59,18 @@ type Result struct {
 	FinalText string
 }
 
+type Event struct {
+	Type    string
+	ID      string
+	Name    string
+	Args    map[string]any
+	Result  string
+	IsError bool
+	Usage   Usage
+}
+
+type EventFunc func(Event)
+
 // MessageQueues holds messages injected while an agent turn is running.
 // Steering is consumed before the next assistant response; follow-up is
 // consumed after an assistant would otherwise settle.
@@ -121,6 +133,14 @@ func RunFromWithUpdates(ctx context.Context, provider Provider, tools []Tool, hi
 }
 
 func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string)) (Result, error) {
+	return runFromWithQueues(ctx, provider, tools, history, prompt, queues, onUpdate, nil)
+}
+
+func RunFromWithQueuesAndEvents(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
+	return runFromWithQueues(ctx, provider, tools, history, prompt, queues, onUpdate, onEvent)
+}
+
+func runFromWithQueues(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
 	result := Result{Messages: append([]Message(nil), history...), Events: []string{"agent_start"}}
 	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt})
 	result.Events = append(result.Events, "turn_start", "message_start:user", "message_end:user")
@@ -159,6 +179,9 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 			return result, err
 		}
 		result.Messages = append(result.Messages, Message{Role: "assistant", Content: response.Text, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage})
+		if onEvent != nil {
+			onEvent(Event{Type: "usage", Usage: response.Usage})
+		}
 		if len(response.ToolCalls) > 0 {
 			result.Events = append(result.Events, "message_end:assistant:toolUse")
 		} else {
@@ -181,11 +204,18 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 		}
 
 		for _, call := range response.ToolCalls {
+			if onEvent != nil {
+				onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args})
+			}
 			tool, ok := toolMap[call.Name]
 			if !ok {
 				result.Events = append(result.Events, "tool_execution_start:"+call.ID, "tool_execution_end:"+call.ID)
 				result.Events = append(result.Events, "message_start:toolResult")
-				result.Messages = append(result.Messages, Message{Role: "tool", Content: (&UnknownToolError{Name: call.Name}).Error(), ToolCallID: call.ID})
+				content := (&UnknownToolError{Name: call.Name}).Error()
+				result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
+				if onEvent != nil {
+					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true})
+				}
 				result.Events = append(result.Events, "message_end:toolResult")
 				continue
 			}
@@ -205,6 +235,9 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 			}
 			result.Events = append(result.Events, "message_start:toolResult")
 			result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
+			if onEvent != nil {
+				onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil})
+			}
 			result.Events = append(result.Events, "message_end:toolResult")
 		}
 		result.Events = append(result.Events, "turn_end")

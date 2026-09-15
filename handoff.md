@@ -19,6 +19,11 @@ No cutover or TypeScript modification has happened. Local Telegram/dashboard
 adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
+The dashboard SSE seam now emits the TypeScript event names and payload shapes
+for `delta`, `tool_call`, `tool_result`, `usage`, `done`, and `error`, including
+the TypeScript stream headers. This is covered by the agent event callback test
+and dashboard HTTP stream test; commit `aa7f816`.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

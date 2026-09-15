@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 type DashboardHTTP struct {
@@ -154,10 +156,22 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Accel-Buffering", "no")
 			w.WriteHeader(http.StatusOK)
 			flush, _ := w.(http.Flusher)
-			_, runErr := h.Dashboard.SendStream(r.Context(), id, input.Message, func(text string) {
-				_, _ = io.WriteString(w, "event: delta\ndata: "+mustJSON(map[string]string{"text": text})+"\n\n")
+			emit := func(event string, value any) {
+				_, _ = io.WriteString(w, "event: "+event+"\ndata: "+mustJSON(value)+"\n\n")
 				if flush != nil {
 					flush.Flush()
+				}
+			}
+			_, runErr := h.Dashboard.SendStreamWithEvents(r.Context(), id, input.Message, func(text string) {
+				emit("delta", map[string]string{"text": text})
+			}, func(event agent.Event) {
+				switch event.Type {
+				case "tool_call":
+					emit("tool_call", map[string]any{"id": event.ID, "name": event.Name, "args": event.Args})
+				case "tool_result":
+					emit("tool_result", map[string]any{"id": event.ID, "name": event.Name, "result": event.Result, "isError": event.IsError})
+				case "usage":
+					emit("usage", map[string]any{"input": event.Usage.Input, "output": event.Usage.Output, "totalTokens": event.Usage.TotalTokens, "cost": 0})
 				}
 			})
 			if runErr != nil {
