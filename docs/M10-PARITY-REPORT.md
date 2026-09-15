@@ -169,6 +169,15 @@ the provider model compatibility data under
 311 tests, race, vet, and diff checks. Per-model thinking maps and remaining
 chat-template formats remain open.
 
+Selected Baseten model families now send the oracle's
+`chat_template_args.enable_thinking` field, while other Baseten models retain
+the OpenAI-compatible reasoning path. TypeScript authority:
+`packages/ai/src/api/openai-completions.ts:875-890` and
+`packages/ai/src/providers/data/baseten.json`. Go evidence:
+`internal/provider/openai.go` and
+`TestBasetenChatTemplateModelsUseEnableThinkingArgument`; the full gate passes
+312 tests, race, vet, and diff checks.
+
 The agent loop now exposes opt-in `before` and `after` tool interception hooks:
 the former can block a validated call with a policy reason, and the latter can
 replace the executed text/images or error status before tool-result events and
