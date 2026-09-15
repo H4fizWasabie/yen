@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,13 +10,23 @@ import (
 )
 
 type DashboardHTTP struct {
-	Dashboard Dashboard
+	Dashboard   Dashboard
+	AccessToken string
 }
 
 func (h DashboardHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		if r.URL.Path == "/api/login" {
+			h.login(w, r)
+			return
+		}
+		if !h.authorized(w, r) {
+			return
+		}
 	}
 	if r.URL.Path == "/api/sessions" && r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, map[string]any{"sessions": h.Dashboard.Service.Registry.List("dashboard")})
@@ -30,6 +41,76 @@ func (h DashboardHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+}
+
+func (h DashboardHTTP) authorized(w http.ResponseWriter, r *http.Request) bool {
+	if h.AccessToken == "" {
+		return true
+	}
+	candidate := bearerToken(r.Header.Get("Authorization"))
+	if candidate == "" {
+		candidate = cookieToken(r.Header.Get("Cookie"))
+	}
+	if secureToken(candidate, h.AccessToken) {
+		return true
+	}
+	w.Header().Set("WWW-Authenticate", `Bearer realm="Theoses dashboard"`)
+	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Dashboard authentication required"})
+	return false
+}
+
+func (h DashboardHTTP) login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	if h.AccessToken == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Dashboard access token is not configured"})
+		return
+	}
+	var input struct {
+		Token string `json:"token"`
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil || json.Unmarshal(body, &input) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid login body"})
+		return
+	}
+	if !secureToken(input.Token, h.AccessToken) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="Theoses dashboard"`)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid dashboard token"})
+		return
+	}
+	w.Header().Set("Set-Cookie", "theoses_dashboard_token="+url.QueryEscape(h.AccessToken)+"; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict")
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func bearerToken(header string) string {
+	parts := strings.Fields(header)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return parts[1]
+	}
+	return ""
+}
+
+func cookieToken(header string) string {
+	for _, item := range strings.Split(header, ";") {
+		parts := strings.SplitN(strings.TrimSpace(item), "=", 2)
+		if len(parts) == 2 && parts[0] == "theoses_dashboard_token" {
+			value, err := url.QueryUnescape(parts[1])
+			if err == nil {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func secureToken(candidate, expected string) bool {
+	if len(candidate) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(expected)) == 1
 }
 
 func (h DashboardHTTP) newSession(w http.ResponseWriter) {

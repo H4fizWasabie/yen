@@ -16,6 +16,53 @@ import (
 	"github.com/H4fizWasabie/yen/internal/runtime"
 )
 
+func TestDashboardHTTPRequiresAndAcceptsBearerToken(t *testing.T) {
+	registry, err := conversation.OpenRegistry(filepath.Join(t.TempDir(), "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dashboard := DashboardHTTP{AccessToken: "secret", Dashboard: Dashboard{Service: Service{Registry: registry}}}
+	server := httptest.NewServer(dashboard)
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized || response.Header.Get("WWW-Authenticate") == "" {
+		t.Fatalf("unauthorized status=%d headers=%v", response.StatusCode, response.Header)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/login", bytes.NewBufferString(`{"token":"secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("Set-Cookie") == "" {
+		t.Fatalf("login status=%d headers=%v", response.StatusCode, response.Header)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/sessions", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer secret")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("authorized status=%d", response.StatusCode)
+	}
+}
+
 type httpProvider struct{}
 
 func (httpProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
