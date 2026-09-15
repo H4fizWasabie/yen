@@ -37,6 +37,23 @@ func TestBedrockInputSeparatesSystemPromptAndToolSchemas(t *testing.T) {
 	}
 }
 
+func TestBedrockUsagePreservesCacheTokenBreakdown(t *testing.T) {
+	usage := bedrocktypes.TokenUsage{
+		InputTokens: sdk.Int32(100), OutputTokens: sdk.Int32(12), TotalTokens: sdk.Int32(112),
+		CacheReadInputTokens: sdk.Int32(30), CacheWriteInputTokens: sdk.Int32(8),
+	}
+	var response agent.Response
+	applyBedrockUsage(&response, &usage)
+	if response.Usage.Input != 100 || response.Usage.Output != 12 || response.Usage.CacheRead != 30 || response.Usage.CacheWrite != 8 || response.Usage.TotalTokens != 112 {
+		t.Fatalf("usage=%#v", response.Usage)
+	}
+	usage.TotalTokens = nil
+	applyBedrockUsage(&response, &usage)
+	if response.Usage.TotalTokens != 150 {
+		t.Fatalf("fallback total=%d, want 150", response.Usage.TotalTokens)
+	}
+}
+
 func TestNewConfiguredSupportsAmazonBedrock(t *testing.T) {
 	t.Setenv("AWS_REGION", "ap-southeast-1")
 	t.Setenv("AWS_PROFILE", "yen")
