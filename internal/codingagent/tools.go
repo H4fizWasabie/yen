@@ -4,6 +4,7 @@
 package codingagent
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -47,6 +48,11 @@ func newTools(workspace string, current *session.Session, provider agent.Provide
 			operationalNotesTool{path: filepath.Join(workspace, ".theoses-go", "operational-notes.md")},
 		)
 	}
-	result = append(result, loadExternalTools()...)
+	external := loadExternalTools()
+	if os.Getenv("YEN_DEFER_EXTERNAL_TOOLS") == "1" {
+		result = append(result, deferExternalTools(external)...)
+	} else {
+		result = append(result, external...)
+	}
 	return result
 }

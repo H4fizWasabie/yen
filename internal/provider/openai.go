@@ -446,6 +446,10 @@ func toolParameters(name string) map[string]any {
 			"question": stringProperty("The single scouting question to answer"),
 			"tier":     stringProperty("quick-scan or deep-map"),
 		}, "question")
+	case "tool_search":
+		return optional(map[string]any{"query": stringProperty("Tool name or capability to search for")}, "query")
+	case "tool_call":
+		return optional(map[string]any{"name": stringProperty("Exact deferred tool name"), "args": map[string]any{"type": "object"}}, "name")
 	default:
 		return map[string]any{"type": "object"}
 	}

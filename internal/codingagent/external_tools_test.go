@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 func TestHTTPSidecarLoadsAndExecutesUntrustedTool(t *testing.T) {
@@ -69,6 +71,21 @@ func TestMCPHTTPLoadsAndCallsTools(t *testing.T) {
 	}
 	result, err := tools[0].Execute(context.Background(), map[string]any{})
 	if err != nil || !strings.Contains(result, "UNTRUSTED EXTERNAL CONTENT") {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+func TestDeferredExternalToolsSearchAndCall(t *testing.T) {
+	tool := externalTool{name: "deferred_echo", execute: func(context.Context, map[string]any) (string, error) {
+		return "called", nil
+	}}
+	deferred := deferExternalTools([]agent.Tool{tool})
+	search, err := deferred[0].Execute(context.Background(), map[string]any{"query": "echo"})
+	if err != nil || search != "deferred_echo" {
+		t.Fatalf("search=%q err=%v", search, err)
+	}
+	result, err := deferred[1].Execute(context.Background(), map[string]any{"name": "deferred_echo", "args": map[string]any{}})
+	if err != nil || result != "called" {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
 }

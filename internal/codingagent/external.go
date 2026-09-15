@@ -46,6 +46,42 @@ func loadExternalTools() []agent.Tool {
 	return result
 }
 
+type deferredExternalTool struct {
+	name  string
+	tools []agent.Tool
+}
+
+func (t deferredExternalTool) Name() string { return t.name }
+
+func (t deferredExternalTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if t.name == "tool_search" {
+		query, _ := args["query"].(string)
+		query = strings.ToLower(strings.TrimSpace(query))
+		var matches []string
+		for _, tool := range t.tools {
+			if query == "" || strings.Contains(strings.ToLower(tool.Name()), query) {
+				matches = append(matches, tool.Name())
+			}
+		}
+		return strings.Join(matches, "\n"), nil
+	}
+	name, _ := args["name"].(string)
+	toolArgs, _ := args["args"].(map[string]any)
+	for _, tool := range t.tools {
+		if tool.Name() == name {
+			return tool.Execute(ctx, toolArgs)
+		}
+	}
+	return "", fmt.Errorf("unknown deferred tool %q", name)
+}
+
+func deferExternalTools(tools []agent.Tool) []agent.Tool {
+	if len(tools) == 0 {
+		return nil
+	}
+	return []agent.Tool{deferredExternalTool{name: "tool_search", tools: tools}, deferredExternalTool{name: "tool_call", tools: tools}}
+}
+
 func loadHTTPSidecar(baseURL string) []agent.Tool {
 	client := &http.Client{}
 	headers := externalHeaders()
