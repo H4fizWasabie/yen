@@ -44,8 +44,17 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 		}
 	}
 	var sections []string
+	if agentDir := contextAgentDir(); agentDir != "" {
+		for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CONTEXT.md", "THEOSES.md"} {
+			path := filepath.Join(agentDir, name)
+			data, readErr := os.ReadFile(path)
+			if readErr == nil && strings.TrimSpace(string(data)) != "" {
+				sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+			}
+		}
+	}
 	for i := len(dirs) - 1; i >= 0; i-- {
-		for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CONTEXT.md"} {
+		for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CONTEXT.md", "THEOSES.md"} {
 			path := filepath.Join(dirs[i], name)
 			data, err := os.ReadFile(path)
 			if err != nil || len(data) == 0 {
@@ -76,6 +85,17 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 		content = string(runes[:12000]) + "\n</project_context>"
 	}
 	return agent.Message{Role: "system", Content: content}, true
+}
+
+func contextAgentDir() string {
+	if dir := strings.TrimSpace(os.Getenv("YEN_AGENT_DIR")); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".theoses", "agent")
 }
 
 type skillInfo struct {

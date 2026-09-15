@@ -48,6 +48,14 @@ Go evidence: `internal/provider/config.go`, `internal/provider/responses.go`,
 and `TestAzureResponsesUsesAzureRouteAndAPIKeyHeader`; full AWS Bedrock
 SigV4/credential-chain support remains open.
 
+Resource context now also loads the configurable user agent directory and
+`THEOSES.md` persona before repository context, matching the oracle's global
+resource pass. TypeScript authority:
+`packages/coding-agent/src/core/resource-loader.ts:220-260` and
+`packages/coding-agent/src/config.ts:517-523`. Go evidence:
+`internal/codingagent/prompt.go` and
+`TestContextMessageLoadsConfiguredAgentPersonaFirst`.
+
 The coding-agent bash boundary now records both the oracle's bounded automatic
 working-note command log and a durable `bashExecution` session message with
 the full command, output, exit code, cancellation, truncation, and
