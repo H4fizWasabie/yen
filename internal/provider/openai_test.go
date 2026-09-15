@@ -40,6 +40,22 @@ func TestOpenAICompletionsReadsTextSSE(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsListsModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/models" || r.Header.Get("Authorization") != "Bearer key" {
+			t.Fatalf("request=%s %s auth=%q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":""},{"id":"model-b"}]}`))
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "key", "model-a")
+	client.ProviderName = "fixture"
+	models, err := client.ListModels(context.Background())
+	if err != nil || len(models) != 2 || models[1].ID != "model-b" || models[0].Provider != "fixture" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
 func TestOpenAICompletionsPreservesResponseMetadataAndFinishReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

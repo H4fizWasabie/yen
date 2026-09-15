@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -122,6 +123,43 @@ func Describe(p agent.Provider) (string, string) {
 	default:
 		return "", ""
 	}
+}
+
+type ModelInfo struct {
+	Provider string `json:"provider"`
+	ID       string `json:"id"`
+}
+
+type ModelLister interface {
+	ListModels(context.Context) ([]ModelInfo, error)
+}
+
+func SetModel(p agent.Provider, model string) (agent.Provider, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, errors.New("model is required")
+	}
+	switch client := p.(type) {
+	case OpenAICompletions:
+		client.Model = model
+		return client, nil
+	case AnthropicMessages:
+		client.Model = model
+		return client, nil
+	default:
+		return nil, errors.New("provider does not support model selection")
+	}
+}
+
+func AvailableModels(ctx context.Context, p agent.Provider) ([]ModelInfo, error) {
+	if lister, ok := p.(ModelLister); ok {
+		return lister.ListModels(ctx)
+	}
+	name, model := Describe(p)
+	if name == "" || model == "" {
+		return nil, errors.New("provider does not expose a model catalog")
+	}
+	return []ModelInfo{{Provider: name, ID: model}}, nil
 }
 
 var ThinkingLevels = []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}

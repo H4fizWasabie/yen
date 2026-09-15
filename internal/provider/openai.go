@@ -45,6 +45,43 @@ type OpenAICompletions struct {
 	MaxRetryDelay   time.Duration
 }
 
+func (p OpenAICompletions) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	client := p.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.BaseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if p.APIKey != "" {
+		request.Header.Set("Authorization", "Bearer "+p.APIKey)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("model catalog returned %s", response.Status)
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	models := make([]ModelInfo, 0, len(payload.Data))
+	for _, model := range payload.Data {
+		if strings.TrimSpace(model.ID) != "" {
+			models = append(models, ModelInfo{Provider: p.ProviderName, ID: model.ID})
+		}
+	}
+	return models, nil
+}
+
 func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
 	return OpenAICompletions{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Model: model}
 }

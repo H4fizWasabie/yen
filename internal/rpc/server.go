@@ -43,6 +43,7 @@ type command struct {
 	Provider          string     `json:"provider,omitempty"`
 	Model             string     `json:"modelId,omitempty"`
 	Level             string     `json:"level,omitempty"`
+	Direction         string     `json:"direction,omitempty"`
 	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 }
@@ -269,13 +270,56 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		if _, active := s.Runner.Active(link.ConversationID); active {
 			return errors.New("cannot change model during an active operation")
 		}
-		configured, err := providerpkg.NewConfigured(request.Provider, request.Model)
+		currentProvider, _ := providerpkg.Describe(s.Runner.Provider)
+		var configured agent.Provider
+		var err error
+		if strings.EqualFold(currentProvider, request.Provider) {
+			configured, err = providerpkg.SetModel(s.Runner.Provider, request.Model)
+		} else {
+			configured, err = providerpkg.NewConfigured(request.Provider, request.Model)
+		}
 		if err != nil {
 			return err
 		}
 		s.Runner.Provider = configured
 		name, model := providerpkg.Describe(configured)
 		return s.response(output, request.ID, request.Type, true, map[string]any{"provider": name, "model": model}, nil)
+	case "get_available_models":
+		models, err := providerpkg.AvailableModels(ctx, s.Runner.Provider)
+		if err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"models": models}, nil)
+	case "cycle_model":
+		models, err := providerpkg.AvailableModels(ctx, s.Runner.Provider)
+		if err != nil {
+			return err
+		}
+		if len(models) < 2 {
+			return s.response(output, request.ID, request.Type, true, nil, nil)
+		}
+		_, currentModel := providerpkg.Describe(s.Runner.Provider)
+		index := -1
+		for i, model := range models {
+			if model.ID == currentModel {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			index = 0
+		}
+		if request.Direction == "backward" {
+			index = (index - 1 + len(models)) % len(models)
+		} else {
+			index = (index + 1) % len(models)
+		}
+		configured, err := providerpkg.SetModel(s.Runner.Provider, models[index].ID)
+		if err != nil {
+			return err
+		}
+		s.Runner.Provider = configured
+		return s.response(output, request.ID, request.Type, true, map[string]any{"provider": models[index].Provider, "model": models[index].ID, "thinkingLevel": providerpkg.ThinkingLevel(configured)}, nil)
 	case "set_thinking_level":
 		if _, active := s.Runner.Active(link.ConversationID); active {
 			return errors.New("cannot change thinking level during an active operation")
