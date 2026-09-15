@@ -417,6 +417,29 @@ func TestApplySettingsConfiguresSharedRuntime(t *testing.T) {
 	}
 }
 
+func TestApplySettingsSelectsConfiguredModelWhenEnvironmentIsUnset(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "")
+	t.Setenv("YEN_MODEL", "")
+	t.Setenv("YEN_REASONING_EFFORT", "")
+	runner := New(nil, providerpkg.NewOpenAICompletions("http://fixture", "key", "old"), nil)
+	runner.ApplySettings(settings.Settings{Provider: "openai", Model: "new-model", Reasoning: "high"})
+	name, model := providerpkg.Describe(runner.Provider)
+	if name != "openai" || model != "new-model" || providerpkg.ThinkingLevel(runner.Provider) != "high" {
+		t.Fatalf("provider=%s model=%s thinking=%s", name, model, providerpkg.ThinkingLevel(runner.Provider))
+	}
+}
+
+func TestApplySettingsDoesNotOverrideEnvironmentProvider(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "openrouter")
+	t.Setenv("YEN_MODEL", "environment-model")
+	runner := New(nil, providerpkg.NewOpenAICompletions("http://fixture", "key", "old"), nil)
+	runner.ApplySettings(settings.Settings{Provider: "anthropic", Model: "settings-model"})
+	name, model := providerpkg.Describe(runner.Provider)
+	if name != "" || model != "old" {
+		t.Fatalf("provider=%s model=%s", name, model)
+	}
+}
+
 func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conv-compact.jsonl")

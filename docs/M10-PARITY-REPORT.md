@@ -56,6 +56,13 @@ resource pass. TypeScript authority:
 `internal/codingagent/prompt.go` and
 `TestContextMessageLoadsConfiguredAgentPersonaFirst`.
 
+Settings-selected provider/model/thinking values now configure the live shared
+runner when no explicit `YEN_*` override is present; explicit environment
+configuration wins. This closes the prior read-but-not-applied settings bug.
+Oracle authority: `packages/coding-agent/src/core/settings-manager.ts:85-175`
+and `packages/coding-agent/src/core/agent-session-services.ts:141-183`.
+Go evidence: `internal/runtime/runtime.go` and its provider precedence tests.
+
 The coding-agent bash boundary now records both the oracle's bounded automatic
 working-note command log and a durable `bashExecution` session message with
 the full command, output, exit code, cancellation, truncation, and
@@ -160,7 +167,7 @@ implementations and committed tests:
 | OpenAI Codex Responses routing | `packages/ai/src/providers/openai-codex.ts`, `packages/ai/src/api/openai-codex-responses.ts:220-240,1541-1595` | `5c6d153` adds Yen-owned Codex token/base URL configuration, JWT account-claim extraction, `/codex/responses` routing, and account/experimental headers; `internal/provider/config_test.go` verifies the streamed request | partial; Codex OAuth login, WebSocket transport, compression, and full model catalog remain open |
 | Episodic migration | `a513983` | enriched legacy SQLite rows preserve optional workspace, conversation, channel, and turn metadata; broader historical migration policy remains explicit-only |
 
-The current verified code gate is 281 tests, race tests, vet, and diff checks.
+The current verified code gate is 284 tests, race tests, vet, and diff checks.
 The side-by-side VPS read-back places the tested release at
 `/opt/yen/releases/0f97e38`; both Yen units and both Theoses2 units remain
 active, and Yen `/healthz` returns `{"ok":true}`.

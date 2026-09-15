@@ -8,19 +8,22 @@ import (
 )
 
 type Settings struct {
-	Provider       string              `json:"provider,omitempty"`
-	Model          string              `json:"model,omitempty"`
-	BaseURL        string              `json:"baseUrl,omitempty"`
-	Reasoning      string              `json:"reasoningEffort,omitempty"`
-	ContextFiles   []string            `json:"contextFiles,omitempty"`
-	SkillDirs      []string            `json:"skillDirs,omitempty"`
-	PromptDirs     []string            `json:"promptDirs,omitempty"`
-	Trusted        *bool               `json:"trusted,omitempty"`
-	AutoCompaction *bool               `json:"autoCompaction,omitempty"`
-	Compaction     *CompactionSettings `json:"compaction,omitempty"`
-	Retry          *RetrySettings      `json:"retry,omitempty"`
-	SteeringMode   string              `json:"steeringMode,omitempty"`
-	FollowUpMode   string              `json:"followUpMode,omitempty"`
+	Provider             string              `json:"provider,omitempty"`
+	Model                string              `json:"model,omitempty"`
+	DefaultProvider      string              `json:"defaultProvider,omitempty"`
+	DefaultModel         string              `json:"defaultModel,omitempty"`
+	BaseURL              string              `json:"baseUrl,omitempty"`
+	Reasoning            string              `json:"reasoningEffort,omitempty"`
+	DefaultThinkingLevel string              `json:"defaultThinkingLevel,omitempty"`
+	ContextFiles         []string            `json:"contextFiles,omitempty"`
+	SkillDirs            []string            `json:"skillDirs,omitempty"`
+	PromptDirs           []string            `json:"promptDirs,omitempty"`
+	Trusted              *bool               `json:"trusted,omitempty"`
+	AutoCompaction       *bool               `json:"autoCompaction,omitempty"`
+	Compaction           *CompactionSettings `json:"compaction,omitempty"`
+	Retry                *RetrySettings      `json:"retry,omitempty"`
+	SteeringMode         string              `json:"steeringMode,omitempty"`
+	FollowUpMode         string              `json:"followUpMode,omitempty"`
 }
 
 type CompactionSettings struct {
@@ -138,11 +141,20 @@ func merge(target *Settings, source Settings) {
 	if source.Model != "" {
 		target.Model = source.Model
 	}
+	if source.DefaultProvider != "" {
+		target.DefaultProvider = source.DefaultProvider
+	}
+	if source.DefaultModel != "" {
+		target.DefaultModel = source.DefaultModel
+	}
 	if source.BaseURL != "" {
 		target.BaseURL = source.BaseURL
 	}
 	if source.Reasoning != "" {
 		target.Reasoning = source.Reasoning
+	}
+	if source.DefaultThinkingLevel != "" {
+		target.DefaultThinkingLevel = source.DefaultThinkingLevel
 	}
 	if source.ContextFiles != nil {
 		target.ContextFiles = source.ContextFiles

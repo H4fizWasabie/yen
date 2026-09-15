@@ -66,6 +66,33 @@ func (r *Runner) SetQueueModes(steering, followUp string) {
 
 // ApplySettings applies the settings shared by every channel runtime.
 func (r *Runner) ApplySettings(current settings.Settings) {
+	providerID := current.Provider
+	if providerID == "" {
+		providerID = current.DefaultProvider
+	}
+	model := current.Model
+	if model == "" {
+		model = current.DefaultModel
+	}
+	if os.Getenv("YEN_PROVIDER") == "" && providerID != "" {
+		if configured, err := providerpkg.NewConfigured(providerID, model); err == nil {
+			r.Provider = configured
+		}
+	}
+	if os.Getenv("YEN_MODEL") == "" && model != "" {
+		if configured, err := providerpkg.SetModel(r.Provider, model); err == nil {
+			r.Provider = configured
+		}
+	}
+	thinking := current.Reasoning
+	if thinking == "" {
+		thinking = current.DefaultThinkingLevel
+	}
+	if os.Getenv("YEN_REASONING_EFFORT") == "" && thinking != "" {
+		if configured, err := providerpkg.SetThinkingLevel(r.Provider, thinking); err == nil {
+			r.Provider = configured
+		}
+	}
 	steering, followUp := settings.QueueModes(current)
 	r.SetQueueModes(steering, followUp)
 	if current.AutoCompaction != nil {
