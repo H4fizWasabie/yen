@@ -41,6 +41,9 @@ type Runner struct {
 	AutoCompactDisabled            bool
 	AutoCompactOnOverflow          bool
 	AutoConsolidate                bool
+	AutoRetryEnabled               bool
+	AutoRetryMaxRetries            int
+	AutoRetryBaseDelay             time.Duration
 	SteeringMode                   string
 	FollowUpMode                   string
 
@@ -67,6 +70,9 @@ func (r *Runner) SetQueueModes(steering, followUp string) {
 
 // ApplySettings applies the settings shared by every channel runtime.
 func (r *Runner) ApplySettings(current settings.Settings) {
+	r.AutoRetryEnabled = true
+	r.AutoRetryMaxRetries = 3
+	r.AutoRetryBaseDelay = 2 * time.Second
 	providerID := current.Provider
 	if providerID == "" {
 		providerID = current.DefaultProvider
@@ -114,6 +120,15 @@ func (r *Runner) ApplySettings(current settings.Settings) {
 		}
 	}
 	if current.Retry != nil {
+		if current.Retry.BaseDelayMs > 0 {
+			r.AutoRetryBaseDelay = time.Duration(current.Retry.BaseDelayMs) * time.Millisecond
+		}
+		if current.Retry.MaxRetries > 0 {
+			r.AutoRetryMaxRetries = current.Retry.MaxRetries
+		}
+		if current.Retry.Enabled != nil {
+			r.AutoRetryEnabled = *current.Retry.Enabled
+		}
 		if current.Retry.MaxRetries > 0 {
 			if configured, err := providerpkg.SetRetryMax(r.Provider, current.Retry.MaxRetries); err == nil {
 				r.Provider = configured
@@ -520,7 +535,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})
-	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
+	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && (recoverableLengthStop(result) || silentContextOverflow(result, r.AutoCompactContextWindow))) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
@@ -573,6 +588,49 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		if err := r.Checkpoints.Set(turn.ConversationID, memory.Checkpoint{LastEntryID: turn.ID}); err != nil {
 			return result, err
 		}
+	}
+	return result, runErr
+}
+
+func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider, tools []agent.Tool, history []agent.Message, prompt string, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
+	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent)
+	started := false
+	for attempt := 1; runErr != nil && r.AutoRetryEnabled && attempt <= r.AutoRetryMaxRetries && ctx.Err() == nil; attempt++ {
+		if !providerpkg.IsRetryableProviderError(runErr.Error()) {
+			break
+		}
+		delay := r.AutoRetryBaseDelay
+		for i := 1; i < attempt; i++ {
+			delay *= 2
+		}
+		if onEvent != nil {
+			started = true
+			onEvent(agent.Event{Type: "auto_retry_start", Attempt: attempt, MaxAttempts: r.AutoRetryMaxRetries, DelayMs: int(delay / time.Millisecond), ErrorMessage: runErr.Error()})
+		}
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				if onEvent != nil {
+					onEvent(agent.Event{Type: "auto_retry_end", Attempt: attempt, Success: false, FinalError: ctx.Err().Error(), IsError: true})
+				}
+				return result, ctx.Err()
+			}
+		}
+		result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent)
+		if onEvent != nil && runErr == nil {
+			onEvent(agent.Event{Type: "auto_retry_end", Attempt: attempt, Success: true})
+		}
+	}
+	if onEvent != nil && started && runErr != nil {
+		onEvent(agent.Event{Type: "auto_retry_end", Attempt: r.AutoRetryMaxRetries, Success: false, FinalError: runErr.Error(), IsError: true})
 	}
 	return result, runErr
 }

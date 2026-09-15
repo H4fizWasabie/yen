@@ -115,6 +115,12 @@ type Event struct {
 	Delta          string
 	StopReason     string
 	AssistantEvent string
+	Attempt        int
+	MaxAttempts    int
+	DelayMs        int
+	ErrorMessage   string
+	Success        bool
+	FinalError     string
 	ToolResults    []Message
 	Messages       []Message
 }
@@ -309,6 +315,20 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			result.Events = append(result.Events, "message_end:assistant")
 		}
 		emitEvent(onEvent, Event{Type: "message_end", Message: &assistant, StopReason: response.StopReason})
+		if response.StopReason == "error" {
+			message := response.ErrorMessage
+			if message == "" {
+				message = response.Text
+			}
+			if message == "" {
+				message = "provider returned an error"
+			}
+			result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
+			emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, StopReason: "error"})
+			emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
+			return result, errors.New(message)
+		}
 
 		if len(response.ToolCalls) == 0 {
 			queued := queues.drainSteering()

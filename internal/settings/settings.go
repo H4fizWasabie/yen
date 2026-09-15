@@ -34,8 +34,9 @@ type CompactionSettings struct {
 }
 
 type RetrySettings struct {
-	Enabled    *bool `json:"enabled,omitempty"`
-	MaxRetries int   `json:"maxRetries,omitempty"`
+	Enabled     *bool `json:"enabled,omitempty"`
+	MaxRetries  int   `json:"maxRetries,omitempty"`
+	BaseDelayMs int   `json:"baseDelayMs,omitempty"`
 }
 
 func Load(workspace string) (Settings, error) {
@@ -197,6 +198,9 @@ func merge(target *Settings, source Settings) {
 		}
 		if source.Retry.MaxRetries != 0 {
 			target.Retry.MaxRetries = source.Retry.MaxRetries
+		}
+		if source.Retry.BaseDelayMs != 0 {
+			target.Retry.BaseDelayMs = source.Retry.BaseDelayMs
 		}
 	}
 	if source.SteeringMode == "all" || source.SteeringMode == "one-at-a-time" {

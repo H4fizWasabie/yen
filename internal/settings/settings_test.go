@@ -33,7 +33,7 @@ func TestLoadDeepMergesNestedSettings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(workspace, ".theoses"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(global, []byte(`{"compaction":{"reserveTokens":1000,"keepRecentTokens":2000},"retry":{"maxRetries":2}}`), 0o600); err != nil {
+	if err := os.WriteFile(global, []byte(`{"compaction":{"reserveTokens":1000,"keepRecentTokens":2000},"retry":{"maxRetries":2,"baseDelayMs":25}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(workspace, ".theoses", "settings.json"), []byte(`{"compaction":{"enabled":false,"keepRecentTokens":3000},"retry":{"enabled":false}}`), 0o600); err != nil {
@@ -47,7 +47,7 @@ func TestLoadDeepMergesNestedSettings(t *testing.T) {
 	if got.Compaction == nil || got.Compaction.ReserveTokens != 1000 || got.Compaction.KeepRecentTokens != 3000 || got.Compaction.Enabled == nil || *got.Compaction.Enabled {
 		t.Fatalf("compaction=%#v", got.Compaction)
 	}
-	if got.Retry == nil || got.Retry.MaxRetries != 2 || got.Retry.Enabled == nil || *got.Retry.Enabled {
+	if got.Retry == nil || got.Retry.MaxRetries != 2 || got.Retry.BaseDelayMs != 25 || got.Retry.Enabled == nil || *got.Retry.Enabled {
 		t.Fatalf("retry=%#v", got.Retry)
 	}
 }
