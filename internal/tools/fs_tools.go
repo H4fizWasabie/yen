@@ -26,6 +26,7 @@ func (t ListTool) Execute(ctx context.Context, args map[string]any) (string, err
 	limit := intArg(args, "limit", 500)
 	if limit < 1 { limit = 1 }
 	limitReached := len(entries) > limit
+	sort.SliceStable(entries, func(i, j int) bool { return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name()) })
 	lines := make([]string, 0, min(len(entries), limit))
 	for i, entry := range entries {
 		if i >= limit { break }
@@ -33,7 +34,6 @@ func (t ListTool) Execute(ctx context.Context, args map[string]any) (string, err
 		if entry.IsDir() { name += "/" }
 		lines = append(lines, name)
 	}
-	sort.SliceStable(lines, func(i, j int) bool { return strings.ToLower(lines[i]) < strings.ToLower(lines[j]) })
 	if len(lines) == 0 { return "(empty directory)", nil }
 	output := truncateFileSearchOutput(strings.Join(lines, "\n"))
 	if limitReached { output += fmt.Sprintf("\n\n[%d entries limit reached. Use limit=%d for more]", limit, limit*2) }
