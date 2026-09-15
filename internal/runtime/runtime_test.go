@@ -41,6 +41,39 @@ func (p *contextCaptureProvider) Next(_ context.Context, messages []agent.Messag
 	return agent.Response{Text: "continued", StopReason: "stop"}, nil
 }
 
+func TestRunnerInjectsPersistedWorkingNoteIntoProviderContext(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "conv-1.jsonl")
+	s := session.New(path, session.Header{ID: "conv-1", ConversationID: "conv-1", WorkspaceID: dir, CWD: dir})
+	if _, err := s.AppendWorkingNote("use the pinned fixture"); err != nil {
+		t.Fatal(err)
+	}
+	provider := &contextCaptureProvider{}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	link := conversation.Link{Adapter: "cli", AdapterKey: "cwd", ConversationID: "conv-1", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "continue"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.messages) == 0 || provider.messages[0].Role != "system" || !strings.Contains(provider.messages[0].Content, "use the pinned fixture") {
+		t.Fatalf("messages=%#v", provider.messages)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.WorkingNote() != "" {
+		t.Fatalf("working note was not cleared: %q", reopened.WorkingNote())
+	}
+}
+
 type summaryProvider struct {
 	response agent.Response
 	seen     []agent.Message

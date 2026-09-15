@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
@@ -365,6 +366,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		}
 	}
 	history := toAgentMessages(current.ContextMessages())
+	if note := current.WorkingNote(); note != "" {
+		history = append([]agent.Message{codingagent.WorkingNoteMessage(note)}, history...)
+	}
 	var tools []agent.Tool
 	if r.SessionToolFactory != nil {
 		tools = r.SessionToolFactory(turn.WorkspaceID, current)
