@@ -118,6 +118,7 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 	limit := intArg(args, "limit", 100); if limit < 1 { limit = 1 }
 	contextLines := intArg(args, "context", 0); if contextLines < 0 { contextLines = 0 }
 	var out []string
+	matchCount := 0
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil { return walkErr }
 		if e := ctx.Err(); e != nil { return e }
@@ -129,13 +130,14 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 		lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 		for i, line := range lines {
 			if !re.MatchString(line) { continue }
+			matchCount++
 			start, end := max(0, i-contextLines), min(len(lines), i+contextLines+1)
 			for j := start; j < end; j++ {
 				separator := ":"
 				if j != i { separator = "-" }
 				out = append(out, fmt.Sprintf("%s%s%d%s %s", rel, separator, j+1, separator, truncateGrepLine(lines[j])))
-				if len(out) >= limit { return errGrepLimit }
 			}
+			if matchCount >= limit { return errGrepLimit }
 		}
 		return nil
 	})

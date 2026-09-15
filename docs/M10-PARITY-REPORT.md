@@ -288,6 +288,11 @@ Grep context lines now use the oracle's `path-line- text` shape while matched
 lines retain `path:line: text`. Go evidence: `internal/tools/fs_tools.go` and
 `TestGrepToolFormatsContextLinesLikeOracle`.
 
+Grep match limits now count matching lines rather than emitted context lines,
+so the complete context block is retained for the final allowed match. Go
+evidence: `internal/tools/fs_tools.go` and
+`TestGrepToolLimitCountsMatchesNotContextLines`.
+
 The `ls` tool now follows entry targets while listing and skips entries that
 cannot be statted, matching the oracle's broken-symlink behavior. TypeScript
 authority: `packages/coding-agent/src/core/tools/ls.ts:143-160`; Go evidence:
