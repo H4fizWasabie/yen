@@ -156,6 +156,13 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 				CallID    string `json:"call_id"`
 				Name      string `json:"name"`
 				Arguments string `json:"arguments"`
+				Summary   []struct {
+					Text string `json:"text"`
+				} `json:"summary"`
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+				EncryptedContent string `json:"encrypted_content"`
 			} `json:"item"`
 			OutputIndex int    `json:"output_index"`
 			CallID      string `json:"call_id"`
@@ -209,7 +216,20 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 			_ = json.Unmarshal([]byte(event.Arguments), &call.Args)
 			toolCalls[callID] = call
 		case "response.output_item.done":
-			if event.Item.Type == "function_call" {
+			if event.Item.Type == "reasoning" {
+				thinking := make([]string, 0, len(event.Item.Summary)+len(event.Item.Content))
+				for _, part := range event.Item.Summary {
+					thinking = append(thinking, part.Text)
+				}
+				if len(thinking) == 0 {
+					for _, part := range event.Item.Content {
+						thinking = append(thinking, part.Text)
+					}
+				}
+				partial.Thinking = strings.Join(thinking, "\n\n")
+				encoded, _ := json.Marshal(event.Item)
+				partial.ThinkingSignature = string(encoded)
+			} else if event.Item.Type == "function_call" {
 				call := toolCalls[event.Item.CallID]
 				if call.ID == "" {
 					call = toolCalls[event.Item.ID]
@@ -254,6 +274,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		result.StopReason = "stop"
 	}
 	result.Thinking = partial.Thinking
+	result.ThinkingSignature = partial.ThinkingSignature
 	if result.ResponseModel == "" {
 		result.ResponseModel = p.Model
 	}
