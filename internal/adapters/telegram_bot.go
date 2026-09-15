@@ -118,15 +118,21 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	if update.Message.ReplyToMessage != nil {
 		replyContext = telegramMessageText(update.Message.ReplyToMessage)
 	}
+	var statusMessageID int64
 	stopTyping := b.startTyping(ctx, chatID)
 	result, err := b.Adapter.HandleMessageWithReplyEvents(ctx, chatID, text, replyContext, func(event agent.Event) {
 		if event.Type == "tool_call" && event.Name != "" {
-			_ = b.sendMessage(ctx, chatID, "Running "+event.Name+"...", messageReplyID(update.Message.MessageID))
+			statusMessageID, _ = b.sendMessageWithID(ctx, chatID, "Running "+event.Name+"...", messageReplyID(update.Message.MessageID))
 		}
 	})
 	stopTyping()
 	if err != nil {
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
+	}
+	if statusMessageID != 0 && result.FinalText != "" && len(splitTelegramSections(result.FinalText)) == 1 && len([]rune(result.FinalText)) <= telegramMessageLimit {
+		if err := b.editMessage(ctx, chatID, statusMessageID, result.FinalText); err == nil {
+			return nil
+		}
 	}
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
 }
@@ -201,6 +207,11 @@ func (b *TelegramBot) getUpdates(ctx context.Context) ([]telegramUpdate, error) 
 }
 
 func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string, replyTo *int64) error {
+	_, err := b.sendMessageWithID(ctx, chatID, text, replyTo)
+	return err
+}
+
+func (b *TelegramBot) sendMessageWithID(ctx context.Context, chatID, text string, replyTo *int64) (int64, error) {
 	lastID := replyTo
 	for _, section := range splitTelegramSections(text) {
 		for _, chunk := range chunkTelegramText(section) {
@@ -209,14 +220,17 @@ func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string, repl
 				messageID, err = b.sendClassicMessage(ctx, chatID, chunk, lastID)
 			}
 			if err != nil {
-				return err
+				return 0, err
 			}
 			if messageID != 0 {
 				lastID = &messageID
 			}
 		}
 	}
-	return nil
+	if lastID == nil {
+		return 0, nil
+	}
+	return *lastID, nil
 }
 
 func splitTelegramSections(text string) []string {
@@ -324,6 +338,75 @@ func (b *TelegramBot) sendClassicMessage(ctx context.Context, chatID, text strin
 	}
 	_ = json.Unmarshal(result.Result, &sent)
 	return sent.MessageID, nil
+}
+
+func (b *TelegramBot) editMessage(ctx context.Context, chatID string, messageID int64, text string) error {
+	if err := b.editRichMessage(ctx, chatID, messageID, text); err == nil {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]string{
+		"chat_id":    chatID,
+		"message_id": strconv.FormatInt(messageID, 10),
+		"text":       formatTelegramHTML(text),
+		"parse_mode": "HTML",
+	})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/editMessageText", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := b.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("telegram editMessageText returned %s", response.Status)
+	}
+	return nil
+}
+
+func (b *TelegramBot) editRichMessage(ctx context.Context, chatID string, messageID int64, text string) error {
+	payload, err := json.Marshal(map[string]any{
+		"chat_id":      chatID,
+		"message_id":   messageID,
+		"rich_message": map[string]string{"markdown": text},
+	})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/editMessageText", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := b.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("telegram editMessageText rich returned %s", response.Status)
+	}
+	var result telegramResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return err
+	}
+	if !result.OK {
+		return errors.New(result.Description)
+	}
+	return nil
 }
 
 var (

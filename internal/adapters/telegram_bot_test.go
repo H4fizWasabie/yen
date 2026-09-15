@@ -99,7 +99,21 @@ func TestTelegramBotReportsToolStatus(t *testing.T) {
 	runner := runtime.New(queue, &statusTelegramProvider{}, nil)
 	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
 	var messages []string
+	var edited string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/editMessageText" {
+			var payload struct {
+				RichMessage struct {
+					Markdown string `json:"markdown"`
+				} `json:"rich_message"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			edited = payload.RichMessage.Markdown
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
 		if r.URL.Path == "/bottoken/sendRichMessage" {
 			var payload struct {
 				RichMessage struct {
@@ -122,8 +136,8 @@ func TestTelegramBotReportsToolStatus(t *testing.T) {
 	if err := bot.HandleUpdate(context.Background(), update); err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 2 || messages[0] != "Running read..." || messages[1] != "done" {
-		t.Fatalf("messages=%#v", messages)
+	if len(messages) != 1 || messages[0] != "Running read..." || edited != "done" {
+		t.Fatalf("messages=%#v edited=%q", messages, edited)
 	}
 }
 

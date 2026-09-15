@@ -92,6 +92,9 @@ Telegram now emits a `Running <tool>...` status message for tool calls,
 covered by `TestTelegramBotReportsToolStatus`; canonical shared-session routing
 is preserved through the event-enabled path.
 
+For short single-section replies, the status message is edited in place into
+the final answer, with rich-edit then classic-edit fallback.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
