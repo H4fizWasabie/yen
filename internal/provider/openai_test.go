@@ -338,6 +338,32 @@ func TestMistralParsesThinkingChunksAndNormalizesToolIDs(t *testing.T) {
 	}
 }
 
+func TestMistralReplaysThinkingAsNativeContentChunks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		var content []map[string]any
+		if len(payload.Messages) != 1 || json.Unmarshal(payload.Messages[0].Content, &content) != nil || content[0]["type"] != "thinking" || content[0]["thinking"].([]any)[0].(map[string]any)["text"] != "plan" {
+			t.Fatalf("messages=%#v", payload.Messages)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompletions(server.URL, "", "mistral-model")
+	client.ProviderName = "mistral"
+	if _, err := client.Next(context.Background(), []agent.Message{{Role: "assistant", Content: "answer", Thinking: "plan"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMistralUsesFallbackIDAndObjectToolArguments(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
