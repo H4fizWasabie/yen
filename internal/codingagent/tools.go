@@ -13,18 +13,27 @@ import (
 )
 
 func NewTools(workspace string) []agent.Tool {
-	return newTools(workspace, nil, nil)
+	return newTools(workspace, nil, nil, true)
 }
 
 func NewToolsForSession(workspace string, current *session.Session) []agent.Tool {
-	return newTools(workspace, current, nil)
+	return newTools(workspace, current, nil, true)
 }
 
 func NewToolsForSessionWithProvider(workspace string, current *session.Session, provider agent.Provider) []agent.Tool {
-	return newTools(workspace, current, provider)
+	return newTools(workspace, current, provider, true)
 }
 
-func newTools(workspace string, current *session.Session, provider agent.Provider) []agent.Tool {
+// NewToolsForSessionWithProviderWithoutExternal returns the turn-scoped
+// built-ins. Use NewExternalTools separately when external resources should
+// live for the session instead of being recreated on every turn.
+func NewToolsForSessionWithProviderWithoutExternal(workspace string, current *session.Session, provider agent.Provider) []agent.Tool {
+	return newTools(workspace, current, provider, false)
+}
+
+func NewExternalTools() []agent.Tool { return loadExternalTools() }
+
+func newTools(workspace string, current *session.Session, provider agent.Provider, includeExternal bool) []agent.Tool {
 	result := []agent.Tool{
 		tools.NewReadTool(workspace),
 		tools.NewBashTool(workspace),
@@ -48,11 +57,13 @@ func newTools(workspace string, current *session.Session, provider agent.Provide
 			operationalNotesTool{path: filepath.Join(workspace, ".theoses-go", "operational-notes.md")},
 		)
 	}
-	external := loadExternalTools()
-	if os.Getenv("YEN_DEFER_EXTERNAL_TOOLS") == "1" {
-		result = append(result, deferExternalTools(external)...)
-	} else {
-		result = append(result, external...)
+	if includeExternal {
+		external := NewExternalTools()
+		if os.Getenv("YEN_DEFER_EXTERNAL_TOOLS") == "1" {
+			result = append(result, deferExternalTools(external)...)
+		} else {
+			result = append(result, external...)
+		}
 	}
 	return result
 }

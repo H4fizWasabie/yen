@@ -28,6 +28,7 @@ type Runner struct {
 	ToolFactory                    func(workspace string) []agent.Tool
 	SessionToolFactory             func(workspace string, current *session.Session) []agent.Tool
 	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
+	PersistentTools                []agent.Tool
 	SessionPath                    func(turn conversation.Turn) string
 	Checkpoints                    *memory.Checkpoints
 	Memory                         *memory.Engine
@@ -510,7 +511,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	} else if r.ToolFactory != nil {
 		tools = r.ToolFactory(turn.WorkspaceID)
 	}
-	defer func() { _ = codingagent.CloseTools(tools) }()
+	turnTools := tools
+	defer func() { _ = codingagent.CloseTools(turnTools) }()
+	tools = append(tools, r.PersistentTools...)
 	if r.Memory != nil {
 		r.Memory.ConversationScoped = r.SharedMemory
 		ctx := memory.Context{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, ConversationScoped: r.SharedMemory}
