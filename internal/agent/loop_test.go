@@ -496,6 +496,18 @@ func TestRunCarriesProviderUsageOnAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestRunCarriesProviderThinkingSignatureOnAssistantMessage(t *testing.T) {
+	result, err := Run(context.Background(), &scriptedProvider{responses: []Response{{
+		Text: "done", Thinking: "plan", ThinkingSignature: "signature", StopReason: "stop",
+	}}}, nil, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Messages[1].ThinkingSignature != "signature" {
+		t.Fatalf("assistant=%#v", result.Messages[1])
+	}
+}
+
 type queuedMessagesProvider struct {
 	queues *MessageQueues
 	calls  int
