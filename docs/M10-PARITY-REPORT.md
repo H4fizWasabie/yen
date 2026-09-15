@@ -1,6 +1,6 @@
 # M10 parity report
 
-Date: 2026-09-15
+Date: 2026-09-16
 
 ## Decision
 
@@ -351,9 +351,12 @@ implementations and committed tests:
 | Episodic migration | `a513983` | enriched legacy SQLite rows preserve optional workspace, conversation, channel, and turn metadata; broader historical migration policy remains explicit-only |
 
 The current verified code gate is 328 tests, race tests, vet, and diff checks.
-The side-by-side VPS read-back places the tested release at
-`/opt/yen/releases/0f97e38`; both Yen units and both Theoses2 units remain
-active, and Yen `/healthz` returns `{"ok":true}`.
+The 2026-09-16 side-by-side VPS read-back places the active pilot release at
+`/opt/yen/releases/1ba4476`; `yen-telegram-pilot.service`,
+`yen-dashboard-pilot.service`, `theoses2-telegram.service`, and
+`theoses2-dashboard.service` are all active. Yen `/healthz` returns
+`{"ok":true}`, and the public dashboard route responds with the login redirect
+(`303`). No Theoses2 unit or release was changed.
 
 - Full normalized live-trace equivalence is not claimed beyond the recorded
   golden/local traces and live acceptance results.
