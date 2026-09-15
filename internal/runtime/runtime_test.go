@@ -30,6 +30,16 @@ func (p *contextCaptureProvider) Next(_ context.Context, messages []agent.Messag
 	return agent.Response{Text: "continued", StopReason: "stop"}, nil
 }
 
+type summaryProvider struct {
+	response agent.Response
+	seen     []agent.Message
+}
+
+func (p *summaryProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.seen = append([]agent.Message(nil), messages...)
+	return p.response, nil
+}
+
 type slowProvider struct {
 	mu      sync.Mutex
 	seen    []string
@@ -203,6 +213,73 @@ func TestRunnerUsesCompactionAwareContext(t *testing.T) {
 	}
 	if len(provider.messages) != 4 || provider.messages[0].Content == "old" || provider.messages[1].Content != "keep" || provider.messages[3].Content != "new prompt" {
 		t.Fatalf("provider context=%#v", provider.messages)
+	}
+}
+
+func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-compact.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-compact", ConversationID: "conv-compact", CWD: dir, Channel: "cli", ChannelSessionID: dir})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &summaryProvider{response: agent.Response{Text: "structured summary", StopReason: "stop", Usage: agent.Usage{Input: 12, Output: 4, TotalTokens: 16}}}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	if err := runner.Compact(context.Background(), "conv-compact", 2); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.seen) != 1 || !strings.Contains(provider.seen[0].Content, "one reply") {
+		t.Fatalf("summary prompt=%#v", provider.seen)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextMessages := reopened.ContextMessages()
+	if len(contextMessages) != 5 || !strings.Contains(contextMessages[0].Content.(string), "structured summary") || contextMessages[1].Content != "two" {
+		t.Fatalf("context=%#v", contextMessages)
+	}
+}
+
+func TestRunnerCompactionDoesNotPersistInvalidSummary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-invalid.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-invalid", ConversationID: "conv-invalid", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := New(queue, &summaryProvider{response: agent.Response{ToolCalls: []agent.ToolCall{{ID: "bad", Name: "read"}}, StopReason: "toolUse"}}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	if err := runner.Compact(context.Background(), "conv-invalid", 1); err == nil {
+		t.Fatal("expected invalid summary error")
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.ContextMessages()) != 4 {
+		t.Fatalf("context changed after failed compaction: %#v", reopened.ContextMessages())
 	}
 }
 

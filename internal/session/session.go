@@ -45,6 +45,13 @@ type Compaction struct {
 	Usage            *Usage `json:"usage,omitempty"`
 }
 
+type CompactionPlan struct {
+	FirstKeptEntryID string
+	Messages         []Message
+	TokensBefore     int
+	PreviousSummary  string
+}
+
 type Message struct {
 	Role       string `json:"role"`
 	Content    any    `json:"content"`
@@ -242,6 +249,59 @@ func (s *Session) ContextMessages() []Message {
 		}
 	}
 	return result
+}
+
+func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error) {
+	if keepRecentTurns <= 0 {
+		return CompactionPlan{}, fmt.Errorf("keep recent turns must be positive")
+	}
+	if len(s.entries) > 0 && s.entries[len(s.entries)-1].Type == "compaction" {
+		return CompactionPlan{}, fmt.Errorf("already compacted")
+	}
+	start := 0
+	previousSummary := ""
+	for i := len(s.entries) - 1; i >= 0; i-- {
+		if s.entries[i].Type != "compaction" || s.entries[i].Compaction == nil {
+			continue
+		}
+		previousSummary = s.entries[i].Compaction.Summary
+		for j, entry := range s.entries {
+			if entry.ID == s.entries[i].Compaction.FirstKeptEntryID {
+				start = j
+				break
+			}
+		}
+		break
+	}
+	userEntries := make([]int, 0)
+	for i := start; i < len(s.entries); i++ {
+		if s.entries[i].Message != nil && s.entries[i].Message.Role == "user" {
+			userEntries = append(userEntries, i)
+		}
+	}
+	if len(userEntries) <= keepRecentTurns {
+		return CompactionPlan{}, fmt.Errorf("nothing to compact")
+	}
+	cut := userEntries[len(userEntries)-keepRecentTurns]
+	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary}
+	for i := start; i < cut; i++ {
+		if s.entries[i].Message != nil {
+			plan.Messages = append(plan.Messages, *s.entries[i].Message)
+			plan.TokensBefore += estimateMessageTokens(*s.entries[i].Message)
+		}
+	}
+	if len(plan.Messages) == 0 {
+		return CompactionPlan{}, fmt.Errorf("nothing to compact")
+	}
+	return plan, nil
+}
+
+func estimateMessageTokens(message Message) int {
+	data, err := json.Marshal(message.Content)
+	if err != nil {
+		return 0
+	}
+	return (len(data) + 3) / 4
 }
 
 func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, usage *Usage) (string, error) {

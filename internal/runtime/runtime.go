@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,6 +188,52 @@ func (r *Runner) Active(conversationID string) (conversation.Turn, bool) {
 
 func (r *Runner) OpenSession(link conversation.Link) (*session.Session, error) {
 	return openOrCreate(r.pathFor(conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID}), conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID})
+}
+
+func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentTurns int) error {
+	if r.Provider == nil {
+		return errors.New("compaction provider is required")
+	}
+	if _, active := r.Active(conversationID); active {
+		return errors.New("cannot compact an active conversation")
+	}
+	current, err := openOrCreate(r.pathFor(conversation.Turn{ConversationID: conversationID}), conversation.Turn{ConversationID: conversationID})
+	if err != nil {
+		return err
+	}
+	plan, err := current.PrepareCompaction(keepRecentTurns)
+	if err != nil {
+		return err
+	}
+	var transcript strings.Builder
+	if plan.PreviousSummary != "" {
+		transcript.WriteString("<previous-summary>\n")
+		transcript.WriteString(plan.PreviousSummary)
+		transcript.WriteString("\n</previous-summary>\n\n")
+	}
+	transcript.WriteString("<conversation>\n")
+	for _, message := range plan.Messages {
+		transcript.WriteString(message.Role)
+		transcript.WriteString(": ")
+		transcript.WriteString(fmt.Sprint(message.Content))
+		transcript.WriteByte('\n')
+	}
+	transcript.WriteString("</conversation>\n\nSummarize the conversation for a later agent. Preserve goals, constraints, decisions, progress, and next steps. Return only the summary.")
+	response, err := r.Provider.Next(ctx, []agent.Message{{Role: "user", Content: transcript.String()}}, nil)
+	if err != nil {
+		return err
+	}
+	if response.StopReason == "error" || response.StopReason == "aborted" {
+		return errors.New("compaction stopped: " + response.StopReason)
+	}
+	if strings.TrimSpace(response.Text) == "" || len(response.ToolCalls) > 0 {
+		return errors.New("compaction returned an invalid summary")
+	}
+	_, err = current.AppendCompaction(strings.TrimSpace(response.Text), plan.FirstKeptEntryID, plan.TokensBefore, &session.Usage{
+		Input: response.Usage.Input, Output: response.Usage.Output, Reasoning: response.Usage.Reasoning,
+		CacheRead: response.Usage.CacheRead, CacheWrite: response.Usage.CacheWrite, TotalTokens: response.Usage.TotalTokens,
+	})
+	return err
 }
 
 func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *agent.MessageQueues, onUpdate func(string)) (agent.Result, error) {

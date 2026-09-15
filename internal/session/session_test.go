@@ -233,3 +233,27 @@ func TestSessionContextUsesCompactionBoundary(t *testing.T) {
 		t.Fatalf("reopened context=%#v", got)
 	}
 }
+
+func TestSessionPreparesCompactionFromRecentTurns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	session := New(path, Header{ID: "plan", CWD: t.TempDir(), Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := session.Append(Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := session.PrepareCompaction(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.FirstKeptEntryID == "" || len(plan.Messages) != 2 || plan.Messages[0].Content != "one" || plan.Messages[1].Content != "one reply" {
+		t.Fatalf("plan=%#v", plan)
+	}
+	if plan.TokensBefore == 0 {
+		t.Fatalf("plan tokens=%d", plan.TokensBefore)
+	}
+}
