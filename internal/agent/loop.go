@@ -9,6 +9,7 @@ import (
 type Message struct {
 	Role       string
 	Content    string
+	Thinking   string
 	Images     []string
 	ToolCalls  []ToolCall
 	ToolCallID string
@@ -26,6 +27,7 @@ type ToolCall struct {
 
 type Response struct {
 	Text       string
+	Thinking   string
 	ToolCalls  []ToolCall
 	StopReason string
 	Provider   string
@@ -218,7 +220,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			result.Events = append(result.Events, "message_end:assistant:"+stopReason, "turn_end", "agent_end", "agent_settled")
 			return result, err
 		}
-		assistant := Message{Role: "assistant", Content: response.Text, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
+		assistant := Message{Role: "assistant", Content: response.Text, Thinking: response.Thinking, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
 		result.Messages = append(result.Messages, assistant)
 		if onEvent != nil {
 			onEvent(Event{Type: "usage", Usage: response.Usage, Message: &assistant, StopReason: response.StopReason})

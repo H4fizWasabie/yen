@@ -176,6 +176,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	arguments := map[string]string{}
 	partial := agent.Message{Role: "assistant", Provider: result.Provider, Model: result.Model}
 	startedText := false
+	startedThinking := false
 	startedTools := map[int]bool{}
 	scanner := bufio.NewScanner(response.Body)
 	for scanner.Scan() {
@@ -203,8 +204,11 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			} `json:"usage"`
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string `json:"content"`
+					Reasoning        string `json:"reasoning"`
+					ReasoningContent string `json:"reasoning_content"`
+					ReasoningText    string `json:"reasoning_text"`
+					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function struct {
@@ -236,6 +240,23 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			result.Usage.TotalTokens = result.Usage.Input + result.Usage.Output + result.Usage.CacheRead + result.Usage.CacheWrite
 		}
 		for _, choice := range event.Choices {
+			reasoning := choice.Delta.ReasoningContent
+			if reasoning == "" {
+				reasoning = choice.Delta.Reasoning
+			}
+			if reasoning == "" {
+				reasoning = choice.Delta.ReasoningText
+			}
+			if reasoning != "" {
+				if emit != nil && !startedThinking {
+					startedThinking = true
+					emit(agent.StreamEvent{Type: "thinking_start", ContentIndex: 0, Partial: partial})
+				}
+				partial.Thinking += reasoning
+				if emit != nil {
+					emit(agent.StreamEvent{Type: "thinking_delta", ContentIndex: 0, Delta: reasoning, Partial: partial})
+				}
+			}
 			result.Text += choice.Delta.Content
 			if choice.Delta.Content != "" {
 				if emit != nil && !startedText {
@@ -303,6 +324,10 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	if emit != nil && startedText {
 		emit(agent.StreamEvent{Type: "text_end", ContentIndex: 0, Partial: partial})
 	}
+	if emit != nil && startedThinking {
+		emit(agent.StreamEvent{Type: "thinking_end", ContentIndex: 0, Partial: partial})
+	}
+	result.Thinking = partial.Thinking
 	result.ToolCalls = toolCalls
 	if len(toolCalls) > 0 && result.StopReason == "" {
 		result.StopReason = "toolUse"

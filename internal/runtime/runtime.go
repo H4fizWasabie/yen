@@ -491,6 +491,9 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 			if part.Type == "text" {
 				converted.Content += part.Text
 			}
+			if part.Type == "thinking" {
+				converted.Thinking += part.Text
+			}
 			if part.Type == "toolCall" {
 				args, _ := part.Arguments.(map[string]any)
 				converted.ToolCalls = append(converted.ToolCalls, agent.ToolCall{ID: part.ID, Name: part.Name, Args: args})
@@ -530,8 +533,11 @@ func toSessionMessage(message agent.Message) session.Message {
 	if message.Role == "tool" {
 		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
 	}
-	if len(message.ToolCalls) > 0 {
-		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+1)
+	if len(message.ToolCalls) > 0 || message.Thinking != "" {
+		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)
+		if message.Thinking != "" {
+			parts = append(parts, session.ContentPart{Type: "thinking", Text: message.Thinking})
+		}
 		if message.Content != "" {
 			parts = append(parts, session.ContentPart{Type: "text", Text: message.Content})
 		}

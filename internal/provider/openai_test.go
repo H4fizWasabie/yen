@@ -163,6 +163,29 @@ func TestOpenAICompletionsEmitsPartialMessageEvents(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsEmitsThinkingEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"reasoning_content":"think"}}]}`)
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	var events []agent.StreamEvent
+	result, err := NewOpenAICompletions(server.URL, "", "test-model").NextWithEvents(context.Background(), nil, nil, func(event agent.StreamEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Thinking != "think" || result.Text != "answer" {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(events) != 6 || events[0].Type != "thinking_start" || events[1].Type != "thinking_delta" || events[1].Delta != "think" || events[2].Type != "text_start" || events[3].Type != "text_delta" || events[4].Type != "text_end" || events[5].Type != "thinking_end" || events[5].Partial.Thinking != "think" {
+		t.Fatalf("events=%#v", events)
+	}
+}
+
 func TestOpenAICompletionsCombinesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
