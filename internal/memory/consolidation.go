@@ -219,7 +219,7 @@ func parseConsolidationResponse(raw string) (struct {
 		cleaned = cleaned[start : end+1]
 	}
 	if err := json.Unmarshal([]byte(cleaned), &envelope); err != nil {
-		repaired := stripTrailingCommas(cleaned)
+		repaired := repairJSONStringLiterals(stripTrailingCommas(cleaned))
 		if repaired != cleaned && json.Unmarshal([]byte(repaired), &envelope) == nil {
 			goto parsed
 		}
@@ -342,4 +342,71 @@ func stripTrailingCommas(text string) string {
 		out.WriteByte(char)
 	}
 	return out.String()
+}
+
+// repairJSONStringLiterals matches the pinned TypeScript structured-output
+// repair: raw controls are escaped and invalid backslash escapes are preserved
+// as literal backslashes.
+func repairJSONStringLiterals(text string) string {
+	var out strings.Builder
+	out.Grow(len(text))
+	inString := false
+	for i := 0; i < len(text); i++ {
+		char := text[i]
+		if !inString {
+			out.WriteByte(char)
+			if char == '"' {
+				inString = true
+			}
+			continue
+		}
+		if char == '"' {
+			out.WriteByte(char)
+			inString = false
+			continue
+		}
+		if char == '\\' {
+			if i+1 == len(text) {
+				out.WriteString(`\\`)
+				continue
+			}
+			next := text[i+1]
+			if next == 'u' && i+5 < len(text) && isHex(text[i+2]) && isHex(text[i+3]) && isHex(text[i+4]) && isHex(text[i+5]) {
+				out.WriteString(text[i : i+6])
+				i += 5
+				continue
+			}
+			if strings.ContainsRune(`"\\/bfnrtu`, rune(next)) {
+				out.WriteByte(char)
+				out.WriteByte(next)
+				i++
+				continue
+			}
+			out.WriteString(`\\`)
+			continue
+		}
+		if char < 0x20 {
+			switch char {
+			case '\b':
+				out.WriteString(`\b`)
+			case '\f':
+				out.WriteString(`\f`)
+			case '\n':
+				out.WriteString(`\n`)
+			case '\r':
+				out.WriteString(`\r`)
+			case '\t':
+				out.WriteString(`\t`)
+			default:
+				fmt.Fprintf(&out, `\u%04x`, char)
+			}
+			continue
+		}
+		out.WriteByte(char)
+	}
+	return out.String()
+}
+
+func isHex(char byte) bool {
+	return char >= '0' && char <= '9' || char >= 'a' && char <= 'f' || char >= 'A' && char <= 'F'
 }

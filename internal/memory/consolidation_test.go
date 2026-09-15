@@ -169,6 +169,16 @@ func TestParseConsolidationResponseRepairsTrailingCommasOutsideStrings(t *testin
 	}
 }
 
+func TestParseConsolidationResponseRepairsRawControlsAndInvalidEscapes(t *testing.T) {
+	parsed, err := parseConsolidationResponse("{\"facts\":[],\"episode\":{\"summary\":\"line1\nline2 \\\\q\",\"startedAt\":\"2026-01-01T00:00:00Z\",\"endedAt\":\"2026-01-01T00:00:01Z\"}}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Episode.Summary != "line1\nline2 \\q" {
+		t.Fatalf("summary=%q", parsed.Episode.Summary)
+	}
+}
+
 func TestEngineConsolidatesOnlyWhenTriggeredAndTracksSeparateState(t *testing.T) {
 	engine, err := OpenEngine(t.TempDir())
 	if err != nil {
