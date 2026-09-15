@@ -171,7 +171,7 @@ the provider model compatibility data under
 `packages/ai/src/providers/data/{qwen-token-plan,deepseek}.json`. Go evidence:
 `internal/provider/openai.go` and
 `TestOpenAICompatibleProvidersUseNativeThinkingFields`; the full gate passes
-311 tests, race, vet, and diff checks. Per-model thinking maps and remaining
+316 tests, race, vet, and diff checks. Per-model thinking maps and remaining
 chat-template formats remain open.
 
 Selected Baseten model families now send the oracle's
@@ -181,7 +181,15 @@ the OpenAI-compatible reasoning path. TypeScript authority:
 `packages/ai/src/providers/data/baseten.json`. Go evidence:
 `internal/provider/openai.go` and
 `TestBasetenChatTemplateModelsUseEnableThinkingArgument`; the full gate passes
-312 tests, race, vet, and diff checks.
+316 tests, race, vet, and diff checks.
+
+OpenAI-compatible streaming now falls back to usage embedded in a choice when
+the provider omits the top-level usage chunk, preserving input, output,
+reasoning, cache, and total-token accounting. TypeScript authority:
+`packages/ai/src/api/openai-completions.ts:1260-1305`. Go evidence:
+`internal/provider/openai.go` and
+`TestOpenAICompletionsUsesChoiceUsageWhenTopLevelUsageIsAbsent`; the full gate
+passes 316 tests, race, vet, and diff checks.
 
 Overflow classification now includes the oracle's provider-specific error
 signatures for Bedrock, Gemini, xAI, Groq, Copilot, llama.cpp, LM Studio,
@@ -199,7 +207,7 @@ persistence. TypeScript authority:
 `packages/agent/src/types.ts:56-125,277-292` and
 `packages/agent/src/agent-loop.ts:638-760`. Go evidence:
 `internal/agent/loop.go` and `TestRunToolHooksCanBlockAndRewriteResults`; the
-full 303-test race/vet/diff gate passes. Extension loading, command/rendering
+full 316-test race/vet/diff gate passes. Extension loading, command/rendering
 hooks, and provider interception remain open.
 
 The built-in `find` tool now supports recursive `**` glob patterns across
@@ -247,7 +255,7 @@ implementations and committed tests:
 | OpenAI Codex Responses routing | `packages/ai/src/providers/openai-codex.ts`, `packages/ai/src/api/openai-codex-responses.ts:220-240,1541-1595` | `5c6d153` adds Yen-owned Codex token/base URL configuration, JWT account-claim extraction, `/codex/responses` routing, and account/experimental headers; `internal/provider/config_test.go` verifies the streamed request | partial; Codex OAuth login, WebSocket transport, compression, and full model catalog remain open |
 | Episodic migration | `a513983` | enriched legacy SQLite rows preserve optional workspace, conversation, channel, and turn metadata; broader historical migration policy remains explicit-only |
 
-The current verified code gate is 312 tests, race tests, vet, and diff checks.
+The current verified code gate is 317 tests, race tests, vet, and diff checks.
 The side-by-side VPS read-back places the tested release at
 `/opt/yen/releases/0f97e38`; both Yen units and both Theoses2 units remain
 active, and Yen `/healthz` returns `{"ok":true}`.
