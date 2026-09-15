@@ -235,6 +235,30 @@ func TestInteractiveCloneCreatesFork(t *testing.T) {
 	}
 }
 
+func TestInteractiveForkAndResumeSwitchActiveSession(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	current := session.New(path, session.Header{ID: "session-1", CWD: dir})
+	root, err := current.Append(session.Message{Role: "user", Content: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	forkPath := filepath.Join(dir, "fork.jsonl")
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/fork "+root+" "+forkPath, current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || activePath != forkPath || len(current.Messages()) != 1 {
+		t.Fatalf("fork handled=%v err=%v path=%q messages=%#v", handled, err, activePath, current.Messages())
+	}
+	handled, err = handleInteractiveCommand("/resume "+path, current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || activePath != path || len(current.Messages()) != 2 {
+		t.Fatalf("resume handled=%v err=%v path=%q messages=%#v", handled, err, activePath, current.Messages())
+	}
+}
+
 func TestInteractiveNewSessionSwitchesActivePath(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "old", ConversationID: "conv-1", CWD: dir})

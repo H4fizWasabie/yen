@@ -348,6 +348,38 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		*sessionPath = cloned.Path()
 		_, err = fmt.Fprintf(stdout, "Session cloned to: %s\n", cloned.Path())
 		return true, err
+	case text == "/fork" || strings.HasPrefix(text, "/fork "):
+		arguments := strings.Fields(strings.TrimSpace(strings.TrimPrefix(text, "/fork")))
+		if len(arguments) == 0 {
+			return true, fmt.Errorf("usage: /fork <entry-id> [path.jsonl]")
+		}
+		path := filepath.Join(filepath.Dir(current.Path()), fmt.Sprintf("fork-%d.jsonl", time.Now().UnixNano()))
+		if len(arguments) > 1 {
+			path = arguments[1]
+		}
+		header := current.Header()
+		header.ID = "fork-" + fmt.Sprint(time.Now().UnixNano())
+		forked, err := current.Fork(path, arguments[0], header)
+		if err != nil {
+			return true, err
+		}
+		if err := current.ReplaceFrom(forked.Path()); err != nil {
+			return true, err
+		}
+		*sessionPath = forked.Path()
+		_, err = fmt.Fprintf(stdout, "Session forked to: %s\n", forked.Path())
+		return true, err
+	case text == "/resume" || strings.HasPrefix(text, "/resume "):
+		path := strings.TrimSpace(strings.TrimPrefix(text, "/resume"))
+		if path == "" {
+			return true, fmt.Errorf("usage: /resume <path.jsonl>")
+		}
+		if err := current.ReplaceFrom(path); err != nil {
+			return true, err
+		}
+		*sessionPath = current.Path()
+		_, err := fmt.Fprintf(stdout, "Session resumed: %s\n", current.Path())
+		return true, err
 	case text == "/new":
 		path := filepath.Join(filepath.Dir(current.Path()), fmt.Sprintf("session-%d.jsonl", time.Now().UnixNano()))
 		header := current.Header()
