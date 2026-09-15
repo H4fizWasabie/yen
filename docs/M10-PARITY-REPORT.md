@@ -192,6 +192,14 @@ failures, while retaining rate-limit exclusions. TypeScript authority:
 `TestIsContextOverflowErrorMatchesProviderPatterns`; the full gate passes 312
 tests, race, vet, and diff checks.
 
+Anthropic message conversion now matches the oracle's content shape: text-only
+messages use a string, image messages use ordered text/image blocks, and
+image-only messages receive the `(see attached image)` placeholder. TypeScript
+authority: `packages/ai/src/api/anthropic-messages.ts:116-160`. Go evidence:
+`internal/provider/anthropic.go` and
+`TestAnthropicMessagesUsesOracleContentShapeForImages`; the full gate passes
+317 tests, race, vet, and diff checks.
+
 The agent loop now exposes opt-in `before` and `after` tool interception hooks:
 the former can block a validated call with a policy reason, and the latter can
 replace the executed text/images or error status before tool-result events and

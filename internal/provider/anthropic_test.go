@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +48,40 @@ func TestAnthropicMessagesReconstructsToolCallsAndImages(t *testing.T) {
 	result, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "inspect", Images: []string{image}}}, []string{"read"})
 	if err != nil || len(result.ToolCalls) != 1 || result.ToolCalls[0].Name != "read" || result.ToolCalls[0].Args["path"] != "README.md" {
 		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
+func TestAnthropicMessagesUsesOracleContentShapeForImages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []struct {
+				Content any `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Messages) != 2 {
+			t.Fatalf("messages=%#v", payload.Messages)
+		}
+		imageBlocks, ok := payload.Messages[0].Content.([]any)
+		if !ok || len(imageBlocks) != 2 || imageBlocks[0].(map[string]any)["text"] != "(see attached image)" {
+			t.Fatalf("image content=%#v", payload.Messages[0].Content)
+		}
+		if text, ok := payload.Messages[1].Content.(string); !ok || text != "text only" {
+			t.Fatalf("text content=%#v", payload.Messages[1].Content)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}`)
+	}))
+	defer server.Close()
+	provider := NewAnthropicMessages(server.URL, "key", "claude-test")
+	_, err := provider.Next(context.Background(), []agent.Message{
+		{Role: "user", Images: []string{"data:image/png;base64,AA=="}},
+		{Role: "user", Content: "text only"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
