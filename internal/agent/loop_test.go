@@ -193,3 +193,32 @@ func TestRunIncludesProviderUpdates(t *testing.T) {
 		}
 	}
 }
+
+type queuedMessagesProvider struct {
+	queues *MessageQueues
+	calls  int
+	seen   [][]Message
+}
+
+func (p *queuedMessagesProvider) Next(_ context.Context, messages []Message, _ []string) (Response, error) {
+	p.seen = append(p.seen, append([]Message(nil), messages...))
+	p.calls++
+	if p.calls == 1 {
+		p.queues.FollowUp(Message{Role: "user", Content: "follow up"})
+		return Response{Text: "first", StopReason: "stop"}, nil
+	}
+	return Response{Text: "second", StopReason: "stop"}, nil
+}
+
+func TestRunWithQueuesProcessesSteeringAndFollowUp(t *testing.T) {
+	queues := &MessageQueues{}
+	queues.Steer(Message{Role: "user", Content: "steer now"})
+	provider := &queuedMessagesProvider{queues: queues}
+	result, err := RunFromWithQueues(context.Background(), provider, nil, nil, "start", queues, nil)
+	if err != nil || result.FinalText != "second" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(provider.seen) != 2 || len(provider.seen[0]) != 2 || provider.seen[0][1].Content != "steer now" || len(provider.seen[1]) != 4 || provider.seen[1][3].Content != "follow up" {
+		t.Fatalf("provider messages=%#v", provider.seen)
+	}
+}

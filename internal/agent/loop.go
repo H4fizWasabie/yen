@@ -1,6 +1,9 @@
 package agent
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 type Message struct {
 	Role       string
@@ -51,6 +54,55 @@ type Result struct {
 	FinalText string
 }
 
+// MessageQueues holds messages injected while an agent turn is running.
+// Steering is consumed before the next assistant response; follow-up is
+// consumed after an assistant would otherwise settle.
+type MessageQueues struct {
+	mu       sync.Mutex
+	steering []Message
+	followUp []Message
+}
+
+func (q *MessageQueues) Steer(message Message) {
+	if q == nil {
+		return
+	}
+	q.mu.Lock()
+	q.steering = append(q.steering, message)
+	q.mu.Unlock()
+}
+
+func (q *MessageQueues) FollowUp(message Message) {
+	if q == nil {
+		return
+	}
+	q.mu.Lock()
+	q.followUp = append(q.followUp, message)
+	q.mu.Unlock()
+}
+
+func (q *MessageQueues) drainSteering() []Message {
+	if q == nil {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	messages := q.steering
+	q.steering = nil
+	return messages
+}
+
+func (q *MessageQueues) drainFollowUp() []Message {
+	if q == nil {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	messages := q.followUp
+	q.followUp = nil
+	return messages
+}
+
 func Run(ctx context.Context, provider Provider, tools []Tool, prompt string) (Result, error) {
 	return RunFrom(ctx, provider, tools, nil, prompt)
 }
@@ -60,6 +112,10 @@ func RunFrom(ctx context.Context, provider Provider, tools []Tool, history []Mes
 }
 
 func RunFromWithUpdates(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, onUpdate func(string)) (Result, error) {
+	return RunFromWithQueues(ctx, provider, tools, history, prompt, nil, onUpdate)
+}
+
+func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string)) (Result, error) {
 	result := Result{Messages: append([]Message(nil), history...), Events: []string{"agent_start"}}
 	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt})
 	result.Events = append(result.Events, "turn_start", "message_start:user", "message_end:user")
@@ -72,6 +128,7 @@ func RunFromWithUpdates(ctx context.Context, provider Provider, tools []Tool, hi
 	}
 
 	for {
+		appendQueuedMessages(&result, queues.drainSteering())
 		result.Events = append(result.Events, "message_start:assistant")
 		var response Response
 		var err error
@@ -104,6 +161,12 @@ func RunFromWithUpdates(ctx context.Context, provider Provider, tools []Tool, hi
 		}
 
 		if len(response.ToolCalls) == 0 {
+			followUp := queues.drainFollowUp()
+			if len(followUp) > 0 {
+				appendQueuedMessages(&result, followUp)
+				result.Events = append(result.Events, "turn_end", "turn_start")
+				continue
+			}
 			result.FinalText = response.Text
 			result.Events = append(result.Events, "turn_end", "agent_end")
 			return result, nil
@@ -135,6 +198,17 @@ func RunFromWithUpdates(ctx context.Context, provider Provider, tools []Tool, hi
 		}
 		result.Events = append(result.Events, "turn_end")
 		result.Events = append(result.Events, "turn_start")
+	}
+}
+
+func appendQueuedMessages(result *Result, messages []Message) {
+	for _, message := range messages {
+		role := message.Role
+		if role == "" {
+			role = "user"
+		}
+		result.Messages = append(result.Messages, message)
+		result.Events = append(result.Events, "message_start:"+role, "message_end:"+role)
 	}
 }
 
