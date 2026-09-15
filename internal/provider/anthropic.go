@@ -270,14 +270,25 @@ func convertAnthropicMessages(messages []agent.Message) (string, []map[string]an
 		if role != "assistant" {
 			role = "user"
 		}
-		content := []any{}
-		if message.Content != "" {
-			content = append(content, map[string]any{"type": "text", "text": message.Content})
-		}
+		content := any(message.Content)
+		hasImage := false
 		for _, image := range message.Images {
 			if mime, data, ok := parseDataImage(image); ok {
-				content = append(content, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": mime, "data": data}})
+				if !hasImage {
+					content = []any{}
+				}
+				hasImage = true
+				content = append(content.([]any), map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": mime, "data": data}})
 			}
+		}
+		if hasImage {
+			blocks := content.([]any)
+			if message.Content != "" {
+				blocks = append([]any{map[string]any{"type": "text", "text": message.Content}}, blocks...)
+			} else {
+				blocks = append([]any{map[string]any{"type": "text", "text": "(see attached image)"}}, blocks...)
+			}
+			content = blocks
 		}
 		if message.ToolCallID != "" {
 			content = []any{map[string]any{"type": "tool_result", "tool_use_id": message.ToolCallID, "content": message.Content}}
