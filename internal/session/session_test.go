@@ -129,6 +129,14 @@ func TestSessionRoundTripsImageContentMetadata(t *testing.T) {
 	}
 }
 
+func TestEstimateContextTokensIncludesImages(t *testing.T) {
+	without := EstimateContextTokens([]Message{{Role: "user", Content: "inspect"}})
+	with := EstimateContextTokens([]Message{{Role: "user", Content: "inspect", Images: []string{"data:image/png;base64,AA=="}}})
+	if with <= without || with-without != 1200 {
+		t.Fatalf("without=%d with=%d", without, with)
+	}
+}
+
 func TestOpenSessionContinuesParentChain(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")

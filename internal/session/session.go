@@ -577,9 +577,34 @@ func estimateMessageTokens(message Message) int {
 func EstimateContextTokens(messages []Message) int {
 	total := 0
 	for _, message := range messages {
-		total += estimateMessageTokens(message)
+		total += estimateContextMessageTokens(message)
 	}
 	return total
+}
+
+func estimateContextMessageTokens(message Message) int {
+	chars := 0
+	switch content := message.Content.(type) {
+	case string:
+		chars = len([]rune(content))
+	case []ContentPart:
+		for _, part := range content {
+			switch part.Type {
+			case "text", "thinking":
+				chars += len([]rune(part.Text))
+			case "toolCall":
+				args, _ := json.Marshal(part.Arguments)
+				chars += len([]rune(part.Name)) + len(args)
+			}
+		}
+	default:
+		data, err := json.Marshal(content)
+		if err == nil {
+			chars = len(data)
+		}
+	}
+	chars += len(message.Images) * 4800
+	return (chars + 3) / 4
 }
 
 func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, usage *Usage) (string, error) {
