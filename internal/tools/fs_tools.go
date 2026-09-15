@@ -8,9 +8,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const toolOutputLimit = 64 * 1024
+const fileSearchOutputLimit = 6 * 1024
 const grepMaxLineLength = 500
 
 type ListTool struct{ cwd string }
@@ -32,7 +34,7 @@ func (t ListTool) Execute(ctx context.Context, args map[string]any) (string, err
 	}
 	sort.SliceStable(lines, func(i, j int) bool { return strings.ToLower(lines[i]) < strings.ToLower(lines[j]) })
 	if len(lines) == 0 { return "(empty directory)", nil }
-	return strings.Join(lines, "\n"), nil
+	return truncateFileSearchOutput(strings.Join(lines, "\n")), nil
 }
 
 type FindTool struct{ cwd string }
@@ -60,7 +62,7 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 	if err != nil { return "", err }
 	if len(matches) == 0 { return "No files found matching pattern", nil }
 	sort.Strings(matches)
-	return strings.Join(matches, "\n"), nil
+	return truncateFileSearchOutput(strings.Join(matches, "\n")), nil
 }
 
 func matchFindPattern(pattern, rel string) bool {
@@ -179,4 +181,18 @@ func editArgs(args map[string]any) ([]textEdit, error) {
 
 func stringArg(args map[string]any, key, fallback string) string { if value, ok := args[key].(string); ok && value != "" { return value }; return fallback }
 func intArg(args map[string]any, key string, fallback int) int { switch value := args[key].(type) { case int: return value; case float64: return int(value); default: return fallback } }
-func truncateToolOutput(value string) string { if len(value) <= toolOutputLimit { return value }; return value[:toolOutputLimit] + "\n\n[Output truncated]" }
+func truncateToolOutput(value string) string {
+	return truncateOutput(value, toolOutputLimit)
+}
+
+func truncateFileSearchOutput(value string) string {
+	return truncateOutput(value, fileSearchOutputLimit)
+}
+
+func truncateOutput(value string, limit int) string {
+	if len(value) <= limit { return value }
+	cut := value[:limit]
+	if end := strings.LastIndexByte(cut, '\n'); end >= 0 { cut = cut[:end] }
+	for !utf8.ValidString(cut) { cut = cut[:len(cut)-1] }
+	return cut + "\n\n[Output truncated]"
+}
