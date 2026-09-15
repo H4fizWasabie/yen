@@ -45,7 +45,7 @@ implementations and committed tests:
 
 The current verified code gate is 215 tests, race tests, vet, and diff checks.
 The side-by-side VPS read-back places the tested release at
-`/opt/yen/releases/17d7f72`; both Yen units and both Theoses2 units remain
+`/opt/yen/releases/405f75e`; both Yen units and both Theoses2 units remain
 active, and Yen `/healthz` returns `{"ok":true}`.
 
 - Full normalized live-trace equivalence is not claimed beyond the recorded
