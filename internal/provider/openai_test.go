@@ -170,7 +170,7 @@ func TestMistralParsesThinkingChunksAndNormalizesToolIDs(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		if len(payload.Messages) != 2 || len(payload.Messages[0].ToolCalls) != 1 || len(payload.Messages[0].ToolCalls[0].ID) != 9 || len(payload.Messages[1].ToolCallID) != 9 || payload.Messages[0].ToolCalls[0].ID != payload.Messages[1].ToolCallID {
+		if len(payload.Messages) != 2 || len(payload.Messages[0].ToolCalls) != 1 || payload.Messages[0].ToolCalls[0].ID != "16k0n7o19" || payload.Messages[1].ToolCallID != "16k0n7o19" {
 			t.Fatalf("messages=%#v", payload.Messages)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
