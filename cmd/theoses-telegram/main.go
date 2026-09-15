@@ -8,11 +8,11 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/adapters"
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
-	"github.com/H4fizWasabie/yen/internal/tools"
 )
 
 func main() {
@@ -42,7 +42,7 @@ func main() {
 	}
 	client := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
 	client.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
-	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
+	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()
 	runner.AutoCompactKeepRecentTokens = runtime.AutoCompactKeepRecentTokensFromEnv()
