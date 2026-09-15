@@ -36,7 +36,11 @@ func appendContextFiles(sections []string, dir string) []string {
 			break
 		}
 	}
-	path := filepath.Join(dir, "YEN.md")
+	path := filepath.Join(dir, "THEOSES.md")
+	if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
+		sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+	}
+	path = filepath.Join(dir, "YEN.md")
 	if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
 		sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
 	}

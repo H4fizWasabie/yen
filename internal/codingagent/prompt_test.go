@@ -83,6 +83,24 @@ func TestContextMessageLoadsConfiguredAgentPersonaFirst(t *testing.T) {
 	}
 }
 
+func TestContextMessageLoadsTheosesPersonaAtEachScope(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "project")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "THEOSES.md"), []byte("root persona"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "THEOSES.md"), []byte("project persona"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := ContextMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "root persona") || !strings.Contains(message.Content, "project persona") || strings.Index(message.Content, "root persona") > strings.Index(message.Content, "project persona") {
+		t.Fatalf("message=%#v", message)
+	}
+}
+
 func TestSkillsMessageListsLazySkillFiles(t *testing.T) {
 	workspace := t.TempDir()
 	root := filepath.Join(workspace, ".agents", "skills", "release")

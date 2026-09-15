@@ -29,6 +29,14 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+Resource context loading now includes the oracle's `THEOSES.md` persona at the
+global and ancestor scopes, preserving root-to-workspace ordering alongside
+the existing Yen context files. TypeScript authority:
+`packages/coding-agent/src/core/resource-loader.ts:220-260`. Go evidence:
+`internal/codingagent/prompt.go` and
+`TestContextMessageLoadsTheosesPersonaAtEachScope`; broader resource-loader
+diagnostics and extension discovery remain open.
+
 Assistant calls now retry bounded transient provider failures independently of
 provider HTTP retries, using the oracle's default three attempts and
 exponential two-second base delay. Context-overflow, quota, and billing errors
