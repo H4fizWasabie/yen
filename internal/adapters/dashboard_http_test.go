@@ -143,6 +143,12 @@ func TestDashboardShellRendersThinkingSegments(t *testing.T) {
 	}
 }
 
+func TestDashboardShellRendersParentAwareBranchTree(t *testing.T) {
+	if !strings.Contains(dashboardHTML, "e.parentId") || !strings.Contains(dashboardHTML, "padding-left") || !strings.Contains(dashboardHTML, ".branch{display:block") {
+		t.Fatal("dashboard shell does not render branch hierarchy")
+	}
+}
+
 func TestDashboardHistoryIncludesBashExecution(t *testing.T) {
 	history := dashboardHistory([]session.Message{{Role: "bashExecution", Command: "pwd", Output: "/work", ExcludeFromContext: true}})
 	segments := history[0]["segments"].([]map[string]any)
