@@ -22,7 +22,7 @@ deferred below.
 | Dashboard | `packages/dashboard/src/index.ts:66-115`, `:530-550` | Go auth unit tests plus isolated local acceptance: health 200, unauthenticated API 401, login 200, cookie 200, Bearer 200; live request routed to canonical conversation | partial; VPS/UI acceptance open |
 | Semantic memory | `packages/coding-agent/src/core/tools/memory.ts:18-59` | conversation-scoped `save_note`/`remember`; live favorite-color and probe read-back | partial; consolidation matrix open |
 | Episodic memory | `packages/coding-agent/src/core/episodic-store.ts:85-` | eight live records (`cli`, `telegram`, `dashboard`) in shared SQLite store; restart read-back | partial; historical migration open |
-| Operations | deployed TypeScript systemd units | Go systemd units, health, journald, verified backup, rollback/restore, and shell-validated fresh-host installer | partial; disposable-host installer acceptance open |
+| Operations | deployed TypeScript systemd units | Go systemd units, health, journald, verified backup, rollback/restore, and isolated installer acceptance with temporary root/fake systemctl | partial; real-host rollout remains separate |
 
 ## Accepted and deferred differences
 

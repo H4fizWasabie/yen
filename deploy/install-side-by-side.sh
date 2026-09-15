@@ -7,14 +7,22 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 source_dir=${YEN_SOURCE_DIR:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
-state_dir=${YEN_STATE_DIR:-/opt/yen}
-data_dir=${YEN_DATA_DIR:-/var/lib/theoses-go-telegram}
-secrets_dir=${YEN_SECRETS_DIR:-/etc/theoses-go}
+root_dir=${YEN_ROOT:-}
+root_path() {
+	case "$1" in
+		/*) printf '%s%s' "$root_dir" "$1" ;;
+		*) printf '%s' "$1" ;;
+	esac
+}
+state_dir=$(root_path "${YEN_STATE_DIR:-/opt/yen}")
+data_dir=$(root_path "${YEN_DATA_DIR:-/var/lib/theoses-go-telegram}")
+secrets_dir=$(root_path "${YEN_SECRETS_DIR:-/etc/theoses-go}")
 channel_env=${YEN_CHANNEL_ENV_FILE:-$secrets_dir/telegram.env}
 provider_env=${YEN_PROVIDER_ENV_FILE:-/home/theoses/.theoses/agent/theoses.env}
 release_id=${YEN_RELEASE_ID:-$(git -C "$source_dir" rev-parse --short=7 HEAD)}
 dashboard_addr=${YEN_DASHBOARD_ADDR:-127.0.0.1:30146}
 start=${YEN_START:-0}
+systemctl_command=${YEN_SYSTEMCTL:-systemctl}
 
 if [ ! -f "$channel_env" ]; then
 	echo "missing channel environment file: $channel_env" >&2
@@ -72,7 +80,9 @@ EOF
 chmod 0755 "$release_dir/run-telegram" "$release_dir/run-dashboard"
 ln -sfn "$release_dir" "$state_dir/current"
 
-cat > /etc/systemd/system/yen-telegram-pilot.service <<EOF
+unit_dir=$(root_path /etc/systemd/system)
+install -d -m 0755 "$unit_dir"
+cat > "$unit_dir/yen-telegram-pilot.service" <<EOF
 [Unit]
 Description=Yen Go Telegram pilot (side-by-side)
 After=network-online.target
@@ -93,7 +103,7 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/yen-dashboard-pilot.service <<EOF
+cat > "$unit_dir/yen-dashboard-pilot.service" <<EOF
 [Unit]
 Description=Yen Go dashboard pilot (side-by-side)
 After=network-online.target
@@ -114,10 +124,10 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable yen-telegram-pilot.service yen-dashboard-pilot.service >/dev/null
+"$systemctl_command" daemon-reload
+"$systemctl_command" enable yen-telegram-pilot.service yen-dashboard-pilot.service >/dev/null
 if [ "$start" = 1 ]; then
-	systemctl restart yen-telegram-pilot.service yen-dashboard-pilot.service
+	"$systemctl_command" restart yen-telegram-pilot.service yen-dashboard-pilot.service
 fi
 
 echo "installed Yen release $release_id"

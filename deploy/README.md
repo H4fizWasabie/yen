@@ -31,3 +31,8 @@ YEN_START=0 \
 The script performs no credential generation or migration. Back up the Go data
 directory before replacing a release, then use the documented health and
 rollback checks in [../docs/M9-OPERATIONS.md](../docs/M9-OPERATIONS.md).
+
+For isolated installer tests, `YEN_ROOT` prefixes `/opt`, `/etc`, and `/var`
+targets, while `YEN_SYSTEMCTL` can point to a harmless test command. These
+seams are not needed on a real host and must not be used to bypass production
+service review.

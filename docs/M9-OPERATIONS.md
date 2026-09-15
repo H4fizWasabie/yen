@@ -48,6 +48,7 @@ the failure is data-related; release rollback alone preserves current data.
 The pilot has passed live health, systemd restart, OpenRouter smoke, dashboard
 routing, verified backup creation, rollback/restore, cancellation, and FIFO
 queue acceptance. `deploy/install-side-by-side.sh` now provides a reproducible
-fresh-host installation path that is shell-validated but has not yet been run
-on a disposable host. The documented unit/data/secret layout remains the
-operational contract, and the installer defaults to no service start.
+fresh-host installation path. It passed an isolated user-namespace acceptance
+with a temporary root, fake systemctl, both binaries and wrappers present,
+unit files present, channel env mode `600`, and `YEN_START=0` proving no start.
+The documented unit/data/secret layout remains the operational contract.

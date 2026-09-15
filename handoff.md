@@ -151,7 +151,9 @@ queue slices are now implemented and locally verified. Work in this order:
 
 7. Run `deploy/install-side-by-side.sh` on a disposable host with prepared
    channel/provider env files, keeping `YEN_START=0` for the first read-back;
-   do not use the production VPS as the installer test host.
+   do not use the production VPS as the installer test host. The isolated
+   user-namespace installer acceptance has already passed with both binaries,
+   wrappers, units, mode `600` channel env, and no service start.
 
 The dashboard token boundary has also passed isolated local acceptance: health
 200, unauthenticated API 401, `/api/login` 200, cookie 200, and Bearer 200.
