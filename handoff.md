@@ -172,6 +172,9 @@ queue slices are now implemented and locally verified. Work in this order:
 
 The dashboard token boundary has also passed isolated local acceptance: health
 200, unauthenticated API 401, `/api/login` 200, cookie 200, and Bearer 200.
+The installer acceptance was rerun after the consolidation wrapper change:
+temporary root/fake systemctl, both binaries and wrappers, service units,
+mode-600 channel env, and no service start all passed.
 
 ## Important deferred product change
 
