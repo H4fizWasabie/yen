@@ -188,7 +188,7 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 			result.ResponseID = event.ResponseID
 			result.Usage = event.Usage.agentUsage()
 		case "error":
-			result.StopReason = "error"
+			result.StopReason = radiusStopReason(event.Reason)
 			result.ErrorMessage = event.ErrorMessage
 			result.ResponseID = event.ResponseID
 			result.Usage = event.Usage.agentUsage()
