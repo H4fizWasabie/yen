@@ -1,0 +1,129 @@
+package rpc
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+func ServeUnix(ctx context.Context, path string, server *Server) error {
+	if server == nil {
+		return errors.New("rpc server is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return fmt.Errorf("rpc socket path is not a socket: %s", path)
+		}
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	if err := os.Chmod(path, 0o600); err != nil {
+		return err
+	}
+	var connections sync.WaitGroup
+	var activeMu sync.Mutex
+	active := make(map[net.Conn]struct{})
+	defer connections.Wait()
+	go func() {
+		<-ctx.Done()
+		_ = listener.Close()
+		activeMu.Lock()
+		for connection := range active {
+			_ = connection.Close()
+		}
+		activeMu.Unlock()
+	}()
+	for {
+		connection, err := listener.Accept()
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			continue
+		}
+		activeMu.Lock()
+		active[connection] = struct{}{}
+		activeMu.Unlock()
+		connections.Add(1)
+		go func() {
+			defer connections.Done()
+			defer connection.Close()
+			defer func() {
+				activeMu.Lock()
+				delete(active, connection)
+				activeMu.Unlock()
+			}()
+			_ = server.Serve(ctx, connection, connection)
+		}()
+	}
+}
+
+type Client struct {
+	connection net.Conn
+	scanner    *bufio.Scanner
+	mu         sync.Mutex
+}
+
+func DialUnix(path string) (*Client, error) {
+	connection, err := net.Dial("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(connection)
+	scanner.Buffer(make([]byte, 4096), 4<<20)
+	return &Client{connection: connection, scanner: scanner}, nil
+}
+
+func (c *Client) Call(command map[string]any) (map[string]any, error) {
+	if c == nil || c.connection == nil {
+		return nil, errors.New("rpc client is closed")
+	}
+	data, err := json.Marshal(command)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, err := fmt.Fprintf(c.connection, "%s\n", data); err != nil {
+		return nil, err
+	}
+	for c.scanner.Scan() {
+		var response map[string]any
+		if err := json.Unmarshal(c.scanner.Bytes(), &response); err != nil {
+			continue
+		}
+		if response["type"] == "response" {
+			return response, nil
+		}
+	}
+	if err := c.scanner.Err(); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("rpc connection closed")
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.connection == nil {
+		return nil
+	}
+	err := c.connection.Close()
+	c.connection = nil
+	return err
+}

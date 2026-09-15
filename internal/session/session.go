@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type Header struct {
 	CWD              string `json:"cwd"`
 	Channel          string `json:"channel"`
 	ChannelSessionID string `json:"channelSessionId"`
+	ParentSession    string `json:"parentSession,omitempty"`
 }
 
 type ContentPart struct {
@@ -82,9 +84,24 @@ type Message struct {
 	Summary            string   `json:"summary,omitempty"`
 }
 
+type Artifact struct {
+	Label string
+	Path  string
+	Size  int64
+}
+
 type TimedMessage struct {
 	Message
 	Timestamp string
+}
+
+type TreeEntry struct {
+	ID        string   `json:"id"`
+	ParentID  *string  `json:"parentId,omitempty"`
+	Type      string   `json:"type"`
+	Timestamp string   `json:"timestamp"`
+	Name      string   `json:"name,omitempty"`
+	Message   *Message `json:"message,omitempty"`
 }
 
 type sessionEntry struct {
@@ -97,6 +114,12 @@ type sessionEntry struct {
 	ChannelSessionID    string      `json:"channelSessionId,omitempty"`
 	ParentID            *string     `json:"parentId"`
 	Message             *Message    `json:"message,omitempty"`
+	Note                string      `json:"note,omitempty"`
+	Outcome             string      `json:"outcome,omitempty"`
+	Label               string      `json:"label,omitempty"`
+	Name                string      `json:"name,omitempty"`
+	Path                string      `json:"path,omitempty"`
+	Size                int64       `json:"size,omitempty"`
 	Compaction          *Compaction `json:"compaction,omitempty"`
 	Summary             string      `json:"summary,omitempty"`
 	FirstKeptEntryID    string      `json:"firstKeptEntryId,omitempty"`
@@ -152,12 +175,14 @@ type sessionHeader struct {
 	CWD              string `json:"cwd"`
 	Channel          string `json:"channel,omitempty"`
 	ChannelSessionID string `json:"channelSessionId,omitempty"`
+	ParentSession    string `json:"parentSession,omitempty"`
 }
 
 type Session struct {
 	path    string
 	header  sessionHeader
 	entries []sessionEntry
+	leafID  string
 	flushed bool
 }
 
@@ -174,6 +199,7 @@ func New(path string, header Header) *Session {
 			CWD:              header.CWD,
 			Channel:          header.Channel,
 			ChannelSessionID: header.ChannelSessionID,
+			ParentSession:    header.ParentSession,
 		},
 	}
 }
@@ -225,7 +251,61 @@ func Open(path string) (*Session, error) {
 			return nil, err
 		}
 	}
+	if len(s.entries) > 0 {
+		s.leafID = s.entries[len(s.entries)-1].ID
+	}
 	return s, nil
+}
+
+// Import validates a JSONL session and copies it into destination. The source
+// remains untouched by the copy; callers can reopen the returned session.
+func Import(source, destination string) (*Session, error) {
+	if strings.TrimSpace(source) == "" {
+		return nil, errors.New("source session path is required")
+	}
+	if strings.TrimSpace(destination) == "" {
+		return nil, errors.New("destination session path is required")
+	}
+	if filepath.Clean(source) == filepath.Clean(destination) {
+		return Open(source)
+	}
+	if _, err := Open(source); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(destination, data, 0o600); err != nil {
+		return nil, err
+	}
+	return Open(destination)
+}
+
+// Reload replaces the in-memory view with the validated contents on disk.
+func (s *Session) Reload() error {
+	return s.ReplaceFrom(s.path)
+}
+
+// ReplaceFrom switches this handle to another validated session file.
+func (s *Session) ReplaceFrom(path string) error {
+	reloaded, err := Open(path)
+	if err != nil {
+		return err
+	}
+	*s = *reloaded
+	return nil
+}
+
+// Save publishes a newly created session header and any pending entries.
+func (s *Session) Save() error {
+	if s.flushed {
+		return nil
+	}
+	return s.publish()
 }
 
 func migrateSession(s *Session) bool {
@@ -287,11 +367,7 @@ func (s *Session) Append(message Message) (string, error) {
 		return "", fmt.Errorf("message role is required")
 	}
 	id := newEntryID(s.entries)
-	var parentID *string
-	if len(s.entries) > 0 {
-		parent := s.entries[len(s.entries)-1].ID
-		parentID = &parent
-	}
+	parentID := s.currentParentID()
 	entry := sessionEntry{
 		Type:      "message",
 		ID:        id,
@@ -300,6 +376,7 @@ func (s *Session) Append(message Message) (string, error) {
 		Message:   &message,
 	}
 	s.entries = append(s.entries, entry)
+	s.leafID = id
 	if message.Role == "assistant" {
 		if !s.flushed {
 			if err := s.publish(); err != nil {
@@ -314,6 +391,260 @@ func (s *Session) Append(message Message) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+// AppendBashExecution records a command independently from the tool result.
+// The oracle keeps this execution history so it remains visible to the tree,
+// dashboard, and later context shaping even when the command fails.
+func (s *Session) AppendBashExecution(command string, result string, exitCode *int, cancelled, truncated, excludeFromContext bool, fullOutputPath string) (string, error) {
+	return s.Append(Message{
+		Role: "bashExecution", Command: command, Output: result, ExitCode: exitCode,
+		Cancelled: cancelled, Truncated: truncated, FullOutputPath: fullOutputPath, ExcludeFromContext: excludeFromContext,
+	})
+}
+
+func (s *Session) currentParentID() *string {
+	if s.leafID == "" {
+		return nil
+	}
+	parent := s.leafID
+	return &parent
+}
+
+func (s *Session) Branch(entryID string) error {
+	if entryID == "" {
+		return fmt.Errorf("entry ID is required")
+	}
+	for _, entry := range s.entries {
+		if entry.ID == entryID {
+			parentID := entryID
+			branch := sessionEntry{Type: "branch", ID: newEntryID(s.entries), Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: &parentID}
+			s.entries = append(s.entries, branch)
+			s.leafID = branch.ID
+			if !s.flushed {
+				return s.publish()
+			}
+			return s.appendFile(branch)
+		}
+	}
+	return fmt.Errorf("entry %q not found", entryID)
+}
+
+func (s *Session) Fork(path string, entryID string, header Header) (*Session, error) {
+	if entryID == "" {
+		entryID = s.leafID
+	}
+	pathEntries := s.activeEntries()
+	cut := -1
+	for i, entry := range pathEntries {
+		if entry.ID == entryID {
+			cut = i
+			break
+		}
+	}
+	if cut < 0 {
+		return nil, fmt.Errorf("entry %q is not on the active branch", entryID)
+	}
+	header.ParentSession = s.path
+	forked := New(path, header)
+	forked.entries = append([]sessionEntry(nil), pathEntries[:cut+1]...)
+	forked.leafID = entryID
+	if err := forked.publish(); err != nil {
+		return nil, err
+	}
+	return forked, nil
+}
+
+const workingNoteWriteCap = 2000
+
+func (s *Session) WorkingNote() string {
+	var note string
+	for _, entry := range s.activeEntries() {
+		if entry.Type == "working_note" {
+			note = entry.Note
+		}
+	}
+	return note
+}
+
+func (s *Session) AppendWorkingNote(line string) (string, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", fmt.Errorf("working note line cannot be empty")
+	}
+	combined := line
+	if existing := s.WorkingNote(); existing != "" {
+		combined = existing + "\n" + line
+	}
+	lines := strings.Split(combined, "\n")
+	for len(combined) > workingNoteWriteCap && len(lines) > 1 {
+		lines = lines[1:]
+		combined = strings.Join(lines, "\n")
+	}
+	if len(combined) > workingNoteWriteCap {
+		combined = combined[len(combined)-workingNoteWriteCap:]
+	}
+	return s.appendWorkingNote(combined)
+}
+
+func (s *Session) SessionName() string {
+	entries := s.activeEntries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry := entries[i]
+		if entry.Type == "session_info" {
+			return strings.TrimSpace(entry.Name)
+		}
+	}
+	return ""
+}
+
+func (s *Session) Path() string { return s.path }
+
+func (s *Session) Header() Header {
+	return Header{ID: s.header.ID, ConversationID: s.header.ConversationID, WorkspaceID: s.header.WorkspaceID, CWD: s.header.CWD, Channel: s.header.Channel, ChannelSessionID: s.header.ChannelSessionID, ParentSession: s.header.ParentSession}
+}
+
+func (s *Session) AppendSessionInfo(name string) (string, error) {
+	name = strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ").Replace(name))
+	id := newEntryID(s.entries)
+	parentID := s.currentParentID()
+	entry := sessionEntry{Type: "session_info", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Name: name}
+	s.entries = append(s.entries, entry)
+	s.leafID = id
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
+}
+
+func (s *Session) ClearWorkingNote() (string, error) { return s.appendWorkingNote("") }
+
+func (s *Session) IsWorkingNoteStale() bool {
+	if s.WorkingNote() == "" {
+		return false
+	}
+	entries := s.activeEntries()
+	boundary := 0
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Type == "working_note" {
+			boundary = i + 1
+			break
+		}
+	}
+	userTurns := 0
+	for _, entry := range entries[boundary:] {
+		if entry.Message != nil && entry.Message.Role == "user" {
+			userTurns++
+		}
+	}
+	return userTurns > 5
+}
+
+func (s *Session) AppendOperationFinished(outcome string) (string, error) {
+	if outcome != "completed" && outcome != "aborted" && outcome != "failed" {
+		return "", fmt.Errorf("invalid operation outcome %q", outcome)
+	}
+	id := newEntryID(s.entries)
+	parentID := s.currentParentID()
+	entry := sessionEntry{Type: "operation_finished", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Outcome: outcome}
+	s.entries = append(s.entries, entry)
+	s.leafID = id
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
+}
+
+func (s *Session) LastOperationOutcome() string {
+	entries := s.activeEntries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entry := entries[i]; entry.Type == "operation_finished" {
+			return entry.Outcome
+		}
+	}
+	return ""
+}
+
+func (s *Session) ArtifactDir() string {
+	return filepath.Join(filepath.Dir(s.path), "artifacts", s.header.ID)
+}
+
+func (s *Session) StoreArtifact(label, name string, data []byte) (Artifact, error) {
+	if len(data) == 0 {
+		return Artifact{}, fmt.Errorf("artifact must not be empty")
+	}
+	name = filepath.Base(name)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		return Artifact{}, fmt.Errorf("artifact name is required")
+	}
+	dir := s.ArtifactDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return Artifact{}, err
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return Artifact{}, err
+	}
+	artifact := Artifact{Label: label, Path: path, Size: int64(len(data))}
+	if _, err := s.appendArtifact(artifact); err != nil {
+		return Artifact{}, err
+	}
+	return artifact, nil
+}
+
+func (s *Session) Artifacts() []Artifact {
+	entries := s.activeEntries()
+	result := make([]Artifact, 0)
+	for _, entry := range entries {
+		if entry.Type == "artifact" && entry.Path != "" && entry.Size > 0 {
+			result = append(result, Artifact{Label: entry.Label, Path: entry.Path, Size: entry.Size})
+		}
+	}
+	return result
+}
+
+func (s *Session) ArtifactCatalog(maxBytes int) string {
+	if maxBytes <= 0 {
+		maxBytes = 4000
+	}
+	artifacts := s.Artifacts()
+	if len(artifacts) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("Live document artifacts:\n")
+	for _, artifact := range artifacts {
+		line := fmt.Sprintf("- %s (%d bytes) %s\n", artifact.Label, artifact.Size, artifact.Path)
+		if builder.Len()+len(line) > maxBytes {
+			break
+		}
+		builder.WriteString(line)
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func (s *Session) appendArtifact(artifact Artifact) (string, error) {
+	id := newEntryID(s.entries)
+	parentID := s.currentParentID()
+	entry := sessionEntry{Type: "artifact", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Label: artifact.Label, Path: artifact.Path, Size: artifact.Size}
+	s.entries = append(s.entries, entry)
+	s.leafID = id
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
+}
+
+func (s *Session) appendWorkingNote(note string) (string, error) {
+	id := newEntryID(s.entries)
+	parentID := s.currentParentID()
+	entry := sessionEntry{Type: "working_note", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Note: note}
+	s.entries = append(s.entries, entry)
+	s.leafID = id
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
 }
 
 func newEntryID(entries []sessionEntry) string {
@@ -347,6 +678,16 @@ func (s *Session) Messages() []Message {
 	}
 	return messages
 }
+
+func (s *Session) Tree() []TreeEntry {
+	result := make([]TreeEntry, 0, len(s.entries))
+	for _, entry := range s.entries {
+		result = append(result, TreeEntry{ID: entry.ID, ParentID: entry.ParentID, Type: entry.Type, Timestamp: entry.Timestamp, Name: entry.Name, Message: entry.Message})
+	}
+	return result
+}
+
+func (s *Session) LeafID() string { return s.leafID }
 
 func (s *Session) TimedMessages() []TimedMessage {
 	entries := s.activeEntries()
@@ -420,6 +761,11 @@ func (s *Session) activeEntries() []sessionEntry {
 	path := make([]sessionEntry, 0, len(s.entries))
 	seen := make(map[string]bool, len(s.entries))
 	index := len(s.entries) - 1
+	if s.leafID != "" {
+		if leafIndex, ok := byID[s.leafID]; ok {
+			index = leafIndex
+		}
+	}
 	for index >= 0 && !seen[s.entries[index].ID] {
 		entry := s.entries[index]
 		path = append(path, entry)
@@ -639,16 +985,13 @@ func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefor
 		return "", fmt.Errorf("compaction summary and first kept entry are required")
 	}
 	id := newEntryID(s.entries)
-	var parentID *string
-	if len(s.entries) > 0 {
-		parent := s.entries[len(s.entries)-1].ID
-		parentID = &parent
-	}
+	parentID := s.currentParentID()
 	entry := sessionEntry{
 		Type: "compaction", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID,
 		Compaction: &Compaction{Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Usage: usage},
 	}
 	s.entries = append(s.entries, entry)
+	s.leafID = id
 	if !s.flushed {
 		return id, s.publish()
 	}

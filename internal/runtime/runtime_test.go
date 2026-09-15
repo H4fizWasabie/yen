@@ -13,7 +13,9 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 type provider struct{}
@@ -39,6 +41,39 @@ type contextCaptureProvider struct {
 func (p *contextCaptureProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
 	p.messages = append([]agent.Message(nil), messages...)
 	return agent.Response{Text: "continued", StopReason: "stop"}, nil
+}
+
+func TestRunnerInjectsPersistedWorkingNoteIntoProviderContext(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "conv-1.jsonl")
+	s := session.New(path, session.Header{ID: "conv-1", ConversationID: "conv-1", WorkspaceID: dir, CWD: dir})
+	if _, err := s.AppendWorkingNote("use the pinned fixture"); err != nil {
+		t.Fatal(err)
+	}
+	provider := &contextCaptureProvider{}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	link := conversation.Link{Adapter: "cli", AdapterKey: "cwd", ConversationID: "conv-1", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "continue"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.messages) == 0 || provider.messages[0].Role != "system" || !strings.Contains(provider.messages[0].Content, "use the pinned fixture") {
+		t.Fatalf("messages=%#v", provider.messages)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.WorkingNote() != "" {
+		t.Fatalf("working note was not cleared: %q", reopened.WorkingNote())
+	}
 }
 
 type summaryProvider struct {
@@ -315,54 +350,93 @@ func TestRunnerUsesCompactionAwareContext(t *testing.T) {
 }
 
 func TestAutoCompactKeepRecentTokensFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "2048")
+	t.Setenv("YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS", "2048")
 	if got := AutoCompactKeepRecentTokensFromEnv(); got != 2048 {
 		t.Fatalf("tokens=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS", "0")
+	t.Setenv("YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS", "0")
 	if got := AutoCompactKeepRecentTokensFromEnv(); got != 0 {
 		t.Fatalf("disabled tokens=%d", got)
 	}
 }
 
 func TestAutoCompactContextSettingsFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW", "8192")
+	t.Setenv("YEN_AUTO_COMPACT_CONTEXT_WINDOW", "8192")
 	if got := AutoCompactContextWindowFromEnv(); got != 8192 {
 		t.Fatalf("context window=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS", "4096")
+	t.Setenv("YEN_AUTO_COMPACT_RESERVE_TOKENS", "4096")
 	if got := AutoCompactReserveTokensFromEnv(); got != 4096 {
 		t.Fatalf("reserve tokens=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW", "0")
+	t.Setenv("YEN_AUTO_COMPACT_CONTEXT_WINDOW", "0")
 	if got := AutoCompactContextWindowFromEnv(); got != 0 {
 		t.Fatalf("disabled context window=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS", "0")
+	t.Setenv("YEN_AUTO_COMPACT_RESERVE_TOKENS", "0")
 	if got := AutoCompactReserveTokensFromEnv(); got != 16384 {
 		t.Fatalf("default reserve tokens=%d", got)
 	}
 }
 
 func TestAutoCompactMaxHistoryTurnsFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "3")
+	t.Setenv("YEN_AUTO_COMPACT_MAX_HISTORY_TURNS", "3")
 	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 3 {
 		t.Fatalf("max history turns=%d", got)
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS", "0")
+	t.Setenv("YEN_AUTO_COMPACT_MAX_HISTORY_TURNS", "0")
 	if got := AutoCompactMaxHistoryTurnsFromEnv(); got != 0 {
 		t.Fatalf("disabled max history turns=%d", got)
 	}
 }
 
 func TestAutoCompactDisabledFromEnv(t *testing.T) {
-	t.Setenv("THEOSES_AUTO_COMPACT_ENABLED", "false")
+	t.Setenv("YEN_AUTO_COMPACT_ENABLED", "false")
 	if !AutoCompactDisabledFromEnv() {
 		t.Fatal("expected automatic compaction to be disabled")
 	}
-	t.Setenv("THEOSES_AUTO_COMPACT_ENABLED", "true")
+	t.Setenv("YEN_AUTO_COMPACT_ENABLED", "true")
 	if AutoCompactDisabledFromEnv() {
 		t.Fatal("expected automatic compaction to be enabled")
+	}
+}
+
+func TestApplySettingsConfiguresSharedRuntime(t *testing.T) {
+	runner := New(nil, providerpkg.NewOpenAICompletions("http://fixture", "key", "model"), nil)
+	enabled := false
+	runner.ApplySettings(settings.Settings{
+		SteeringMode: "all", FollowUpMode: "one-at-a-time",
+		Compaction: &settings.CompactionSettings{Enabled: &enabled, ReserveTokens: 99, KeepRecentTokens: 88, MaxHistoryTurns: 3},
+		Retry:      &settings.RetrySettings{MaxRetries: 2},
+	})
+	if runner.SteeringMode != "all" || runner.FollowUpMode != "one-at-a-time" || !runner.AutoCompactDisabled || runner.AutoCompactReserveTokens != 99 || runner.AutoCompactKeepRecentTokens != 88 || runner.AutoCompactMaxHistoryTurns != 3 {
+		t.Fatalf("runner settings=%#v", runner)
+	}
+	if !providerpkg.RetryEnabled(runner.Provider) {
+		t.Fatal("retry should remain enabled")
+	}
+}
+
+func TestApplySettingsSelectsConfiguredModelWhenEnvironmentIsUnset(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "")
+	t.Setenv("YEN_MODEL", "")
+	t.Setenv("YEN_REASONING_EFFORT", "")
+	runner := New(nil, providerpkg.NewOpenAICompletions("http://fixture", "key", "old"), nil)
+	runner.ApplySettings(settings.Settings{Provider: "openai", Model: "new-model", Reasoning: "high"})
+	name, model := providerpkg.Describe(runner.Provider)
+	if name != "openai" || model != "new-model" || providerpkg.ThinkingLevel(runner.Provider) != "high" {
+		t.Fatalf("provider=%s model=%s thinking=%s", name, model, providerpkg.ThinkingLevel(runner.Provider))
+	}
+}
+
+func TestApplySettingsDoesNotOverrideEnvironmentProvider(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "openrouter")
+	t.Setenv("YEN_MODEL", "environment-model")
+	runner := New(nil, providerpkg.NewOpenAICompletions("http://fixture", "key", "old"), nil)
+	runner.ApplySettings(settings.Settings{Provider: "anthropic", Model: "settings-model"})
+	name, model := providerpkg.Describe(runner.Provider)
+	if name != "" || model != "old" {
+		t.Fatalf("provider=%s model=%s", name, model)
 	}
 }
 
@@ -400,6 +474,57 @@ func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	if len(contextMessages) != 5 || !strings.Contains(contextMessages[0].Content.(string), "structured summary") || contextMessages[1].Content != "two" {
 		t.Fatalf("context=%#v", contextMessages)
 	}
+}
+
+type distillationCompactionProvider struct{}
+
+func (distillationCompactionProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	if len(messages) > 0 && strings.Contains(messages[0].Content, "Extract durable memory") {
+		return agent.Response{Text: `[{"fact":"compaction preference","confidence":0.95},{"episode":"Compaction captured memory"}]`, StopReason: "stop"}, nil
+	}
+	return agent.Response{Text: "compaction summary", StopReason: "stop"}, nil
+}
+
+func TestRunnerCompactionDistillsDroppedMemoryWithoutBlocking(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-distill.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-distill", ConversationID: "conv-distill", CWD: dir})
+	for _, message := range []session.Message{{Role: "user", Content: "old preference"}, {Role: "assistant", Content: "old reply"}, {Role: "user", Content: "keep"}, {Role: "assistant", Content: "keep reply"}} {
+		if _, err := saved.Append(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine, err := memory.OpenEngine(filepath.Join(dir, "memory"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := New(queue, distillationCompactionProvider{}, nil)
+	runner.Memory = engine
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	if err := runner.Compact(context.Background(), "conv-distill", 1); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		hits, err := engine.Remember("compaction preference", memory.Context{ConversationID: "conv-distill"})
+		if err == nil {
+			foundFact, foundEpisode := false, false
+			for _, hit := range hits {
+				foundFact = foundFact || hit.Subject == "compaction preference"
+				foundEpisode = foundEpisode || hit.Subject == "Episode: Compaction captured memory"
+			}
+			if foundFact && foundEpisode {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("dropped memory was not distilled")
 }
 
 func TestRunnerCompactionDoesNotPersistInvalidSummary(t *testing.T) {

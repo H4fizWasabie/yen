@@ -8,11 +8,13 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/adapters"
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
-	"github.com/H4fizWasabie/yen/internal/tools"
+	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 func main() {
@@ -20,7 +22,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dataDir := os.Getenv("THEOSES_DATA_DIR")
+	dataDir := os.Getenv("YEN_DATA_DIR")
 	if dataDir == "" {
 		dataDir = filepath.Join(workspace, ".theoses-go")
 	}
@@ -32,17 +34,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	baseURL := os.Getenv("THEOSES_OPENAI_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+	client := provider.ConfiguredFromEnv()
+	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
+	if current, err := settings.Load(workspace); err == nil {
+		runner.ApplySettings(current)
 	}
-	model := os.Getenv("THEOSES_MODEL")
-	if model == "" {
-		model = "gpt-4o-mini"
+	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
+		return codingagent.NewToolsForSession(workspace, current)
 	}
-	client := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
-	client.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
-	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
+	runner.SessionToolFactoryWithProvider = func(workspace string, current *session.Session, client agent.Provider) []agent.Tool {
+		return codingagent.NewToolsForSessionWithProvider(workspace, current, client)
+	}
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()
 	runner.AutoCompactKeepRecentTokens = runtime.AutoCompactKeepRecentTokensFromEnv()
@@ -51,7 +53,11 @@ func main() {
 	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
-	runner.SharedMemory = os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID") != ""
+	canonicalConversationID := os.Getenv("YEN_CANONICAL_CONVERSATION_ID")
+	if canonicalConversationID == "" {
+		canonicalConversationID = "yen-primary"
+	}
+	runner.SharedMemory = true
 	runner.SessionPath = func(turn conversation.Turn) string {
 		return filepath.Join(dataDir, "sessions", turn.ConversationID+".jsonl")
 	}
@@ -60,7 +66,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")}, Workspace: workspace}, Token: os.Getenv("THEOSES_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("THEOSES_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("THEOSES_TELEGRAM_API_BASE"), ToolPreferencePath: filepath.Join(dataDir, "telegram-preferences.json"), ArtifactDir: filepath.Join(dataDir, "telegram-artifacts")}
+	bot := &adapters.TelegramBot{Adapter: adapters.Telegram{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: canonicalConversationID}, Workspace: workspace}, Token: os.Getenv("YEN_TELEGRAM_BOT_TOKEN"), OwnerChatID: os.Getenv("YEN_TELEGRAM_CHAT_ID"), APIBase: os.Getenv("YEN_TELEGRAM_API_BASE"), ToolPreferencePath: filepath.Join(dataDir, "telegram-preferences.json"), ArtifactDir: filepath.Join(dataDir, "telegram-artifacts")}
 	if err := bot.Run(context.Background()); err != nil {
 		log.Fatal(err)
 	}

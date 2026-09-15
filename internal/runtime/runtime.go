@@ -10,43 +10,124 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 type Runner struct {
-	Queue                       *conversation.Queue
-	Provider                    agent.Provider
-	ToolFactory                 func(workspace string) []agent.Tool
-	SessionPath                 func(turn conversation.Turn) string
-	Checkpoints                 *memory.Checkpoints
-	Memory                      *memory.Engine
-	SharedMemory                bool
-	AutoCompactTurns            int
-	AutoCompactMaxHistoryTurns  int
-	AutoCompactKeepRecentTokens int
-	AutoCompactContextWindow    int
-	AutoCompactReserveTokens    int
-	AutoCompactDisabled         bool
-	AutoCompactOnOverflow       bool
-	AutoConsolidate             bool
+	Queue                          *conversation.Queue
+	Provider                       agent.Provider
+	ToolFactory                    func(workspace string) []agent.Tool
+	SessionToolFactory             func(workspace string, current *session.Session) []agent.Tool
+	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
+	SessionPath                    func(turn conversation.Turn) string
+	Checkpoints                    *memory.Checkpoints
+	Memory                         *memory.Engine
+	SharedMemory                   bool
+	AutoCompactTurns               int
+	AutoCompactMaxHistoryTurns     int
+	AutoCompactKeepRecentTokens    int
+	AutoCompactContextWindow       int
+	AutoCompactReserveTokens       int
+	AutoCompactDisabled            bool
+	AutoCompactOnOverflow          bool
+	AutoConsolidate                bool
+	SteeringMode                   string
+	FollowUpMode                   string
 
-	mu     sync.Mutex
-	active map[string]context.CancelFunc
-	queues map[string]*agent.MessageQueues
+	mu         sync.Mutex
+	active     map[string]context.CancelFunc
+	queues     map[string]*agent.MessageQueues
+	pathsMu    sync.RWMutex
+	paths      map[string]string
+	compacting atomic.Bool
 }
 
 func New(queue *conversation.Queue, provider agent.Provider, tools func(string) []agent.Tool) *Runner {
-	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues)}
+	return &Runner{Queue: queue, Provider: provider, ToolFactory: tools, SteeringMode: "one-at-a-time", FollowUpMode: "one-at-a-time", active: make(map[string]context.CancelFunc), queues: make(map[string]*agent.MessageQueues), paths: make(map[string]string)}
+}
+
+func (r *Runner) SetQueueModes(steering, followUp string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.SteeringMode, r.FollowUpMode = steering, followUp
+	for _, queues := range r.queues {
+		queues.SetModes(steering, followUp)
+	}
+}
+
+// ApplySettings applies the settings shared by every channel runtime.
+func (r *Runner) ApplySettings(current settings.Settings) {
+	providerID := current.Provider
+	if providerID == "" {
+		providerID = current.DefaultProvider
+	}
+	model := current.Model
+	if model == "" {
+		model = current.DefaultModel
+	}
+	if os.Getenv("YEN_PROVIDER") == "" && providerID != "" {
+		if configured, err := providerpkg.NewConfigured(providerID, model); err == nil {
+			r.Provider = configured
+		}
+	}
+	if os.Getenv("YEN_MODEL") == "" && model != "" {
+		if configured, err := providerpkg.SetModel(r.Provider, model); err == nil {
+			r.Provider = configured
+		}
+	}
+	thinking := current.Reasoning
+	if thinking == "" {
+		thinking = current.DefaultThinkingLevel
+	}
+	if os.Getenv("YEN_REASONING_EFFORT") == "" && thinking != "" {
+		if configured, err := providerpkg.SetThinkingLevel(r.Provider, thinking); err == nil {
+			r.Provider = configured
+		}
+	}
+	steering, followUp := settings.QueueModes(current)
+	r.SetQueueModes(steering, followUp)
+	if current.AutoCompaction != nil {
+		r.AutoCompactDisabled = !*current.AutoCompaction
+	}
+	if current.Compaction != nil {
+		if current.Compaction.Enabled != nil {
+			r.AutoCompactDisabled = !*current.Compaction.Enabled
+		}
+		if current.Compaction.ReserveTokens > 0 {
+			r.AutoCompactReserveTokens = current.Compaction.ReserveTokens
+		}
+		if current.Compaction.KeepRecentTokens > 0 {
+			r.AutoCompactKeepRecentTokens = current.Compaction.KeepRecentTokens
+		}
+		if current.Compaction.MaxHistoryTurns > 0 {
+			r.AutoCompactMaxHistoryTurns = current.Compaction.MaxHistoryTurns
+		}
+	}
+	if current.Retry != nil {
+		if current.Retry.MaxRetries > 0 {
+			if configured, err := providerpkg.SetRetryMax(r.Provider, current.Retry.MaxRetries); err == nil {
+				r.Provider = configured
+			}
+		}
+		if current.Retry.Enabled != nil {
+			if configured, err := providerpkg.SetRetryEnabled(r.Provider, *current.Retry.Enabled); err == nil {
+				r.Provider = configured
+			}
+		}
+	}
 }
 
 func AutoCompactTurnsFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_TURNS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_TURNS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -54,7 +135,7 @@ func AutoCompactTurnsFromEnv() int {
 }
 
 func AutoCompactMaxHistoryTurnsFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_MAX_HISTORY_TURNS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_MAX_HISTORY_TURNS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -62,7 +143,7 @@ func AutoCompactMaxHistoryTurnsFromEnv() int {
 }
 
 func AutoCompactKeepRecentTokensFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_KEEP_RECENT_TOKENS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -70,7 +151,7 @@ func AutoCompactKeepRecentTokensFromEnv() int {
 }
 
 func AutoCompactContextWindowFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_CONTEXT_WINDOW"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_CONTEXT_WINDOW"))
 	if err != nil || value < 1 {
 		return 0
 	}
@@ -78,7 +159,7 @@ func AutoCompactContextWindowFromEnv() int {
 }
 
 func AutoCompactReserveTokensFromEnv() int {
-	value, err := strconv.Atoi(os.Getenv("THEOSES_AUTO_COMPACT_RESERVE_TOKENS"))
+	value, err := strconv.Atoi(os.Getenv("YEN_AUTO_COMPACT_RESERVE_TOKENS"))
 	if err != nil || value < 1 {
 		return 16384
 	}
@@ -86,17 +167,17 @@ func AutoCompactReserveTokensFromEnv() int {
 }
 
 func AutoCompactOnOverflowFromEnv() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_OVERFLOW")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_AUTO_COMPACT_OVERFLOW")))
 	return value == "1" || value == "true" || value == "yes"
 }
 
 func AutoCompactDisabledFromEnv() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_ENABLED")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_AUTO_COMPACT_ENABLED")))
 	return value == "0" || value == "false" || value == "no" || value == "off"
 }
 
 func AutoConsolidateFromEnv() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_CONSOLIDATE")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_AUTO_CONSOLIDATE")))
 	return value == "1" || value == "true" || value == "yes"
 }
 
@@ -171,6 +252,7 @@ func (r *Runner) runNext(ctx context.Context, conversationID string, onUpdate fu
 func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, images []string, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	turnCtx, cancel := context.WithCancel(ctx)
 	queues := &agent.MessageQueues{}
+	queues.SetModes(r.SteeringMode, r.FollowUpMode)
 	r.mu.Lock()
 	r.active[turn.ID] = cancel
 	r.queues[turn.ID] = queues
@@ -218,6 +300,10 @@ func (r *Runner) runClaimed(ctx context.Context, turn conversation.Turn, images 
 }
 
 func (r *Runner) Steer(turnID, prompt string) error {
+	return r.SteerWithImages(turnID, prompt, nil)
+}
+
+func (r *Runner) SteerWithImages(turnID, prompt string, images []string) error {
 	if prompt == "" {
 		return errors.New("steering prompt is required")
 	}
@@ -227,11 +313,15 @@ func (r *Runner) Steer(turnID, prompt string) error {
 	if queues == nil {
 		return errors.New("turn is not active")
 	}
-	queues.Steer(agent.Message{Role: "user", Content: prompt})
+	queues.Steer(agent.Message{Role: "user", Content: prompt, Images: images})
 	return nil
 }
 
 func (r *Runner) FollowUp(turnID, prompt string) error {
+	return r.FollowUpWithImages(turnID, prompt, nil)
+}
+
+func (r *Runner) FollowUpWithImages(turnID, prompt string, images []string) error {
 	if prompt == "" {
 		return errors.New("follow-up prompt is required")
 	}
@@ -241,7 +331,7 @@ func (r *Runner) FollowUp(turnID, prompt string) error {
 	if queues == nil {
 		return errors.New("turn is not active")
 	}
-	queues.FollowUp(agent.Message{Role: "user", Content: prompt})
+	queues.FollowUp(agent.Message{Role: "user", Content: prompt, Images: images})
 	return nil
 }
 
@@ -267,6 +357,15 @@ func (r *Runner) OpenSession(link conversation.Link) (*session.Session, error) {
 	return openOrCreate(r.pathFor(conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID}), conversation.Turn{ConversationID: link.ConversationID, Adapter: link.Adapter, AdapterKey: link.AdapterKey, WorkspaceID: link.WorkspaceID})
 }
 
+func (r *Runner) SetSessionPath(conversationID, path string) {
+	r.pathsMu.Lock()
+	defer r.pathsMu.Unlock()
+	if r.paths == nil {
+		r.paths = make(map[string]string)
+	}
+	r.paths[conversationID] = path
+}
+
 func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentTurns int) error {
 	if r.Provider == nil {
 		return errors.New("compaction provider is required")
@@ -277,7 +376,13 @@ func (r *Runner) Compact(ctx context.Context, conversationID string, keepRecentT
 	return r.compactConversation(ctx, conversationID, keepRecentTurns)
 }
 
+func (r *Runner) IsCompacting() bool { return r.compacting.Load() }
+
 func (r *Runner) compactConversation(ctx context.Context, conversationID string, keepRecentTurns int) error {
+	if !r.compacting.CompareAndSwap(false, true) {
+		return errors.New("compaction is already active")
+	}
+	defer r.compacting.Store(false)
 	if r.Provider == nil {
 		return errors.New("compaction provider is required")
 	}
@@ -326,11 +431,30 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		Input: response.Usage.Input, Output: response.Usage.Output, Reasoning: response.Usage.Reasoning,
 		CacheRead: response.Usage.CacheRead, CacheWrite: response.Usage.CacheWrite, TotalTokens: response.Usage.TotalTokens,
 	})
+	if err == nil && r.Memory != nil && len(plan.Messages) > 0 {
+		turns := toDistillationTurns(plan.Messages)
+		go r.distillDroppedMemory(ctx, conversationID, turns)
+	}
 	return err
+}
+
+func (r *Runner) distillDroppedMemory(ctx context.Context, conversationID string, turns []memory.ConsolidationTurn) {
+	result, err := memory.DistillMemory(ctx, r.Provider, turns)
+	if err != nil || r.Memory == nil {
+		return
+	}
+	context := memory.Context{ConversationID: conversationID, ConversationScoped: r.Memory.ConversationScoped}
+	for _, fact := range result.Facts {
+		_, _ = r.Memory.SaveNote(fact.Fact, context)
+	}
+	if result.Episode != "" {
+		_, _ = r.Memory.SaveNote("Episode: "+result.Episode, context)
+	}
 }
 
 func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	path := r.pathFor(turn)
+	expandedPrompt := codingagent.ExpandPrompt(turn.WorkspaceID, turn.Prompt)
 	current, err := openOrCreate(path, turn)
 	if err != nil {
 		return agent.Result{}, err
@@ -364,17 +488,36 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		}
 	}
 	history := toAgentMessages(current.ContextMessages())
+	if contextMessage, ok := codingagent.ContextMessage(turn.WorkspaceID); ok {
+		history = append([]agent.Message{contextMessage}, history...)
+	}
+	if skillsMessage, ok := codingagent.SkillsMessage(turn.WorkspaceID); ok {
+		history = append([]agent.Message{skillsMessage}, history...)
+	}
+	if current.IsWorkingNoteStale() {
+		if _, err := current.ClearWorkingNote(); err != nil {
+			return agent.Result{}, err
+		}
+	}
+	if note := current.WorkingNote(); note != "" {
+		history = append([]agent.Message{codingagent.WorkingNoteMessage(note)}, history...)
+	}
 	var tools []agent.Tool
-	if r.ToolFactory != nil {
+	if r.SessionToolFactoryWithProvider != nil {
+		tools = r.SessionToolFactoryWithProvider(turn.WorkspaceID, current, r.Provider)
+	} else if r.SessionToolFactory != nil {
+		tools = r.SessionToolFactory(turn.WorkspaceID, current)
+	} else if r.ToolFactory != nil {
 		tools = r.ToolFactory(turn.WorkspaceID)
 	}
+	defer func() { _ = codingagent.CloseTools(tools) }()
 	if r.Memory != nil {
 		r.Memory.ConversationScoped = r.SharedMemory
 		ctx := memory.Context{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, ConversationScoped: r.SharedMemory}
 		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
 	}
 	tools = append(tools, recallTurnsTool{history: history})
-	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
+	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && recoverableLengthStop(result)) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
@@ -386,7 +529,28 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 				return result, err
 			}
 			history = toAgentMessages(current.ContextMessages())
-			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
+			if contextMessage, ok := codingagent.ContextMessage(turn.WorkspaceID); ok {
+				history = append([]agent.Message{contextMessage}, history...)
+			}
+			if skillsMessage, ok := codingagent.SkillsMessage(turn.WorkspaceID); ok {
+				history = append([]agent.Message{skillsMessage}, history...)
+			}
+			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
+		}
+	}
+	outcome := "completed"
+	if runErr != nil {
+		outcome = "failed"
+		if ctx.Err() != nil {
+			outcome = "aborted"
+		}
+	}
+	if _, err := current.AppendOperationFinished(outcome); err != nil {
+		return result, err
+	}
+	if outcome == "completed" && current.WorkingNote() != "" {
+		if _, err := current.ClearWorkingNote(); err != nil {
+			return result, err
 		}
 	}
 	for _, message := range result.Messages[len(history):] {
@@ -395,11 +559,11 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		}
 	}
 	if runErr == nil && r.Memory != nil {
-		if err := r.Memory.RecordTurn(turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, result.FinalText); err != nil {
+		if err := r.Memory.RecordTurn(turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, expandedPrompt, result.FinalText); err != nil {
 			return result, err
 		}
 		if r.AutoConsolidate {
-			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, toConsolidationTurns(current.TimedMessages()))
+			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, expandedPrompt, toConsolidationTurns(current.TimedMessages()))
 		}
 	}
 	if runErr == nil && r.Checkpoints != nil {
@@ -427,6 +591,18 @@ func toConsolidationTurns(messages []session.TimedMessage) []memory.Consolidatio
 			role = "tool"
 		}
 		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message), Timestamp: timed.Timestamp})
+	}
+	return turns
+}
+
+func toDistillationTurns(messages []session.Message) []memory.ConsolidationTurn {
+	turns := make([]memory.ConsolidationTurn, 0, len(messages))
+	for _, message := range messages {
+		role := message.Role
+		if role == "toolResult" {
+			role = "tool"
+		}
+		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message)})
 	}
 	return turns
 }
@@ -494,6 +670,12 @@ func truncateConsolidation(text string, max int) string {
 }
 
 func (r *Runner) pathFor(turn conversation.Turn) string {
+	r.pathsMu.RLock()
+	if path := r.paths[turn.ConversationID]; path != "" {
+		r.pathsMu.RUnlock()
+		return path
+	}
+	r.pathsMu.RUnlock()
 	if r.SessionPath != nil {
 		return r.SessionPath(turn)
 	}
@@ -602,7 +784,7 @@ func toSessionMessage(message agent.Message) session.Message {
 		}
 	}
 	if message.Role == "tool" {
-		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
+		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Images: message.Images, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
 	}
 	if len(message.ToolCalls) > 0 || message.Thinking != "" || message.ThinkingSignature != "" {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)

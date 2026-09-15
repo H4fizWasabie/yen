@@ -40,6 +40,22 @@ func TestOpenAICompletionsReadsTextSSE(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsListsModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/models" || r.Header.Get("Authorization") != "Bearer key" {
+			t.Fatalf("request=%s %s auth=%q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":""},{"id":"model-b"}]}`))
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "key", "model-a")
+	client.ProviderName = "fixture"
+	models, err := client.ListModels(context.Background())
+	if err != nil || len(models) != 2 || models[1].ID != "model-b" || models[0].Provider != "fixture" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
 func TestOpenAICompletionsPreservesResponseMetadataAndFinishReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -111,6 +127,30 @@ func TestOpenAICompletionsSendsReasoningEffort(t *testing.T) {
 	}))
 	defer server.Close()
 	client := NewOpenAICompletions(server.URL, "", "test-model")
+	client.ReasoningEffort = "high"
+	if _, err := client.Next(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Reasoning       map[string]string `json:"reasoning"`
+			ReasoningEffort string            `json:"reasoning_effort"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ReasoningEffort != "high" || payload.Reasoning != nil {
+			t.Fatalf("reasoning=%#v effort=%q", payload.Reasoning, payload.ReasoningEffort)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "", "mistral-model")
+	client.ProviderName = "mistral"
 	client.ReasoningEffort = "high"
 	if _, err := client.Next(context.Background(), nil, nil); err != nil {
 		t.Fatal(err)
@@ -313,6 +353,35 @@ func TestOpenAICompletionsSendsReadToolSchema(t *testing.T) {
 	}))
 	defer server.Close()
 	if _, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, []string{"read"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenAICompletionsSendsSchemasForCodingTools(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Tools []struct {
+				Function struct {
+					Name       string         `json:"name"`
+					Parameters map[string]any `json:"parameters"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range payload.Tools {
+			properties, ok := tool.Function.Parameters["properties"].(map[string]any)
+			if !ok || len(properties) == 0 {
+				t.Errorf("%s has no properties: %#v", tool.Function.Name, tool.Function.Parameters)
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	tools := []string{"read", "bash", "powershell", "edit", "write", "grep", "find", "ls", "working_note", "note_operations", "remember", "save_note", "recall_turns"}
+	if _, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, tools); err != nil {
 		t.Fatal(err)
 	}
 }

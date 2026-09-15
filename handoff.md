@@ -156,9 +156,9 @@ not use the newer checkout as an unqualified oracle.
   the v2-to-v3 role/version migration.
   Assistant provider usage now round-trips through the session log.
   Compaction entries, active-context projection, and provider-backed
-  `Runner.Compact` are supported. Set `THEOSES_AUTO_COMPACT_TURNS` to enable
+  `Runner.Compact` are supported. Set `YEN_AUTO_COMPACT_TURNS` to enable
   the pre-prompt automatic threshold for a deployment; overflow retry and
-  `THEOSES_AUTO_COMPACT_OVERFLOW=1` to enable one bounded overflow
+  `YEN_AUTO_COMPACT_OVERFLOW=1` to enable one bounded overflow
   compact-and-retry attempt. Full TypeScript compaction settings remain
   deferred.
 - `internal/agent`: tool-turn loop and normalized event collection.
@@ -177,7 +177,7 @@ not use the newer checkout as an unqualified oracle.
 - `internal/adapters`: deterministic Telegram message and dashboard HTTP
   adapter seams sharing the canonical registry, runner, and memory engine.
   Dashboard API authentication now supports the TypeScript-compatible Bearer
-  and cookie login boundary when `THEOSES_DASHBOARD_TOKEN` is configured.
+  and cookie login boundary when `YEN_DASHBOARD_TOKEN` is configured.
   Telegram replies now split at the Bot API text limit without breaking
   Unicode runes, preserve capped quoted-message context, and target the
   originating Telegram message when replying.
@@ -222,7 +222,7 @@ Consolidation edge writes now enforce the TypeScript closed relation vocabulary
 (`prefers`, `attributed_to`, `depends_on`, `located_at`, `requires`,
 `supersedes`, `used_in`, `maintains`).
 Opt-in runtime consolidation is now available with
-`THEOSES_AUTO_CONSOLIDATE=1`; it uses a separate consolidation-state file,
+`YEN_AUTO_CONSOLIDATE=1`; it uses a separate consolidation-state file,
 the pinned 70-message trigger ceiling, and a 15-minute failure cooldown so it
 does not overwrite durable turn checkpoints. Its transcript is also capped at
 100,000 characters from the tail, matching the pinned memory-consolidation
@@ -322,6 +322,243 @@ therefore live authenticated dashboard acceptance remains intentionally open.
 The installer acceptance was rerun after the consolidation wrapper change:
 temporary root/fake systemctl, both binaries and wrappers, service units,
 mode-600 channel env, and no service start all passed.
+
+## Latest pickup: RPC bash persistence
+
+On 2026-09-15, direct JSONL RPC `bash` now persists a TypeScript-compatible
+`bashExecution` session message containing the command, output, and
+`excludeFromContext` flag, in addition to the existing automatic Working Note
+entry. `internal/rpc/server_test.go` covers the durable record. The change is
+ready to commit and push with the open GitHub PR before selecting the next gap.
+
+The provider registry was then expanded to the pinned OpenAI-compatible
+provider aliases (including Ant Ling, Baseten, Cerebras, Fireworks, Hugging
+Face, Kimi, Moonshot CN, NVIDIA, Qwen token plans, Together, Xiaomi token
+plans, and Z.AI CN), each with Yen-owned credential variables and table-driven
+configuration tests. This is configuration/API-shape coverage only; providers
+with distinct protocols, OAuth, or provider-specific model catalogs remain
+open.
+
+The next provider increment adds native Google Gemini REST streaming in
+`internal/provider/google.go`: text, thinking parts, function calls, usage,
+stop reasons, data-URI images, retries, and `YEN_GOOGLE_API_KEY` configuration.
+`internal/provider/google_test.go` covers the wire shape and event/result
+mapping. The full gate is now 233 tests plus race/vet/diff; commit and push this
+work before moving to the next provider or channel gap.
+
+The Gemini adapter also implements the native `/models` catalog and filters to
+models advertising `generateContent`; the current full gate remains 234 tests
+plus race/vet/diff.
+
+The dashboard history projection and embedded shell now also render durable
+`bashExecution` records, including the command, output, and excluded-context
+marker. Focused dashboard tests pass; the full gate is now 254 tests plus
+race/vet/diff.
+
+Native OpenAI Responses support is now in `internal/provider/responses.go`.
+It covers `/responses` SSE events, text, incremental function-call arguments,
+terminal response usage/status, image input, retries, and
+`openai-responses`/`azure-openai-responses` Yen configuration. The pinned
+source evidence is `packages/ai/src/api/openai-responses-shared.ts:597-750`,
+and `internal/provider/responses_test.go` covers the wire/result contract. The
+full gate is 236 tests plus race/vet/diff; commit and push this work before the
+next gap.
+
+The interactive CLI now also exposes `/model`, `/thinking`, `/retry`, and
+`/trust`, backed by the same provider/settings helpers used by RPC. Tests cover
+the mutations and the trust-file override; the full gate is 239 tests plus
+race/vet/diff. Full TUI selectors, OAuth commands, and session-picker flows
+remain open.
+
+CLI inspection now also exposes `/tree` and `/artifacts`, backed by the
+durable session tree and artifact catalog. Full TUI rendering, selectors, and
+session-picker flows remain open.
+
+The authorized side-by-side VPS deployment now runs `/opt/yen/releases/0f97e38`.
+`yen-telegram-pilot.service`, `yen-dashboard-pilot.service`,
+`theoses2-telegram.service`, and `theoses2-dashboard.service` all read back
+`active`; Yen `/healthz` returns `{"ok":true}`. The Theoses2 services were not
+restarted or modified.
+
+The 2026-09-15 authenticated read-only VPS check confirmed the shared-channel
+identity in `/var/lib/yen/conversations.jsonl`: Telegram, CLI, and dashboard
+links all point to `conv-5955b65fd7cbaf4f869df7af7f6c1fb6`, and dashboard
+`/api/sessions` returns one deduplicated shared session with 56 messages. A
+new cross-channel prompt/replay acceptance is still required before claiming
+full live session parity.
+
+That acceptance was completed on 2026-09-15 through the authenticated Yen
+dashboard: POSTing the deterministic prompt returned SSE `delta`, `usage`, and
+`done`, with `CROSS_CHANNEL_OK` in the delta; the following GET of the same
+canonical conversation read back the assistant result. This proves dashboard
+write/read continuity; an incoming Telegram replay is still open.
+
+Yen now has `internal/auth`, a mode-0600 atomic JSON credential store with
+serialized per-process mutation, secret-free listing metadata, API-key/OAuth
+record shapes, and explicit `YEN_AUTH_FILE` fallback wiring for provider
+configuration. This is the storage/auth boundary only; provider-specific
+OAuth login, refresh, and browser/device flows remain open. The full gate is
+239 tests plus race/vet/diff.
+
+External tool lifecycle is now wired through `codingagent.CloseTools` and a
+runtime defer: MCP stdio tools expose cleanup, failed stdio initialization
+closes its child, and deferred tools close their underlying resources. The
+cleanup seam has a regression test; the full gate is now 240 tests plus
+race/vet/diff.
+
+## Latest pickup: interactive CLI bash
+
+The interactive CLI now ports the TypeScript `!command` and `!!command` path:
+it executes in the session workspace, prints output, records a durable
+`bashExecution` message, and marks `!!` output excluded from model context.
+`cmd/theoses/main_test.go` covers the excluded form. The full gate is now 241
+tests; run the complete race/vet gate before the next parity slice.
+
+It also supports `/export [path.jsonl]` and `/import <path.jsonl>` using the
+existing validated session copy primitive; import reloads the active session
+from disk. The focused test covers both directions. The full gate is now 242
+tests plus race/vet/diff. Clone/new and the full TUI selector flow still need
+an active-session ownership slice.
+
+`/clone [path.jsonl]` now creates a durable fork at the current leaf, preserves
+the source path as `parentSession`, and switches the active CLI session and
+runner path to the clone. `/new` creates and switches to a fresh session while
+preserving the canonical conversation identity. Focused clone/new tests and
+the full 244-test gate pass.
+
+## Latest pickup: credential-store process locking
+
+The Yen-owned auth store now uses an OS file lock around every read and the
+entire read-modify-write mutation, so separate Yen processes sharing
+`YEN_AUTH_FILE` cannot overwrite each other. A concurrent two-store regression
+test passes; the full gate is now 245 tests plus race/vet/diff. The lock is
+per-file by design; split per-provider only if contention is measured.
+
+## Latest pickup: MiniMax provider mappings
+
+The provider registry now includes `minimax` and `minimax-cn`, using the
+pinned native Anthropic Messages endpoints and Yen-owned API-key variables.
+`AnthropicMessages.ProviderName` preserves the provider identity for model
+controls and diagnostics. Configuration tests cover both mappings; the full
+gate is now 248 tests plus race/vet/diff.
+
+Vercel AI Gateway is now mapped to the native Anthropic Messages client with
+`YEN_VERCEL_AI_GATEWAY_API_KEY`; the side-by-side installer passes this key,
+plus the MiniMax keys, through its isolated service environment. Configuration
+and shell syntax checks pass; the full gate is now 249 tests plus race/vet/diff.
+
+The shared provider client now emits Mistral's native `reasoning_effort` field
+when `ProviderName` is `mistral`, while preserving the existing `reasoning`
+shape for other OpenAI-compatible providers. A wire regression test covers the
+distinction; the full gate is now 250 tests plus race/vet/diff.
+
+The interactive CLI also exposes `/settings` as JSON settings read-back and
+`/reload` to reopen the active session from disk. Focused command coverage and
+the full 251-test race/vet gate pass.
+
+The dashboard history projection and embedded browser shell now preserve and
+render persisted assistant `thinking` segments instead of treating them as
+generic tools. Focused API/shell tests pass; the full gate is now 253 tests
+plus race/vet/diff.
+
+`convert_doc` now bounds markitdown stdout at the oracle's 2,000,000-byte
+`maxBuffer` using a capped pipe reader, and terminates an oversized producer.
+`internal/codingagent/convert_doc_test.go` covers the ceiling; the full gate
+is now 255 tests plus race/vet/diff.
+
+`web_search` now snapshots Yen's filtered Tavily key list when the tool is
+constructed, matching the TypeScript tool-definition boundary while retaining
+legacy test construction that leaves keys unset. Fallback and snapshot tests
+pass; the full gate is now 257 tests plus race/vet/diff.
+
+Context discovery now includes the oracle's `AGENTS.MD` and `CLAUDE.md`
+resource names in addition to Yen's existing guidance files. The focused
+resource test and full 258-test gate pass.
+
+Dashboard API authentication now fails closed when `YEN_DASHBOARD_TOKEN` is
+unset, returning the oracle-compatible 503 response. An integration test
+covers the unconfigured-token case; the full gate is now 259 tests plus
+race/vet/diff.
+
+The read-only explorer now enforces its oracle turn ceilings in the harness:
+8 turns for `quick-scan` and 15 for `deep-map`, with an explicit incomplete
+answer when the ceiling is reached. Its prompt also requires the oracle's
+distilled-answer and budget-footer contract; the full gate is now 260 tests.
+
+The side-by-side installer now forwards every configured Yen provider key,
+including the previously omitted Ant Ling, Baseten, Cerebras, Fireworks, Hugging
+Face, Qwen, Together, Xiaomi, Z.AI-CN, Google, Azure, and auth-store variables
+through both service wrappers. Shell syntax and the full Go gate pass.
+
+GitHub Actions now runs the repository test, race, vet, and diff gates on
+pushes and pull requests. This closes the prior PR-review gap where GitHub
+reported no checks.
+
+Native Google, Anthropic, MiniMax, and Vercel provider construction now
+preserves `YEN_REASONING_EFFORT`, matching the configured provider path used
+by the OpenAI and Responses clients. Provider tests cover Google and
+Anthropic; the full gate is now 261 tests.
+
+## Latest parity evidence
+
+The coding-agent bash boundary now follows the oracle's separate execution
+record contract: each session bash invocation appends a bounded working-note
+command log and a durable `bashExecution` message carrying the full command,
+output, exit code, cancellation, truncation, and `excludeFromContext` fields.
+The implementation is in `internal/tools/bash.go`,
+`internal/codingagent/bash.go`, and `internal/session/session.go`; focused
+success/failure coverage is in `internal/codingagent/working_note_test.go`.
+The full test, race, vet, and diff gates pass (261 tests).
+
+Provider configuration also now recognizes the oracle's `opencode` and
+`opencode-go` IDs with Yen-owned `YEN_OPENCODE_API_KEY` credentials and their
+pinned OpenAI-compatible endpoints. Focused provider tests and the full gate
+pass (263 tests). The model-specific API/catalog metadata is still not claimed
+as complete parity.
+
+Bash capture now keeps only a bounded 12 KiB tail in memory and spills output
+larger than 6 KiB to a mode-600 temporary file, while preserving the path in
+the durable `bashExecution` record. Large-output coverage passes and the full
+gate is now 264 tests plus race/vet/diff.
+
+Anthropic streaming now preserves cache-read/cache-write input-token usage and
+computes total tokens from the stream, matching the oracle's message-start and
+message-delta handling. Focused provider coverage and the full 264-test
+race/vet/diff gate pass.
+
+RPC `get_entries` now matches the oracle's `leafId` response and explicit
+unknown-`since` error. Focused protocol coverage and the full 265-test
+race/vet/diff gate pass.
+
+RPC `get_commands` now advertises trusted local skills as `skill:<name>` with
+description and source-path metadata. Focused command-discovery coverage and
+the full 265-test race/vet/diff gate pass; executing extension, prompt, and
+skill commands remains a separate open surface.
+
+Prompt templates now load from project/global/configured directories, expand
+`/name args` before the agent call, and appear in RPC discovery with prompt
+source metadata. Focused expansion/discovery tests and the full 267-test
+race/vet/diff gate pass.
+
+Skill commands now expand `/skill:name args` into an XML skill block with the
+skill body, location, relative-reference guidance, and trailing arguments.
+Focused expansion coverage and the full 268-test race/vet/diff gate pass.
+
+Prompt templates now support quoted arguments, multi-digit positional
+placeholders, defaults, and argument slices in the same substitution pass as
+the oracle. Focused template tests and the full 269-test race/vet/diff gate
+pass.
+
+Skill discovery and explicit skill expansion now use the containing directory
+name when `SKILL.md` omits frontmatter `name`, matching the oracle fallback.
+Focused resource coverage and the full 270-test race/vet/diff gate pass.
+
+## Latest operations evidence
+
+The current VPS data was backed up on 2026-09-15 to
+`/var/backups/yen-20260915T093942Z.tgz`. Archive listing validation succeeded;
+the archive is mode `600`, and all Yen and Theoses2 units plus Yen health
+remained green. No runtime data was changed.
 
 ## Important deferred product change
 

@@ -63,6 +63,24 @@ func TestMigrationIsExplicitAdditiveAndIdempotent(t *testing.T) {
 	if err != nil || len(hits) != 1 {
 		t.Fatalf("migrated episodes = %v, %v", hits, err)
 	}
+	richDB := filepath.Join(dir, "rich.db")
+	rich, err := sql.Open("sqlite", richDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = rich.Exec(`CREATE TABLE episodes (id TEXT PRIMARY KEY, started_at TEXT, ended_at TEXT, summary TEXT, created_at TEXT, related_semantic_node_ids TEXT, workspace_id TEXT, conversation_id TEXT, channel TEXT, turn_id TEXT); INSERT INTO episodes VALUES ('episode-rich','2026-02-01','2026-02-02','rich episode','2026-02-02','["fact-1"]','legacy-work','legacy-conv','telegram','turn-1')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = rich.Close()
+	count, err = MigrateEpisodes(richDB, dst, "conv-2", "")
+	if err != nil || count != 1 {
+		t.Fatalf("rich episode migration = %d, %v", count, err)
+	}
+	hits, err = dst.Recent("conv-2", 8)
+	if err != nil || len(hits) != 1 || hits[0].WorkspaceID != "legacy-work" || hits[0].Channel != "telegram" || hits[0].TurnID != "turn-1" {
+		t.Fatalf("rich migrated episodes = %#v, %v", hits, err)
+	}
 }
 
 func TestMigrationImportsLegacySemanticJSONLAdditively(t *testing.T) {

@@ -1,0 +1,152 @@
+package tools
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+const toolOutputLimit = 64 * 1024
+
+type ListTool struct{ cwd string }
+func NewListTool(cwd string) ListTool { return ListTool{cwd: cwd} }
+func (ListTool) Name() string { return "ls" }
+func (t ListTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if err := ctx.Err(); err != nil { return "", err }
+	path := normalizeReadPath(stringArg(args, "path", "."), t.cwd)
+	entries, err := os.ReadDir(path)
+	if err != nil { return "", fmt.Errorf("cannot read directory: %w", err) }
+	limit := intArg(args, "limit", 500)
+	if limit < 1 { limit = 1 }
+	lines := make([]string, 0, min(len(entries), limit))
+	for i, entry := range entries {
+		if i >= limit { break }
+		name := entry.Name()
+		if entry.IsDir() { name += "/" }
+		lines = append(lines, name)
+	}
+	sort.SliceStable(lines, func(i, j int) bool { return strings.ToLower(lines[i]) < strings.ToLower(lines[j]) })
+	if len(lines) == 0 { return "(empty directory)", nil }
+	return strings.Join(lines, "\n"), nil
+}
+
+type FindTool struct{ cwd string }
+func NewFindTool(cwd string) FindTool { return FindTool{cwd: cwd} }
+func (FindTool) Name() string { return "find" }
+func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if err := ctx.Err(); err != nil { return "", err }
+	pattern, ok := args["pattern"].(string)
+	if !ok || pattern == "" { return "", fmt.Errorf("pattern is required") }
+	root := normalizeReadPath(stringArg(args, "path", "."), t.cwd)
+	limit := intArg(args, "limit", 1000)
+	if limit < 1 { limit = 1 }
+	var matches []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil { return err }
+		if e := ctx.Err(); e != nil { return e }
+		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") { return filepath.SkipDir }
+		if entry.IsDir() { return nil }
+		rel, err := filepath.Rel(root, path); if err != nil { return err }
+		rel = filepath.ToSlash(rel)
+		matched, _ := filepath.Match(pattern, filepath.Base(rel))
+		if !matched { matched, _ = filepath.Match(pattern, rel) }
+		if matched && len(matches) < limit { matches = append(matches, rel) }
+		return nil
+	})
+	if err != nil { return "", err }
+	if len(matches) == 0 { return "No files found matching pattern", nil }
+	sort.Strings(matches)
+	return strings.Join(matches, "\n"), nil
+}
+
+type GrepTool struct{ cwd string }
+func NewGrepTool(cwd string) GrepTool { return GrepTool{cwd: cwd} }
+func (GrepTool) Name() string { return "grep" }
+func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if err := ctx.Err(); err != nil { return "", err }
+	pattern, ok := args["pattern"].(string); if !ok || pattern == "" { return "", fmt.Errorf("pattern is required") }
+	literal, _ := args["literal"].(bool); ignoreCase, _ := args["ignoreCase"].(bool)
+	if literal { pattern = regexp.QuoteMeta(pattern) }
+	if ignoreCase { pattern = "(?i)" + pattern }
+	re, err := regexp.Compile(pattern); if err != nil { return "", err }
+	root := normalizeReadPath(stringArg(args, "path", "."), t.cwd)
+	glob := stringArg(args, "glob", "")
+	limit := intArg(args, "limit", 100); if limit < 1 { limit = 1 }
+	contextLines := intArg(args, "context", 0); if contextLines < 0 { contextLines = 0 }
+	var out []string
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil { return walkErr }
+		if e := ctx.Err(); e != nil { return e }
+		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") { return filepath.SkipDir }
+		if entry.IsDir() { return nil }
+		rel, err := filepath.Rel(root, path); if err != nil { return err }; rel = filepath.ToSlash(rel)
+		if glob != "" { match, _ := filepath.Match(glob, filepath.Base(rel)); if !match { return nil } }
+		data, err := os.ReadFile(path); if err != nil { return nil }
+		lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+		for i, line := range lines {
+			if !re.MatchString(line) { continue }
+			start, end := max(0, i-contextLines), min(len(lines), i+contextLines+1)
+			for j := start; j < end; j++ { out = append(out, fmt.Sprintf("%s:%d:%s", rel, j+1, lines[j])); if len(out) >= limit { return errGrepLimit } }
+		}
+		return nil
+	})
+	if err != nil && err != errGrepLimit { return "", err }
+	if len(out) == 0 { return "No matches found", nil }
+	return truncateToolOutput(strings.Join(out, "\n")), nil
+}
+
+var errGrepLimit = fmt.Errorf("grep match limit reached")
+
+type WriteTool struct{ cwd string }
+func NewWriteTool(cwd string) WriteTool { return WriteTool{cwd: cwd} }
+func (WriteTool) Name() string { return "write" }
+func (t WriteTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if err := ctx.Err(); err != nil { return "", err }
+	path, ok := args["path"].(string); if !ok || path == "" { return "", fmt.Errorf("path is required") }
+	content, ok := args["content"].(string); if !ok { return "", fmt.Errorf("content is required") }
+	abs := normalizeReadPath(path, t.cwd)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o700); err != nil { return "", err }
+	if err := os.WriteFile(abs, []byte(content), 0o600); err != nil { return "", err }
+	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), path), nil
+}
+
+type EditTool struct{ cwd string }
+func NewEditTool(cwd string) EditTool { return EditTool{cwd: cwd} }
+func (EditTool) Name() string { return "edit" }
+func (t EditTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if err := ctx.Err(); err != nil { return "", err }
+	path, ok := args["path"].(string); if !ok || path == "" { return "", fmt.Errorf("path is required") }
+	data, err := os.ReadFile(normalizeReadPath(path, t.cwd)); if err != nil { return "", fmt.Errorf("could not edit file: %s: %w", path, err) }
+	original := string(data)
+	edits, err := editArgs(args); if err != nil { return "", err }
+	result := original
+	positions := make([][2]int, 0, len(edits))
+	for _, edit := range edits {
+		count := strings.Count(original, edit.oldText)
+		if count != 1 { return "", fmt.Errorf("oldText must match a unique region in %s (found %d matches)", path, count) }
+		idx := strings.Index(original, edit.oldText)
+		for _, p := range positions { if idx < p[1] && idx+len(edit.oldText) > p[0] { return "", fmt.Errorf("edits overlap in %s", path) } }
+		positions = append(positions, [2]int{idx, idx + len(edit.oldText)})
+	}
+	sort.Slice(positions, func(i, j int) bool { return positions[i][0] > positions[j][0] })
+	for i, p := range positions { edit := edits[0]; for _, candidate := range edits { if strings.Index(original, candidate.oldText) == p[0] { edit = candidate; break } }; result = result[:p[0]] + edit.newText + result[p[1]:]; _ = i }
+	if err := os.WriteFile(normalizeReadPath(path, t.cwd), []byte(result), 0o600); err != nil { return "", err }
+	return fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(edits), path), nil
+}
+
+type textEdit struct{ oldText, newText string }
+func editArgs(args map[string]any) ([]textEdit, error) {
+	if raw, ok := args["edits"].([]any); ok {
+		if len(raw) == 0 { return nil, fmt.Errorf("edits must contain at least one replacement") }
+		out := make([]textEdit, 0, len(raw)); for _, item := range raw { m, ok := item.(map[string]any); if !ok { return nil, fmt.Errorf("invalid edit") }; old, ok1 := m["oldText"].(string); newText, ok2 := m["newText"].(string); if !ok1 || !ok2 { return nil, fmt.Errorf("invalid edit") }; out = append(out, textEdit{old, newText}) }; return out, nil
+	}
+	old, ok1 := args["oldText"].(string); newText, ok2 := args["newText"].(string); if !ok1 || !ok2 { return nil, fmt.Errorf("edits must contain at least one replacement") }; return []textEdit{{old, newText}}, nil
+}
+
+func stringArg(args map[string]any, key, fallback string) string { if value, ok := args[key].(string); ok && value != "" { return value }; return fallback }
+func intArg(args map[string]any, key string, fallback int) int { switch value := args[key].(type) { case int: return value; case float64: return int(value); default: return fallback } }
+func truncateToolOutput(value string) string { if len(value) <= toolOutputLimit { return value }; return value[:toolOutputLimit] + "\n\n[Output truncated]" }

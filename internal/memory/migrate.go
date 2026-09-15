@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,24 +106,67 @@ func MigrateEpisodes(sourcePath string, target *EpisodicStore, conversationID, w
 		return 0, err
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT id, started_at, ended_at, summary, created_at, related_semantic_node_ids FROM episodes`)
+	rows, err := db.Query(`SELECT * FROM episodes`)
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
 	count := 0
+	columns, err := rows.Columns()
+	if err != nil {
+		return 0, err
+	}
+	indexes := make(map[string]int, len(columns))
+	for index, column := range columns {
+		indexes[strings.ToLower(column)] = index
+	}
+	for _, required := range []string{"id", "started_at", "ended_at", "summary", "created_at", "related_semantic_node_ids"} {
+		if _, ok := indexes[required]; !ok {
+			return 0, fmt.Errorf("episodes table is missing %s", required)
+		}
+	}
 	for rows.Next() {
 		var e Episode
-		var related string
-		if err := rows.Scan(&e.ID, &e.StartedAt, &e.EndedAt, &e.Summary, &e.CreatedAt, &related); err != nil {
+		values := make([]any, len(columns))
+		pointers := make([]any, len(columns))
+		for index := range values {
+			pointers[index] = &values[index]
+		}
+		if err := rows.Scan(pointers...); err != nil {
 			return count, err
 		}
+		e.ID = migrationString(values[indexes["id"]])
+		e.StartedAt = migrationString(values[indexes["started_at"]])
+		e.EndedAt = migrationString(values[indexes["ended_at"]])
+		e.Summary = migrationString(values[indexes["summary"]])
+		e.CreatedAt = migrationString(values[indexes["created_at"]])
+		related := migrationString(values[indexes["related_semantic_node_ids"]])
 		_ = json.Unmarshal([]byte(related), &e.RelatedSemanticNodeIDs)
 		e.ConversationID, e.WorkspaceID = conversationID, workspaceID
+		if index, ok := indexes["workspace_id"]; ok && e.WorkspaceID == "" {
+			e.WorkspaceID = migrationString(values[index])
+		}
+		if index, ok := indexes["channel"]; ok {
+			e.Channel = migrationString(values[index])
+		}
+		if index, ok := indexes["turn_id"]; ok {
+			e.TurnID = migrationString(values[index])
+		}
 		if err := target.Record(e); err != nil {
 			return count, err
 		}
 		count++
 	}
 	return count, rows.Err()
+}
+
+func migrationString(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return ""
+	case []byte:
+		return string(value)
+	default:
+		return fmt.Sprint(value)
+	}
 }

@@ -52,3 +52,10 @@ fresh-host installation path. It passed an isolated user-namespace acceptance
 with a temporary root, fake systemctl, both binaries and wrappers present,
 unit files present, channel env mode `600`, and `YEN_START=0` proving no start.
 The documented unit/data/secret layout remains the operational contract.
+
+## Latest live backup
+
+On 2026-09-15 the current side-by-side pilot data was archived and verified at
+`/var/backups/yen-20260915T093942Z.tgz` (11,333 bytes, mode `600`). Archive
+listing validation succeeded; all Yen and Theoses2 units remained active and
+Yen `/healthz` returned `{"ok":true}`.

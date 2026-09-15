@@ -37,11 +37,53 @@ type openAIToolCall struct {
 type OpenAICompletions struct {
 	BaseURL         string
 	APIKey          string
+	Headers         map[string]string
 	Model           string
+	ProviderName    string
 	ReasoningEffort string
 	Client          *http.Client
 	MaxRetries      int
 	MaxRetryDelay   time.Duration
+}
+
+func (p OpenAICompletions) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	client := p.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.BaseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if p.APIKey != "" {
+		request.Header.Set("Authorization", "Bearer "+p.APIKey)
+	}
+	for name, value := range p.Headers {
+		request.Header.Set(name, value)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("model catalog returned %s", response.Status)
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	models := make([]ModelInfo, 0, len(payload.Data))
+	for _, model := range payload.Data {
+		if strings.TrimSpace(model.ID) != "" {
+			models = append(models, ModelInfo{Provider: p.ProviderName, ID: model.ID})
+		}
+	}
+	return models, nil
 }
 
 func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
@@ -68,53 +110,28 @@ func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Messag
 
 func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
 	payload := struct {
-		Model          string            `json:"model"`
-		Messages       []openAIMessage   `json:"messages"`
-		Tools          []map[string]any  `json:"tools,omitempty"`
-		Stream         bool              `json:"stream"`
-		ResponseFormat map[string]string `json:"response_format,omitempty"`
-		Reasoning      map[string]string `json:"reasoning,omitempty"`
+		Model           string            `json:"model"`
+		Messages        []openAIMessage   `json:"messages"`
+		Tools           []map[string]any  `json:"tools,omitempty"`
+		Stream          bool              `json:"stream"`
+		ResponseFormat  map[string]string `json:"response_format,omitempty"`
+		Reasoning       map[string]string `json:"reasoning,omitempty"`
+		ReasoningEffort string            `json:"reasoning_effort,omitempty"`
 	}{Model: p.Model, Messages: convertMessages(messages), Stream: true}
 	if p.ReasoningEffort != "" {
-		payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
+		if p.ProviderName == "mistral" {
+			payload.ReasoningEffort = p.ReasoningEffort
+		} else {
+			payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
+		}
 	}
 	if jsonMode {
 		payload.ResponseFormat = map[string]string{"type": "json_object"}
 	}
 	for _, name := range toolNames {
-		parameters := map[string]any{"type": "object"}
-		if name == "read" {
-			parameters = map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"path":   map[string]any{"type": "string", "description": "Path to the file to read (relative or absolute)"},
-					"offset": map[string]any{"type": "number", "description": "Line number to start reading from (1-indexed)"},
-					"limit":  map[string]any{"type": "number", "description": "Maximum number of lines to read"},
-				},
-				"required": []string{"path"},
-			}
-		} else if name == "remember" {
-			parameters = map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"query": map[string]any{"type": "string", "description": "What to recall from memory"}},
-				"required":   []string{"query"},
-			}
-		} else if name == "save_note" {
-			parameters = map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"note": map[string]any{"type": "string", "description": "A present, durable fact worth remembering"}},
-				"required":   []string{"note"},
-			}
-		} else if name == "recall_turns" {
-			parameters = map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"query": map[string]any{"type": "string", "description": "What to search for in this session's past turns"}},
-				"required":   []string{"query"},
-			}
-		}
 		payload.Tools = append(payload.Tools, map[string]any{
 			"type":     "function",
-			"function": map[string]any{"name": name, "parameters": parameters},
+			"function": map[string]any{"name": name, "parameters": toolParameters(name)},
 		})
 	}
 	body, err := json.Marshal(payload)
@@ -132,8 +149,18 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			return agent.Response{}, err
 		}
 		request.Header.Set("Content-Type", "application/json")
+		if p.ProviderName == "github-copilot" {
+			request.Header.Set("X-Initiator", copilotInitiator(messages))
+			request.Header.Set("Openai-Intent", "conversation-edits")
+			if hasMessageImages(messages) {
+				request.Header.Set("Copilot-Vision-Request", "true")
+			}
+		}
 		if p.APIKey != "" {
 			request.Header.Set("Authorization", "Bearer "+p.APIKey)
+		}
+		for name, value := range p.Headers {
+			request.Header.Set(name, value)
 		}
 		response, err = client.Do(request)
 		if err != nil {
@@ -174,7 +201,10 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	defer response.Body.Close()
 
 	var result agent.Response
-	result.Provider = "openai-completions"
+	result.Provider = p.ProviderName
+	if result.Provider == "" {
+		result.Provider = "openai-completions"
+	}
 	result.Model = p.Model
 	var toolCalls []agent.ToolCall
 	arguments := map[string]string{}
@@ -382,6 +412,123 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		result.StopReason = "toolUse"
 	}
 	return result, nil
+}
+
+func copilotInitiator(messages []agent.Message) string {
+	if len(messages) > 0 && messages[len(messages)-1].Role != "user" {
+		return "agent"
+	}
+	return "user"
+}
+
+func hasMessageImages(messages []agent.Message) bool {
+	for _, message := range messages {
+		if len(message.Images) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func toolParameters(name string) map[string]any {
+	stringProperty := func(description string) map[string]any {
+		return map[string]any{"type": "string", "description": description}
+	}
+	numberProperty := func(description string) map[string]any {
+		return map[string]any{"type": "number", "description": description}
+	}
+	optional := func(properties map[string]any, required ...string) map[string]any {
+		result := map[string]any{"type": "object", "properties": properties}
+		if len(required) > 0 {
+			result["required"] = required
+		}
+		return result
+	}
+	switch name {
+	case "read":
+		return optional(map[string]any{
+			"path":   stringProperty("Path to the file to read (relative or absolute)"),
+			"offset": numberProperty("Line number to start reading from (1-indexed)"),
+			"limit":  numberProperty("Maximum number of lines to read"),
+		}, "path")
+	case "bash", "powershell":
+		return optional(map[string]any{
+			"command": stringProperty("Shell command to execute"),
+			"timeout": numberProperty("Timeout in seconds (optional)"),
+		}, "command")
+	case "write":
+		return optional(map[string]any{
+			"path":    stringProperty("Path to the file to write (relative or absolute)"),
+			"content": stringProperty("Content to write to the file"),
+		}, "path", "content")
+	case "edit":
+		return optional(map[string]any{
+			"path": stringProperty("Path to the file to edit (relative or absolute)"),
+			"edits": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"oldText": stringProperty("Exact text to replace"),
+						"newText": stringProperty("Replacement text"),
+					},
+					"required": []string{"oldText", "newText"},
+				},
+			},
+		}, "path", "edits")
+	case "grep":
+		return optional(map[string]any{
+			"pattern":    stringProperty("Search pattern (regex or literal string)"),
+			"path":       stringProperty("Directory or file to search"),
+			"glob":       stringProperty("File glob filter"),
+			"ignoreCase": map[string]any{"type": "boolean"},
+			"literal":    map[string]any{"type": "boolean"},
+			"context":    numberProperty("Lines before and after matches"),
+			"limit":      numberProperty("Maximum number of matches"),
+		}, "pattern")
+	case "find":
+		return optional(map[string]any{
+			"pattern": stringProperty("Glob pattern to match files"),
+			"path":    stringProperty("Directory to search"),
+			"limit":   numberProperty("Maximum number of results"),
+		}, "pattern")
+	case "ls":
+		return optional(map[string]any{
+			"path":  stringProperty("Directory to list"),
+			"limit": numberProperty("Maximum number of entries"),
+		})
+	case "remember", "recall_turns":
+		return optional(map[string]any{"query": stringProperty("What to search for")}, "query")
+	case "save_note":
+		return optional(map[string]any{"note": stringProperty("A present, durable fact worth remembering")}, "note")
+	case "working_note":
+		return optional(map[string]any{
+			"note":  stringProperty("One concise fact to append to the Working Note"),
+			"clear": map[string]any{"type": "boolean", "description": "Clear the Working Note"},
+		})
+	case "note_operations":
+		return optional(map[string]any{
+			"section": stringProperty("Section heading for the operational note"),
+			"content": stringProperty("One concise durable operational line"),
+		}, "section", "content")
+	case "convert_doc":
+		return optional(map[string]any{"path": stringProperty("Path to a document file")}, "path")
+	case "web_search":
+		return optional(map[string]any{"query": stringProperty("The web search query")}, "query")
+	case "generate_image":
+		return optional(map[string]any{"prompt": stringProperty("Detailed description of the image to generate")}, "prompt")
+	case "explore":
+		return optional(map[string]any{
+			"question": stringProperty("The single scouting question to answer"),
+			"tier":     stringProperty("quick-scan or deep-map"),
+		}, "question")
+	case "tool_search":
+		return optional(map[string]any{"query": stringProperty("Tool name or capability to search for")}, "query")
+	case "tool_call":
+		return optional(map[string]any{"name": stringProperty("Exact deferred tool name"), "args": map[string]any{"type": "object"}}, "name")
+	default:
+		return map[string]any{"type": "object"}
+	}
 }
 
 func mapStopReason(reason string) (string, string) {

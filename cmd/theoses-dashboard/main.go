@@ -9,11 +9,13 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/adapters"
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
-	"github.com/H4fizWasabie/yen/internal/tools"
+	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 func main() {
@@ -23,7 +25,7 @@ func main() {
 		log.Fatal(err)
 	}
 	flag.Parse()
-	dataDir := os.Getenv("THEOSES_DATA_DIR")
+	dataDir := os.Getenv("YEN_DATA_DIR")
 	if dataDir == "" {
 		dataDir = filepath.Join(workspace, ".theoses-go")
 	}
@@ -35,17 +37,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	baseURL := os.Getenv("THEOSES_OPENAI_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+	client := provider.ConfiguredFromEnv()
+	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
+	if current, err := settings.Load(workspace); err == nil {
+		runner.ApplySettings(current)
 	}
-	model := os.Getenv("THEOSES_MODEL")
-	if model == "" {
-		model = "gpt-4o-mini"
+	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
+		return codingagent.NewToolsForSession(workspace, current)
 	}
-	provider := provider.NewOpenAICompletions(baseURL, os.Getenv("OPENAI_API_KEY"), model)
-	provider.ReasoningEffort = os.Getenv("THEOSES_REASONING_EFFORT")
-	runner := runtime.New(queue, provider, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
+	runner.SessionToolFactoryWithProvider = func(workspace string, current *session.Session, client agent.Provider) []agent.Tool {
+		return codingagent.NewToolsForSessionWithProvider(workspace, current, client)
+	}
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()
 	runner.AutoCompactKeepRecentTokens = runtime.AutoCompactKeepRecentTokensFromEnv()
@@ -54,7 +56,11 @@ func main() {
 	runner.AutoCompactDisabled = runtime.AutoCompactDisabledFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
 	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
-	runner.SharedMemory = os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID") != ""
+	canonicalConversationID := os.Getenv("YEN_CANONICAL_CONVERSATION_ID")
+	if canonicalConversationID == "" {
+		canonicalConversationID = "yen-primary"
+	}
+	runner.SharedMemory = true
 	runner.SessionPath = func(turn conversation.Turn) string {
 		return filepath.Join(dataDir, "sessions", turn.ConversationID+".jsonl")
 	}
@@ -67,7 +73,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer runner.Memory.Close()
-	handler := adapters.DashboardHTTP{AccessToken: os.Getenv("THEOSES_DASHBOARD_TOKEN"), Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: os.Getenv("THEOSES_CANONICAL_CONVERSATION_ID")}, Workspace: workspace}}
+	handler := adapters.DashboardHTTP{AccessToken: os.Getenv("YEN_DASHBOARD_TOKEN"), Dashboard: adapters.Dashboard{Service: adapters.Service{Registry: registry, Runner: runner, CanonicalConversationID: canonicalConversationID}, Workspace: workspace}}
 	log.Printf("theoses dashboard listening on %s", *addr)
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		log.Fatal(err)

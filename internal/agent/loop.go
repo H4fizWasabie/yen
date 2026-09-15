@@ -81,6 +81,15 @@ type Tool interface {
 	Execute(ctx context.Context, args map[string]any) (string, error)
 }
 
+type ToolResult struct {
+	Text   string
+	Images []string
+}
+
+type RichTool interface {
+	ExecuteRich(ctx context.Context, args map[string]any) (ToolResult, error)
+}
+
 type Result struct {
 	Messages  []Message
 	Events    []string
@@ -109,9 +118,19 @@ type EventFunc func(Event)
 // Steering is consumed before the next assistant response; follow-up is
 // consumed after an assistant would otherwise settle.
 type MessageQueues struct {
-	mu       sync.Mutex
-	steering []Message
-	followUp []Message
+	mu                         sync.Mutex
+	steering                   []Message
+	followUp                   []Message
+	steeringMode, followUpMode string
+}
+
+func (q *MessageQueues) SetModes(steering, followUp string) {
+	if q == nil {
+		return
+	}
+	q.mu.Lock()
+	q.steeringMode, q.followUpMode = steering, followUp
+	q.mu.Unlock()
 }
 
 func (q *MessageQueues) Steer(message Message) {
@@ -138,8 +157,16 @@ func (q *MessageQueues) drainSteering() []Message {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	messages := q.steering
-	q.steering = nil
+	if q.steeringMode == "all" {
+		messages := q.steering
+		q.steering = nil
+		return messages
+	}
+	if len(q.steering) == 0 {
+		return nil
+	}
+	messages := q.steering[:1]
+	q.steering = q.steering[1:]
 	return messages
 }
 
@@ -149,8 +176,16 @@ func (q *MessageQueues) drainFollowUp() []Message {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	messages := q.followUp
-	q.followUp = nil
+	if q.followUpMode == "all" {
+		messages := q.followUp
+		q.followUp = nil
+		return messages
+	}
+	if len(q.followUp) == 0 {
+		return nil
+	}
+	messages := q.followUp[:1]
+	q.followUp = q.followUp[1:]
 	return messages
 }
 
@@ -333,7 +368,8 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				continue
 			}
 			result.Events = append(result.Events, "tool_execution_start:"+call.ID)
-			content, err := tool.Execute(ctx, call.Args)
+			toolResult, err := executeTool(ctx, tool, call.Args)
+			content, images := toolResult.Text, toolResult.Images
 			if err != nil {
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 				if ctx.Err() != nil {
@@ -358,7 +394,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 			}
 			result.Events = append(result.Events, "message_start:toolResult")
-			toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+			toolMessage := Message{Role: "tool", Content: content, Images: images, ToolCallID: call.ID}
 			result.Messages = append(result.Messages, toolMessage)
 			toolResults = append(toolResults, toolMessage)
 			emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
@@ -378,7 +414,16 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 type parallelToolResult struct {
 	call    ToolCall
 	content string
+	images  []string
 	err     error
+}
+
+func executeTool(ctx context.Context, tool Tool, args map[string]any) (ToolResult, error) {
+	if rich, ok := tool.(RichTool); ok {
+		return rich.ExecuteRich(ctx, args)
+	}
+	text, err := tool.Execute(ctx, args)
+	return ToolResult{Text: text}, err
 }
 
 func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc) ([]Message, error) {
@@ -401,7 +446,8 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 				outcomes[i].err = errors.New(outcomes[i].content)
 				return
 			}
-			outcomes[i].content, outcomes[i].err = tool.Execute(ctx, call.Args)
+			toolResult, err := executeTool(ctx, tool, call.Args)
+			outcomes[i].content, outcomes[i].images, outcomes[i].err = toolResult.Text, toolResult.Images, err
 		}(i, call)
 	}
 	wait.Wait()
@@ -419,7 +465,7 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 			}
 		}
 		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
-		toolMessage := Message{Role: "tool", Content: content, ToolCallID: outcome.call.ID}
+		toolMessage := Message{Role: "tool", Content: content, Images: outcome.images, ToolCallID: outcome.call.ID}
 		result.Messages = append(result.Messages, toolMessage)
 		toolMessages = append(toolMessages, toolMessage)
 		emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
