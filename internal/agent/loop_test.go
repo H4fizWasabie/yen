@@ -218,6 +218,20 @@ func TestRunIncludesProviderUpdates(t *testing.T) {
 	}
 }
 
+func TestRunCarriesProviderUsageOnAssistantMessage(t *testing.T) {
+	result, err := Run(context.Background(), &scriptedProvider{responses: []Response{{
+		Text:       "done",
+		StopReason: "stop",
+		Usage:      Usage{Input: 4, Output: 2, TotalTokens: 6},
+	}}}, nil, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Messages[1].Usage == nil || *result.Messages[1].Usage != (Usage{Input: 4, Output: 2, TotalTokens: 6}) {
+		t.Fatalf("assistant usage=%#v", result.Messages[1].Usage)
+	}
+}
+
 type queuedMessagesProvider struct {
 	queues *MessageQueues
 	calls  int

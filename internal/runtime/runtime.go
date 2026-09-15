@@ -244,6 +244,12 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 	result := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
 		converted := agent.Message{Role: message.Role, ToolCallID: message.ToolCallID, StopReason: message.StopReason}
+		if message.Usage != nil {
+			converted.Usage = &agent.Usage{
+				Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
+				CacheRead: message.Usage.CacheRead, CacheWrite: message.Usage.CacheWrite, TotalTokens: message.Usage.TotalTokens,
+			}
+		}
 		if message.Role == "toolResult" {
 			converted.Role = "tool"
 		}
@@ -275,8 +281,15 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 }
 
 func toSessionMessage(message agent.Message) session.Message {
+	var usage *session.Usage
+	if message.Usage != nil {
+		usage = &session.Usage{
+			Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
+			CacheRead: message.Usage.CacheRead, CacheWrite: message.Usage.CacheWrite, TotalTokens: message.Usage.TotalTokens,
+		}
+	}
 	if message.Role == "tool" {
-		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}}
+		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
 	}
 	if len(message.ToolCalls) > 0 {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+1)
@@ -286,7 +299,7 @@ func toSessionMessage(message agent.Message) session.Message {
 		for _, call := range message.ToolCalls {
 			parts = append(parts, session.ContentPart{Type: "toolCall", ID: call.ID, Name: call.Name, Arguments: call.Args})
 		}
-		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason}
+		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason, Usage: usage}
 	}
-	return session.Message{Role: message.Role, Content: message.Content, StopReason: message.StopReason}
+	return session.Message{Role: message.Role, Content: message.Content, StopReason: message.StopReason, Usage: usage}
 }

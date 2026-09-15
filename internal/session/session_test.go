@@ -170,3 +170,23 @@ func TestSessionReadbackPreservesToolTurnBoundary(t *testing.T) {
 		t.Fatalf("readback messages = %#v", reopened.Messages())
 	}
 }
+
+func TestSessionReadbackPreservesAssistantUsage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	session := New(path, Header{ID: "usage", CWD: t.TempDir(), Channel: "cli"})
+	if _, err := session.Append(Message{Role: "user", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	usage := &Usage{Input: 4, Output: 2, TotalTokens: 6}
+	if _, err := session.Append(Message{Role: "assistant", Content: "done", Usage: usage}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := reopened.Messages()
+	if len(messages) != 2 || messages[1].Usage == nil || *messages[1].Usage != *usage {
+		t.Fatalf("messages=%#v", messages)
+	}
+}

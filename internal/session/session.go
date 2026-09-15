@@ -29,11 +29,21 @@ type ContentPart struct {
 	Arguments any    `json:"arguments,omitempty"`
 }
 
+type Usage struct {
+	Input       int `json:"input,omitempty"`
+	Output      int `json:"output,omitempty"`
+	Reasoning   int `json:"reasoning,omitempty"`
+	CacheRead   int `json:"cacheRead,omitempty"`
+	CacheWrite  int `json:"cacheWrite,omitempty"`
+	TotalTokens int `json:"totalTokens,omitempty"`
+}
+
 type Message struct {
 	Role       string `json:"role"`
 	Content    any    `json:"content"`
 	ToolCallID string `json:"toolCallId,omitempty"`
 	StopReason string `json:"stopReason,omitempty"`
+	Usage      *Usage `json:"usage,omitempty"`
 }
 
 type sessionEntry struct {
