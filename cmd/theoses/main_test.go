@@ -178,6 +178,21 @@ func TestInteractiveBashCommandsPersistOutputAndExclusion(t *testing.T) {
 	}
 }
 
+func TestInteractiveBashCommandPersistsExitMetadata(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("!printf failed >&2; exit 7", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	messages := current.Messages()
+	if len(messages) != 1 || messages[0].ExitCode == nil || *messages[0].ExitCode != 7 || messages[0].Output != "failed" {
+		t.Fatalf("messages=%#v", messages)
+	}
+}
+
 func TestInteractiveSessionExportAndImport(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")

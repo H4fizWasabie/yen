@@ -170,8 +170,13 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 			return true, nil
 		}
 		cwd := current.Header().CWD
-		result, err := tools.NewBashTool(cwd).Execute(context.Background(), map[string]any{"command": command})
-		message := session.Message{Role: "bashExecution", Command: command, Output: result, ExcludeFromContext: excludeFromContext}
+		bashResult, err := tools.NewBashTool(cwd).ExecuteResult(context.Background(), map[string]any{"command": command})
+		result := bashResult.Output
+		message := session.Message{
+			Role: "bashExecution", Command: command, Output: result, ExitCode: bashResult.ExitCode,
+			Cancelled: bashResult.Cancelled, Truncated: bashResult.Truncated, FullOutputPath: bashResult.FullOutputPath,
+			ExcludeFromContext: excludeFromContext,
+		}
 		if _, appendErr := current.Append(message); appendErr != nil {
 			return true, appendErr
 		}
