@@ -100,7 +100,7 @@ func (c *Client) Call(command map[string]any) (map[string]any, error) {
 // Lines that are not the matching response are forwarded to onEvent, allowing
 // callers to observe the same streaming events as the TypeScript RPC client.
 func (c *Client) CallWithEvents(command map[string]any, onEvent func(map[string]any)) (map[string]any, error) {
-	if c == nil || c.connection == nil {
+	if c == nil {
 		return nil, errors.New("rpc client is closed")
 	}
 	if command == nil {
@@ -119,6 +119,9 @@ func (c *Client) CallWithEvents(command map[string]any, onEvent func(map[string]
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.connection == nil {
+		return nil, errors.New("rpc client is closed")
+	}
 	if _, err := fmt.Fprintf(c.connection, "%s\n", data); err != nil {
 		return nil, err
 	}
@@ -141,7 +144,12 @@ func (c *Client) CallWithEvents(command map[string]any, onEvent func(map[string]
 }
 
 func (c *Client) Close() error {
-	if c == nil || c.connection == nil {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.connection == nil {
 		return nil
 	}
 	err := c.connection.Close()

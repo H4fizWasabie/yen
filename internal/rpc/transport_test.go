@@ -84,4 +84,36 @@ func TestClientCallWithEventsCorrelatesResponseAndForwardsEvents(t *testing.T) {
 	<-done
 }
 
+func TestClientCloseWaitsForAnInFlightCall(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	client := &Client{connection: clientConn, scanner: bufio.NewScanner(clientConn)}
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := client.Call(map[string]any{"type": "get_state"})
+		callDone <- err
+	}()
+
+	serverScanner := bufio.NewScanner(serverConn)
+	if !serverScanner.Scan() {
+		t.Fatal("client did not send a request")
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- client.Close() }()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("close returned before in-flight call ended: %v", err)
+	case <-time.After(10 * time.Millisecond):
+	}
+	_ = serverConn.Close()
+	if err := <-callDone; err == nil {
+		t.Fatal("in-flight call unexpectedly succeeded")
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 var _ agent.Provider = rpcProvider{}
