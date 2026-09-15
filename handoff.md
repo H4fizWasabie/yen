@@ -485,6 +485,11 @@ The read-only explorer now enforces its oracle turn ceilings in the harness:
 answer when the ceiling is reached. Its prompt also requires the oracle's
 distilled-answer and budget-footer contract; the full gate is now 260 tests.
 
+The side-by-side installer now forwards every configured Yen provider key,
+including the previously omitted Ant Ling, Baseten, Cerebras, Fireworks, Hugging
+Face, Qwen, Together, Xiaomi, Z.AI-CN, Google, Azure, and auth-store variables
+through both service wrappers. Shell syntax and the full Go gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
