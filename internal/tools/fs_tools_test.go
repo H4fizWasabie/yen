@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -87,6 +88,34 @@ func TestFindToolSupportsRecursiveGlobstar(t *testing.T) {
 	got, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "**/*.go"})
 	if err != nil || got != "internal/nested/main.go" {
 		t.Fatalf("find=%q err=%v", got, err)
+	}
+}
+
+func TestSearchToolsRespectGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "-C", dir, "init", "-q").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored/\n*.secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"visible.txt", "ignored/hidden.txt", "private.secret"} {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("needle\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	find, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "**/*"})
+	if err != nil || find != ".gitignore\nvisible.txt" {
+		t.Fatalf("find=%q err=%v", find, err)
+	}
+	grep, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle"})
+	if err != nil || !strings.Contains(grep, "visible.txt:1: needle") || strings.Contains(grep, "hidden.txt") || strings.Contains(grep, "private.secret") {
+		t.Fatalf("grep=%q err=%v", grep, err)
 	}
 }
 
