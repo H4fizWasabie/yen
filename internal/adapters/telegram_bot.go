@@ -177,41 +177,49 @@ func (b *TelegramBot) getUpdates(ctx context.Context) ([]telegramUpdate, error) 
 }
 
 func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string, replyTo *int64) error {
-	client := b.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	for _, chunk := range chunkTelegramText(text) {
-		if err := b.sendRichMessage(ctx, chatID, chunk, replyTo); err == nil {
-			continue
-		}
-		payloadValues := map[string]string{"chat_id": chatID, "text": chunk}
-		if replyTo != nil {
-			payloadValues["reply_to_message_id"] = strconv.FormatInt(*replyTo, 10)
-		}
-		payload, err := json.Marshal(payloadValues)
-		if err != nil {
-			return err
-		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendMessage", bytes.NewReader(payload))
-		if err != nil {
-			return err
-		}
-		request.Header.Set("Content-Type", "application/json")
-		response, err := client.Do(request)
-		if err != nil {
-			return err
-		}
-		_, _ = io.Copy(io.Discard, response.Body)
-		response.Body.Close()
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			return fmt.Errorf("telegram sendMessage returned %s", response.Status)
+	lastID := replyTo
+	for _, section := range splitTelegramSections(text) {
+		for _, chunk := range chunkTelegramText(section) {
+			messageID, err := b.sendRichMessage(ctx, chatID, chunk, lastID)
+			if err != nil {
+				messageID, err = b.sendClassicMessage(ctx, chatID, chunk, lastID)
+			}
+			if err != nil {
+				return err
+			}
+			if messageID != 0 {
+				lastID = &messageID
+			}
 		}
 	}
 	return nil
 }
 
-func (b *TelegramBot) sendRichMessage(ctx context.Context, chatID, text string, replyTo *int64) error {
+func splitTelegramSections(text string) []string {
+	var sections []string
+	var current []string
+	flush := func() {
+		section := strings.TrimSpace(strings.Join(current, "\n"))
+		if section != "" {
+			sections = append(sections, section)
+		}
+		current = nil
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == "---" {
+			flush()
+			continue
+		}
+		current = append(current, line)
+	}
+	flush()
+	if len(sections) == 0 {
+		return []string{""}
+	}
+	return sections
+}
+
+func (b *TelegramBot) sendRichMessage(ctx context.Context, chatID, text string, replyTo *int64) (int64, error) {
 	payload := map[string]any{
 		"chat_id":      chatID,
 		"rich_message": map[string]string{"markdown": text},
@@ -221,11 +229,11 @@ func (b *TelegramBot) sendRichMessage(ctx context.Context, chatID, text string, 
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendRichMessage", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	client := b.Client
@@ -234,20 +242,64 @@ func (b *TelegramBot) sendRichMessage(ctx context.Context, chatID, text string, 
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("telegram sendRichMessage returned %s", response.Status)
+		return 0, fmt.Errorf("telegram sendRichMessage returned %s", response.Status)
 	}
 	var result telegramResponse
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return err
+		return 0, err
 	}
 	if !result.OK {
-		return errors.New(result.Description)
+		return 0, errors.New(result.Description)
 	}
-	return nil
+	var sent struct {
+		MessageID int64 `json:"message_id"`
+	}
+	if len(result.Result) > 0 {
+		_ = json.Unmarshal(result.Result, &sent)
+	}
+	return sent.MessageID, nil
+}
+
+func (b *TelegramBot) sendClassicMessage(ctx context.Context, chatID, text string, replyTo *int64) (int64, error) {
+	payloadValues := map[string]string{"chat_id": chatID, "text": text}
+	if replyTo != nil {
+		payloadValues["reply_to_message_id"] = strconv.FormatInt(*replyTo, 10)
+	}
+	payload, err := json.Marshal(payloadValues)
+	if err != nil {
+		return 0, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendMessage", bytes.NewReader(payload))
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := b.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return 0, fmt.Errorf("telegram sendMessage returned %s", response.Status)
+	}
+	var result telegramResponse
+	if json.Unmarshal(body, &result) != nil || !result.OK {
+		return 0, nil
+	}
+	var sent struct {
+		MessageID int64 `json:"message_id"`
+	}
+	_ = json.Unmarshal(result.Result, &sent)
+	return sent.MessageID, nil
 }
 
 func (b *TelegramBot) sendChatAction(ctx context.Context, chatID string) error {

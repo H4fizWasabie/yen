@@ -77,6 +77,10 @@ Telegram stop controls now accept the pinned case-insensitive `stop`, `halt`,
 Telegram replies now attempt the oracle's `sendRichMessage` Bot API method and
 fall back to classic `sendMessage` on any unsupported or failed request.
 
+Outbound replies also split on standalone `---` sections and thread each
+following message to the prior sent message, matching the Telegram source
+adapter's reply chain.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

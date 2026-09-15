@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -196,6 +197,41 @@ func TestTelegramBotUsesRichMessageBeforeClassicFallback(t *testing.T) {
 	}
 	if !rich {
 		t.Fatal("rich message was not attempted")
+	}
+}
+
+func TestTelegramBotSplitsSectionsAndThreadsReplies(t *testing.T) {
+	var targets []int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			ReplyParameters *struct {
+				MessageID int64 `json:"message_id"`
+			} `json:"reply_parameters"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if payload.ReplyParameters != nil {
+			targets = append(targets, payload.ReplyParameters.MessageID)
+		}
+		messageID := int64(10 + len(targets))
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"ok":true,"result":{"message_id":%d}}`, messageID)))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Token: "token", APIBase: server.URL}
+	replyTo := int64(9)
+	if err := bot.sendMessage(context.Background(), "42", "one\n---\ntwo", &replyTo); err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 || targets[0] != 9 || targets[1] != 11 {
+		t.Fatalf("reply targets=%v, want [9 11]", targets)
+	}
+}
+
+func TestSplitTelegramSectionsMatchesTypeScriptBoundary(t *testing.T) {
+	got := splitTelegramSections(" first \n---\n second \n---\n")
+	if strings.Join(got, "|") != "first|second" {
+		t.Fatalf("sections=%#v", got)
 	}
 }
 
