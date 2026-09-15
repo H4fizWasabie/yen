@@ -85,6 +85,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return []agent.Tool{tools.NewReadTool(workspace)} })
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactOnOverflow = runtime.AutoCompactOnOverflowFromEnv()
+	runner.AutoConsolidate = runtime.AutoConsolidateFromEnv()
 	runner.SharedMemory = canonicalConversationID != ""
 	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(dataDir, "consolidation-checkpoints.json"))
 	if err != nil {

@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 const ConsolidationTurnCeiling = 70
+const consolidationFailureCooldown = 15 * time.Minute
 
 var consolidationTriggerPhrases = []string{"thanks", "thank you", "great job", "good work", "nice work", "perfect", "awesome", "that's all", "all done"}
 
@@ -59,6 +61,32 @@ func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnI
 		result.Episode.EndedAt = turns[len(turns)-1].Timestamp
 	}
 	return e.ApplyConsolidation(turnID, conversationID, workspaceID, adapter, result.Facts, result.Edges, result.Episode)
+}
+
+// ConsolidateIfTriggered runs the pinned completion/ceiling trigger without
+// reusing the durable turn checkpoint. Failed background work is recorded for
+// cooldown and returned to the caller for logging; it must not fail the turn.
+func (e *Engine) ConsolidateIfTriggered(ctx context.Context, provider agent.Provider, turnID, conversationID, workspaceID, adapter, userMessage string, turns []ConsolidationTurn) (bool, error) {
+	if e == nil || e.ConsolidationCheckpoints == nil {
+		return false, nil
+	}
+	checkpoint := e.ConsolidationCheckpoints.Get(conversationID)
+	if checkpoint.LastFailureAt != "" {
+		if failedAt, err := time.Parse(time.RFC3339Nano, checkpoint.LastFailureAt); err == nil && time.Since(failedAt) < consolidationFailureCooldown {
+			return false, nil
+		}
+	}
+	if !ShouldTriggerConsolidation(userMessage, len(turns)) {
+		return false, nil
+	}
+	if len(turns) > ConsolidationTurnCeiling {
+		turns = turns[len(turns)-ConsolidationTurnCeiling:]
+	}
+	if err := e.Consolidate(ctx, provider, turnID, conversationID, workspaceID, adapter, turns); err != nil {
+		_ = e.ConsolidationCheckpoints.Set(conversationID, Checkpoint{LastEntryID: checkpoint.LastEntryID, LastFailureAt: time.Now().UTC().Format(time.RFC3339Nano)})
+		return true, err
+	}
+	return true, e.ConsolidationCheckpoints.Set(conversationID, Checkpoint{LastEntryID: turnID})
 }
 
 func (e *Engine) consolidationPrompt(turns []ConsolidationTurn, ctx Context) (string, error) {

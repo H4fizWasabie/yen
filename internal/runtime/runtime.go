@@ -29,6 +29,7 @@ type Runner struct {
 	SharedMemory          bool
 	AutoCompactTurns      int
 	AutoCompactOnOverflow bool
+	AutoConsolidate       bool
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
@@ -49,6 +50,11 @@ func AutoCompactTurnsFromEnv() int {
 
 func AutoCompactOnOverflowFromEnv() bool {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_COMPACT_OVERFLOW")))
+	return value == "1" || value == "true" || value == "yes"
+}
+
+func AutoConsolidateFromEnv() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("THEOSES_AUTO_CONSOLIDATE")))
 	return value == "1" || value == "true" || value == "yes"
 }
 
@@ -310,6 +316,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 		if err := r.Memory.RecordTurn(turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, result.FinalText); err != nil {
 			return result, err
 		}
+		if r.AutoConsolidate {
+			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, toConsolidationTurns(current.Messages()))
+		}
 	}
 	if runErr == nil && r.Checkpoints != nil {
 		if err := r.Checkpoints.Set(turn.ConversationID, memory.Checkpoint{LastEntryID: turn.ID}); err != nil {
@@ -317,6 +326,18 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, queues *ag
 		}
 	}
 	return result, runErr
+}
+
+func toConsolidationTurns(messages []session.Message) []memory.ConsolidationTurn {
+	turns := make([]memory.ConsolidationTurn, 0, len(messages))
+	for _, message := range messages {
+		role := message.Role
+		if role == "toolResult" {
+			role = "tool"
+		}
+		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: fmt.Sprint(message.Content)})
+	}
+	return turns
 }
 
 func (r *Runner) pathFor(turn conversation.Turn) string {

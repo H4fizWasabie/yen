@@ -21,6 +21,16 @@ func (provider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Re
 	return agent.Response{Text: "done", StopReason: "stop", Provider: "test-provider", Model: "test-model"}, nil
 }
 
+type autoConsolidationProvider struct{ calls int }
+
+func (p *autoConsolidationProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{Text: "done", StopReason: "stop"}, nil
+	}
+	return agent.Response{Text: `{"facts":[{"id":"f1","subject":"User prefers concise replies"}],"episode":{"summary":"Recorded a preference."}}`, StopReason: "stop"}, nil
+}
+
 type contextCaptureProvider struct {
 	messages []agent.Message
 }
@@ -204,6 +214,48 @@ func TestRunnerUsesCanonicalQueueAndResumesSession(t *testing.T) {
 	}
 	if len(stored.Messages()) != 4 {
 		t.Fatalf("resumed messages=%#v", stored.Messages())
+	}
+}
+
+func TestRunnerOptInConsolidationUsesSeparateCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &autoConsolidationProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoConsolidate = true
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	runner.Memory, err = memory.OpenEngine(filepath.Join(dir, "memory"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Memory.Close()
+	runner.Checkpoints, err = memory.OpenCheckpoints(filepath.Join(dir, "runtime-checkpoints.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := conversation.Link{Adapter: "telegram", AdapterKey: "chat-1", ConversationID: "conv-auto", WorkspaceID: dir}
+	turn, err := runner.Submit(link, "Thanks, keep replies concise")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunSubmitted(context.Background(), turn); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls=%d, want normal turn plus consolidation", provider.calls)
+	}
+	hits, err := runner.Memory.Remember("concise replies", memory.Context{WorkspaceID: dir, ConversationID: link.ConversationID})
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("memory hits=%#v err=%v", hits, err)
+	}
+	if got := runner.Memory.ConsolidationCheckpoints.Get(link.ConversationID).LastEntryID; got != turn.ID {
+		t.Fatalf("consolidation checkpoint=%q", got)
+	}
+	if got := runner.Checkpoints.Get(link.ConversationID).LastEntryID; got != turn.ID {
+		t.Fatalf("runtime checkpoint=%q", got)
 	}
 }
 

@@ -16,6 +16,16 @@ func (p consolidationProvider) Next(context.Context, []agent.Message, []string) 
 	return agent.Response{Text: p.text, StopReason: "stop"}, nil
 }
 
+type captureConsolidationProvider struct {
+	text string
+	seen string
+}
+
+func (p *captureConsolidationProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.seen = messages[0].Content
+	return agent.Response{Text: p.text, StopReason: "stop"}, nil
+}
+
 func TestEngineConsolidateParsesAndAppliesStructuredResult(t *testing.T) {
 	engine, err := OpenEngine(t.TempDir())
 	if err != nil {
@@ -54,5 +64,47 @@ func TestEngineConsolidateRejectsInvalidResultWithoutCheckpoint(t *testing.T) {
 	}
 	if episodes, err := engine.Episodic.Recent("conv-bad", 8); err != nil || len(episodes) != 0 {
 		t.Fatalf("episodes=%#v err=%v", episodes, err)
+	}
+}
+
+func TestEngineConsolidatesOnlyWhenTriggeredAndTracksSeparateState(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	provider := consolidationProvider{text: `{"facts":[{"id":"f1","subject":"User prefers concise replies"}],"episode":{"summary":"Recorded a preference."}}`}
+	triggered, err := engine.ConsolidateIfTriggered(context.Background(), provider, "turn-1", "conv-1", "work-1", "telegram", "Thanks, that is all", []ConsolidationTurn{{Role: "user", Content: "Keep it concise."}})
+	if err != nil || !triggered {
+		t.Fatalf("triggered=%v err=%v", triggered, err)
+	}
+	if got := engine.ConsolidationCheckpoints.Get("conv-1").LastEntryID; got != "turn-1" {
+		t.Fatalf("consolidation checkpoint=%q", got)
+	}
+	if got := engine.Checkpoints.Get("conv-1").LastEntryID; got != "turn-1" {
+		t.Fatalf("durable checkpoint=%q", got)
+	}
+	if again, err := engine.ConsolidateIfTriggered(context.Background(), provider, "turn-2", "conv-1", "work-1", "telegram", "keep working", []ConsolidationTurn{{Role: "user", Content: "another turn"}}); err != nil || again {
+		t.Fatalf("untriggered follow-up=%v err=%v", again, err)
+	}
+}
+
+func TestEngineConsolidationCapsTriggeredWindow(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	provider := &captureConsolidationProvider{text: `{"episode":{"summary":"window"}}`}
+	turns := make([]ConsolidationTurn, ConsolidationTurnCeiling+5)
+	for i := range turns {
+		turns[i] = ConsolidationTurn{Role: "user", Content: "turn"}
+	}
+	triggered, err := engine.ConsolidateIfTriggered(context.Background(), provider, "turn-ceiling", "conv-ceiling", "work", "cli", "keep working", turns)
+	if err != nil || !triggered {
+		t.Fatalf("triggered=%v err=%v", triggered, err)
+	}
+	if got := strings.Count(provider.seen, "user: turn"); got != ConsolidationTurnCeiling {
+		t.Fatalf("prompt turns=%d, want %d", got, ConsolidationTurnCeiling)
 	}
 }

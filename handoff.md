@@ -117,6 +117,10 @@ advancing a checkpoint, and exposes an explicit one-provider-call
 Consolidation edge writes now enforce the TypeScript closed relation vocabulary
 (`prefers`, `attributed_to`, `depends_on`, `located_at`, `requires`,
 `supersedes`, `used_in`, `maintains`).
+Opt-in runtime consolidation is now available with
+`THEOSES_AUTO_CONSOLIDATE=1`; it uses a separate consolidation-state file,
+the pinned 70-message trigger ceiling, and a 15-minute failure cooldown so it
+does not overwrite durable turn checkpoints.
 Migration accepts semantic Markdown or the legacy JSONL memory file explicitly;
 it is never automatic and leaves source stores intact.
 
