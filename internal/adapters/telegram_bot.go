@@ -22,6 +22,8 @@ type TelegramBot struct {
 	Offset      int64
 }
 
+const telegramMessageLimit = 4096
+
 type telegramUpdate struct {
 	UpdateID int64            `json:"update_id"`
 	Message  *telegramMessage `json:"message,omitempty"`
@@ -126,27 +128,46 @@ func (b *TelegramBot) getUpdates(ctx context.Context) ([]telegramUpdate, error) 
 }
 
 func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string) error {
-	payload, err := json.Marshal(map[string]string{"chat_id": chatID, "text": text})
-	if err != nil {
-		return err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendMessage", bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Content-Type", "application/json")
 	client := b.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, response.Body)
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("telegram sendMessage returned %s", response.Status)
+	for _, chunk := range chunkTelegramText(text) {
+		payload, err := json.Marshal(map[string]string{"chat_id": chatID, "text": chunk})
+		if err != nil {
+			return err
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendMessage", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		request.Header.Set("Content-Type", "application/json")
+		response, err := client.Do(request)
+		if err != nil {
+			return err
+		}
+		_, _ = io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return fmt.Errorf("telegram sendMessage returned %s", response.Status)
+		}
 	}
 	return nil
+}
+
+func chunkTelegramText(text string) []string {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return []string{""}
+	}
+	chunks := make([]string, 0, (len(runes)+telegramMessageLimit-1)/telegramMessageLimit)
+	for len(runes) > 0 {
+		n := telegramMessageLimit
+		if len(runes) < n {
+			n = len(runes)
+		}
+		chunks = append(chunks, string(runes[:n]))
+		runes = runes[n:]
+	}
+	return chunks
 }

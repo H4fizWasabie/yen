@@ -6,13 +6,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 )
+
+type longTelegramProvider struct{}
+
+func (longTelegramProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	return agent.Response{Text: strings.Repeat("界", 5000), StopReason: "stop"}, nil
+}
 
 func TestTelegramBotOwnerGuardAndSendMessage(t *testing.T) {
 	dir := t.TempDir()
@@ -57,6 +65,48 @@ func TestTelegramBotOwnerGuardAndSendMessage(t *testing.T) {
 	}
 	if sent.Load() != 1 {
 		t.Fatalf("unauthorized sent=%d", sent.Load())
+	}
+}
+
+func TestTelegramBotChunksLongReplies(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, longTelegramProvider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	var chunks []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/bottoken/sendMessage" {
+			http.NotFound(w, r)
+			return
+		}
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		chunks = append(chunks, payload["text"])
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	update := telegramUpdate{Message: &telegramMessage{Text: "long"}}
+	update.Message.Chat.ID = 42
+	if err := bot.HandleUpdate(context.Background(), update); err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) < 2 || strings.Join(chunks, "") != strings.Repeat("界", 5000) {
+		t.Fatalf("chunks=%d reconstructed=%d", len(chunks), len([]rune(strings.Join(chunks, ""))))
+	}
+	for _, chunk := range chunks {
+		if len([]rune(chunk)) > telegramMessageLimit {
+			t.Fatalf("chunk length=%d", len([]rune(chunk)))
+		}
 	}
 }
 
