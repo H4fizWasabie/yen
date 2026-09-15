@@ -83,6 +83,12 @@ type Message struct {
 	Summary            string   `json:"summary,omitempty"`
 }
 
+type Artifact struct {
+	Label string
+	Path  string
+	Size  int64
+}
+
 type TimedMessage struct {
 	Message
 	Timestamp string
@@ -100,6 +106,9 @@ type sessionEntry struct {
 	Message             *Message    `json:"message,omitempty"`
 	Note                string      `json:"note,omitempty"`
 	Outcome             string      `json:"outcome,omitempty"`
+	Label               string      `json:"label,omitempty"`
+	Path                string      `json:"path,omitempty"`
+	Size                int64       `json:"size,omitempty"`
 	Compaction          *Compaction `json:"compaction,omitempty"`
 	Summary             string      `json:"summary,omitempty"`
 	FirstKeptEntryID    string      `json:"firstKeptEntryId,omitempty"`
@@ -393,12 +402,86 @@ func (s *Session) AppendOperationFinished(outcome string) (string, error) {
 }
 
 func (s *Session) LastOperationOutcome() string {
-	for i := len(s.activeEntries()) - 1; i >= 0; i-- {
-		if entry := s.activeEntries()[i]; entry.Type == "operation_finished" {
+	entries := s.activeEntries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entry := entries[i]; entry.Type == "operation_finished" {
 			return entry.Outcome
 		}
 	}
 	return ""
+}
+
+func (s *Session) ArtifactDir() string {
+	return filepath.Join(filepath.Dir(s.path), "artifacts", s.header.ID)
+}
+
+func (s *Session) StoreArtifact(label, name string, data []byte) (Artifact, error) {
+	if len(data) == 0 {
+		return Artifact{}, fmt.Errorf("artifact must not be empty")
+	}
+	name = filepath.Base(name)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		return Artifact{}, fmt.Errorf("artifact name is required")
+	}
+	dir := s.ArtifactDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return Artifact{}, err
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return Artifact{}, err
+	}
+	artifact := Artifact{Label: label, Path: path, Size: int64(len(data))}
+	if _, err := s.appendArtifact(artifact); err != nil {
+		return Artifact{}, err
+	}
+	return artifact, nil
+}
+
+func (s *Session) Artifacts() []Artifact {
+	entries := s.activeEntries()
+	result := make([]Artifact, 0)
+	for _, entry := range entries {
+		if entry.Type == "artifact" && entry.Path != "" && entry.Size > 0 {
+			result = append(result, Artifact{Label: entry.Label, Path: entry.Path, Size: entry.Size})
+		}
+	}
+	return result
+}
+
+func (s *Session) ArtifactCatalog(maxBytes int) string {
+	if maxBytes <= 0 {
+		maxBytes = 4000
+	}
+	artifacts := s.Artifacts()
+	if len(artifacts) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("Live document artifacts:\n")
+	for _, artifact := range artifacts {
+		line := fmt.Sprintf("- %s (%d bytes) %s\n", artifact.Label, artifact.Size, artifact.Path)
+		if builder.Len()+len(line) > maxBytes {
+			break
+		}
+		builder.WriteString(line)
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func (s *Session) appendArtifact(artifact Artifact) (string, error) {
+	id := newEntryID(s.entries)
+	var parentID *string
+	if len(s.entries) > 0 {
+		parent := s.entries[len(s.entries)-1].ID
+		parentID = &parent
+	}
+	entry := sessionEntry{Type: "artifact", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Label: artifact.Label, Path: artifact.Path, Size: artifact.Size}
+	s.entries = append(s.entries, entry)
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
 }
 
 func (s *Session) appendWorkingNote(note string) (string, error) {

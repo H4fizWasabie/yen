@@ -14,9 +14,13 @@ import (
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/session"
 )
 
-type generateImageTool struct{ client *http.Client }
+type generateImageTool struct {
+	client  *http.Client
+	session *session.Session
+}
 
 func (generateImageTool) Name() string { return "generate_image" }
 
@@ -51,6 +55,13 @@ func (t generateImageTool) Execute(ctx context.Context, args map[string]any) (st
 	path := filepath.Join(dir, fmt.Sprintf("%d%s", time.Now().UnixNano(), extension))
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return "", err
+	}
+	if t.session != nil {
+		artifact, err := t.session.StoreArtifact("generated image", filepath.Base(path), data)
+		if err != nil {
+			return "", err
+		}
+		path = artifact.Path
 	}
 	return fmt.Sprintf("Image saved to %s (via %s)", path, provider), nil
 }

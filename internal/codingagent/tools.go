@@ -35,7 +35,7 @@ func newTools(workspace string, current *session.Session, provider agent.Provide
 		tools.NewListTool(workspace),
 		convertDocTool{cwd: workspace},
 		NewWebSearchTool(),
-		generateImageTool{client: nil},
+		generateImageTool{client: nil, session: current},
 	}
 	if provider != nil {
 		result = append(result, newExploreTool(workspace, provider))
