@@ -58,12 +58,6 @@ func (e *Engine) Consolidate(ctx context.Context, provider agent.Provider, turnI
 	if err != nil {
 		return err
 	}
-	if result.Episode.StartedAt == "" {
-		result.Episode.StartedAt = turns[0].Timestamp
-	}
-	if result.Episode.EndedAt == "" {
-		result.Episode.EndedAt = turns[len(turns)-1].Timestamp
-	}
 	return e.ApplyConsolidation(turnID, conversationID, workspaceID, adapter, result.Facts, result.Edges, result.Episode)
 }
 
@@ -191,6 +185,13 @@ func parseConsolidationResponse(raw string) (struct {
 			Edges   []ConsolidatedEdge
 			Episode ConsolidatedEpisode
 		}{}, errors.New("consolidation episode summary is required")
+	}
+	if strings.TrimSpace(result.Episode.StartedAt) == "" || strings.TrimSpace(result.Episode.EndedAt) == "" {
+		return struct {
+			Facts   []ConsolidatedFact
+			Edges   []ConsolidatedEdge
+			Episode ConsolidatedEpisode
+		}{}, errors.New("consolidation episode timestamps are required")
 	}
 	related := result.Episode.RelatedFactIDs
 	if len(related) == 0 {

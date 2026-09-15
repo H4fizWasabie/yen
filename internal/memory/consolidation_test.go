@@ -29,7 +29,7 @@ func (p *retryConsolidationProvider) Next(context.Context, []agent.Message, []st
 	if p.calls == 1 {
 		return agent.Response{}, errors.New("temporary consolidation provider failure")
 	}
-	return agent.Response{Text: `{"episode":{"summary":"recovered"}}`, StopReason: "stop"}, nil
+	return agent.Response{Text: `{"episode":{"summary":"recovered","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
 }
 
 func (p *captureConsolidationProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
@@ -43,7 +43,7 @@ func TestEngineConsolidateParsesAndAppliesStructuredResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	provider := consolidationProvider{text: "```json\n{\"facts\":[{\"id\":\"f1\",\"subject\":\"User prefers short answers\"}],\"edges\":[],\"episode\":{\"summary\":\"Recorded a response preference.\",\"relatedFactIds\":[\"f1\"]}}\n```"}
+	provider := consolidationProvider{text: "```json\n{\"facts\":[{\"id\":\"f1\",\"subject\":\"User prefers short answers\"}],\"edges\":[],\"episode\":{\"summary\":\"Recorded a response preference.\",\"startedAt\":\"2026-01-01T00:00:00Z\",\"endedAt\":\"2026-01-01T00:00:01Z\",\"relatedFactIds\":[\"f1\"]}}\n```"}
 	if err := engine.Consolidate(context.Background(), provider, "turn-c", "conv-c", "work-c", "cli", []ConsolidationTurn{{Role: "user", Content: "Please keep replies short."}}); err != nil {
 		t.Fatal(err)
 	}
@@ -78,13 +78,28 @@ func TestEngineConsolidateRejectsInvalidResultWithoutCheckpoint(t *testing.T) {
 	}
 }
 
+func TestEngineConsolidateRequiresEpisodeTimestamps(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	err = engine.Consolidate(context.Background(), consolidationProvider{text: `{"episode":{"summary":"missing times"}}`}, "turn-time", "conv-time", "work", "cli", []ConsolidationTurn{{Role: "user", Content: "hello"}})
+	if err == nil || !strings.Contains(err.Error(), "timestamps are required") {
+		t.Fatalf("err=%v", err)
+	}
+	if got := engine.Checkpoints.Get("conv-time").LastEntryID; got != "" {
+		t.Fatalf("checkpoint advanced to %q", got)
+	}
+}
+
 func TestEngineConsolidatesOnlyWhenTriggeredAndTracksSeparateState(t *testing.T) {
 	engine, err := OpenEngine(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	provider := consolidationProvider{text: `{"facts":[{"id":"f1","subject":"User prefers concise replies"}],"episode":{"summary":"Recorded a preference."}}`}
+	provider := consolidationProvider{text: `{"facts":[{"id":"f1","subject":"User prefers concise replies"}],"episode":{"summary":"Recorded a preference.","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`}
 	triggered, err := engine.ConsolidateIfTriggered(context.Background(), provider, "turn-1", "conv-1", "work-1", "telegram", "Thanks, that is all", []ConsolidationTurn{{Role: "user", Content: "Keep it concise."}})
 	if err != nil || !triggered {
 		t.Fatalf("triggered=%v err=%v", triggered, err)
@@ -106,7 +121,7 @@ func TestEngineConsolidationCapsTriggeredWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	provider := &captureConsolidationProvider{text: `{"episode":{"summary":"window"}}`}
+	provider := &captureConsolidationProvider{text: `{"episode":{"summary":"window","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`}
 	turns := make([]ConsolidationTurn, ConsolidationTurnCeiling+5)
 	for i := range turns {
 		turns[i] = ConsolidationTurn{Role: "user", Content: "turn"}
@@ -126,7 +141,7 @@ func TestConsolidationPromptCapsTranscriptCharacters(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	provider := &captureConsolidationProvider{text: `{"episode":{"summary":"window"}}`}
+	provider := &captureConsolidationProvider{text: `{"episode":{"summary":"window","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`}
 	turns := []ConsolidationTurn{{Role: "user", Content: strings.Repeat("x", MaxConsolidationTranscriptChars+1000)}}
 	if err := engine.Consolidate(context.Background(), provider, "turn-size", "conv-size", "work", "cli", turns); err != nil {
 		t.Fatal(err)

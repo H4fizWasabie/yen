@@ -28,7 +28,7 @@ func (p *autoConsolidationProvider) Next(_ context.Context, _ []agent.Message, _
 	if p.calls == 1 {
 		return agent.Response{Text: "done", StopReason: "stop"}, nil
 	}
-	return agent.Response{Text: `{"facts":[{"id":"f1","subject":"User prefers concise replies"}],"episode":{"summary":"Recorded a preference."}}`, StopReason: "stop"}, nil
+	return agent.Response{Text: `{"facts":[{"id":"f1","subject":"User prefers concise replies"}],"episode":{"summary":"Recorded a preference.","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
 }
 
 type contextCaptureProvider struct {

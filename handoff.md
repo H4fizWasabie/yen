@@ -175,6 +175,9 @@ queue slices are now implemented and locally verified. Work in this order:
 
 The dashboard token boundary has also passed isolated local acceptance: health
 200, unauthenticated API 401, `/api/login` 200, cookie 200, and Bearer 200.
+The 2026-09-15 VPS read-back found both Go pilot units and both existing
+TypeScript units active, but no dashboard token configured in the Go env files;
+therefore live authenticated dashboard acceptance remains intentionally open.
 The installer acceptance was rerun after the consolidation wrapper change:
 temporary root/fake systemctl, both binaries and wrappers, service units,
 mode-600 channel env, and no service start all passed.
