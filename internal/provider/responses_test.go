@@ -47,6 +47,28 @@ func TestOpenAIResponsesStreamsTextAndFunctionCall(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesListsModelsWithConfiguredHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" || r.Header.Get("api-key") != "azure-key" || r.Header.Get("X-Account") != "account-1" || r.Header.Get("Authorization") != "" {
+			t.Fatalf("path=%q api-key=%q account=%q authorization=%q", r.URL.Path, r.Header.Get("api-key"), r.Header.Get("X-Account"), r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"z-model"},{"id":""},{"id":"a-model"}]}`))
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "azure-key", "model")
+	provider.ProviderName = "azure-openai-responses"
+	provider.APIKeyHeader = "api-key"
+	provider.Headers = map[string]string{"X-Account": "account-1"}
+	models, err := provider.ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "z-model" || models[1].Provider != "azure-openai-responses" {
+		t.Fatalf("models=%#v", models)
+	}
+}
+
 func TestOpenAIResponsesPersistsReasoningItemSignature(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
