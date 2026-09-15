@@ -642,6 +642,28 @@ func SetRetryEnabled(p agent.Provider, enabled bool) (agent.Provider, error) {
 	}
 }
 
+func SetRetryMax(p agent.Provider, retries int) (agent.Provider, error) {
+	if retries < 0 {
+		return nil, errors.New("retry count cannot be negative")
+	}
+	switch client := p.(type) {
+	case OpenAICompletions:
+		client.MaxRetries = retries
+		return client, nil
+	case AnthropicMessages:
+		client.MaxRetries = retries
+		return client, nil
+	case GoogleGenerativeAI:
+		client.MaxRetries = retries
+		return client, nil
+	case OpenAIResponses:
+		client.MaxRetries = retries
+		return client, nil
+	default:
+		return nil, errors.New("provider does not support retry control")
+	}
+}
+
 func RetryEnabled(p agent.Provider) bool {
 	switch client := p.(type) {
 	case OpenAICompletions:

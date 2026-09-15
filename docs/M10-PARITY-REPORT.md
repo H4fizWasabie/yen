@@ -29,6 +29,16 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+The settings boundary now deep-merges nested compaction and retry settings
+from global and project files, migrates the oracle's legacy `queueMode`, and
+applies the shared controls once to every CLI, Telegram, dashboard, and RPC
+runner. TypeScript authority:
+`packages/coding-agent/src/core/settings-manager.ts:85-175,420-423`.
+Go evidence: `internal/settings/settings.go`,
+`internal/runtime/runtime.go`, and startup wiring in `cmd/theoses*`; focused
+settings/runtime tests pass. This closes the shared settings configuration
+gap; interactive settings UI and the broader schema remain open.
+
 The coding-agent bash boundary now records both the oracle's bounded automatic
 working-note command log and a durable `bashExecution` session message with
 the full command, output, exit code, cancellation, truncation, and

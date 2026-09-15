@@ -19,6 +19,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/memory"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 type Runner struct {
@@ -60,6 +61,41 @@ func (r *Runner) SetQueueModes(steering, followUp string) {
 	r.SteeringMode, r.FollowUpMode = steering, followUp
 	for _, queues := range r.queues {
 		queues.SetModes(steering, followUp)
+	}
+}
+
+// ApplySettings applies the settings shared by every channel runtime.
+func (r *Runner) ApplySettings(current settings.Settings) {
+	steering, followUp := settings.QueueModes(current)
+	r.SetQueueModes(steering, followUp)
+	if current.AutoCompaction != nil {
+		r.AutoCompactDisabled = !*current.AutoCompaction
+	}
+	if current.Compaction != nil {
+		if current.Compaction.Enabled != nil {
+			r.AutoCompactDisabled = !*current.Compaction.Enabled
+		}
+		if current.Compaction.ReserveTokens > 0 {
+			r.AutoCompactReserveTokens = current.Compaction.ReserveTokens
+		}
+		if current.Compaction.KeepRecentTokens > 0 {
+			r.AutoCompactKeepRecentTokens = current.Compaction.KeepRecentTokens
+		}
+		if current.Compaction.MaxHistoryTurns > 0 {
+			r.AutoCompactMaxHistoryTurns = current.Compaction.MaxHistoryTurns
+		}
+	}
+	if current.Retry != nil {
+		if current.Retry.MaxRetries > 0 {
+			if configured, err := providerpkg.SetRetryMax(r.Provider, current.Retry.MaxRetries); err == nil {
+				r.Provider = configured
+			}
+		}
+		if current.Retry.Enabled != nil {
+			if configured, err := providerpkg.SetRetryEnabled(r.Provider, *current.Retry.Enabled); err == nil {
+				r.Provider = configured
+			}
+		}
 	}
 }
 

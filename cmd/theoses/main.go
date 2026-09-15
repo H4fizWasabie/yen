@@ -83,11 +83,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
 	if current, err := settings.Load(cwd); err == nil {
-		steering, followUp := settings.QueueModes(current)
-		runner.SetQueueModes(steering, followUp)
-		if current.AutoCompaction != nil {
-			runner.AutoCompactDisabled = !*current.AutoCompaction
-		}
+		runner.ApplySettings(current)
 	}
 	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
 		return codingagent.NewToolsForSession(workspace, current)

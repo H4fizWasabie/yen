@@ -13,7 +13,9 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/memory"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
+	"github.com/H4fizWasabie/yen/internal/settings"
 )
 
 type provider struct{}
@@ -396,6 +398,22 @@ func TestAutoCompactDisabledFromEnv(t *testing.T) {
 	t.Setenv("YEN_AUTO_COMPACT_ENABLED", "true")
 	if AutoCompactDisabledFromEnv() {
 		t.Fatal("expected automatic compaction to be enabled")
+	}
+}
+
+func TestApplySettingsConfiguresSharedRuntime(t *testing.T) {
+	runner := New(nil, providerpkg.NewOpenAICompletions("http://fixture", "key", "model"), nil)
+	enabled := false
+	runner.ApplySettings(settings.Settings{
+		SteeringMode: "all", FollowUpMode: "one-at-a-time",
+		Compaction: &settings.CompactionSettings{Enabled: &enabled, ReserveTokens: 99, KeepRecentTokens: 88, MaxHistoryTurns: 3},
+		Retry:      &settings.RetrySettings{MaxRetries: 2},
+	})
+	if runner.SteeringMode != "all" || runner.FollowUpMode != "one-at-a-time" || !runner.AutoCompactDisabled || runner.AutoCompactReserveTokens != 99 || runner.AutoCompactKeepRecentTokens != 88 || runner.AutoCompactMaxHistoryTurns != 3 {
+		t.Fatalf("runner settings=%#v", runner)
+	}
+	if !providerpkg.RetryEnabled(runner.Provider) {
+		t.Fatal("retry should remain enabled")
 	}
 }
 
