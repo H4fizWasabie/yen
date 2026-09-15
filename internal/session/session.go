@@ -32,6 +32,7 @@ type Header struct {
 type ContentPart struct {
 	Type              string `json:"type"`
 	Text              string `json:"text,omitempty"`
+	TextSignature     string `json:"textSignature,omitempty"`
 	ThinkingSignature string `json:"thinkingSignature,omitempty"`
 	ID                string `json:"id,omitempty"`
 	Name              string `json:"name,omitempty"`

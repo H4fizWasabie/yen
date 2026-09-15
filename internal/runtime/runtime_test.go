@@ -1226,6 +1226,18 @@ func TestThinkingRoundTripsThroughSessionContext(t *testing.T) {
 	}
 }
 
+func TestTextSignatureRoundTripsThroughSessionContext(t *testing.T) {
+	stored := toSessionMessage(agent.Message{Role: "assistant", Content: "answer", TextSignature: "sig-text"})
+	parts, ok := stored.Content.([]session.ContentPart)
+	if !ok || len(parts) != 1 || parts[0].Type != "text" || parts[0].Text != "answer" || parts[0].TextSignature != "sig-text" {
+		t.Fatalf("stored content=%#v", stored.Content)
+	}
+	converted := toAgentMessages([]session.Message{stored})
+	if len(converted) != 1 || converted[0].Content != "answer" || converted[0].TextSignature != "sig-text" {
+		t.Fatalf("converted=%#v", converted)
+	}
+}
+
 func TestReasoningDetailsRoundTripWithoutVisibleThinking(t *testing.T) {
 	stored := toSessionMessage(agent.Message{Role: "assistant", ThinkingSignature: `[{"type":"reasoning.summary","summary":"plan"}]`, Content: "answer"})
 	parts, ok := stored.Content.([]session.ContentPart)

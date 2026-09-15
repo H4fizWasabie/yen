@@ -72,6 +72,31 @@ func TestTheosesMessagesPreservesThinkingSignature(t *testing.T) {
 	}
 }
 
+func TestTheosesMessagesPreservesTextSignature(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"stale\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"text_end\",\"contentIndex\":0,\"content\":\"final\",\"contentSignature\":\"sig-text\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"done\",\"reason\":\"stop\"}\n\n"))
+	}))
+	defer server.Close()
+
+	result, err := NewTheosesMessages(server.URL, "radius-key", "auto").Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "final" || result.TextSignature != "sig-text" {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestRadiusMessagesPreservesTextSignature(t *testing.T) {
+	messages := radiusMessages([]agent.Message{{Role: "assistant", Content: "answer", TextSignature: "sig-text"}})
+	if len(messages) != 1 || messages[0].TextSignature != "sig-text" {
+		t.Fatalf("messages=%#v", messages)
+	}
+}
+
 func TestTheosesMessagesPreservesErrorMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
