@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -180,12 +181,85 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	if err != nil {
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
+	if err := b.sendResultImages(ctx, chatID, result, messageReplyID(update.Message.MessageID)); err != nil {
+		return b.sendMessage(ctx, chatID, "Error sending generated image: "+err.Error(), messageReplyID(update.Message.MessageID))
+	}
 	if statusMessageID != 0 && result.FinalText != "" && len(splitTelegramSections(result.FinalText)) == 1 && len([]rune(result.FinalText)) <= telegramMessageLimit {
 		if err := b.editMessage(ctx, chatID, statusMessageID, result.FinalText); err == nil {
 			return nil
 		}
 	}
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
+}
+
+func (b *TelegramBot) sendResultImages(ctx context.Context, chatID string, result agent.Result, replyTo *int64) error {
+	for _, message := range result.Messages {
+		if message.Role != "tool" {
+			continue
+		}
+		for _, image := range message.Images {
+			if err := b.sendPhoto(ctx, chatID, image, replyTo); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (b *TelegramBot) sendPhoto(ctx context.Context, chatID, dataURL string, replyTo *int64) error {
+	comma := strings.IndexByte(dataURL, ',')
+	if !strings.HasPrefix(dataURL, "data:image/") || comma < 0 {
+		return fmt.Errorf("unsupported image result")
+	}
+	header := dataURL[:comma]
+	data, err := base64.StdEncoding.DecodeString(dataURL[comma+1:])
+	if err != nil {
+		return err
+	}
+	extension := ".jpg"
+	if strings.Contains(header, "png") {
+		extension = ".png"
+	} else if strings.Contains(header, "webp") {
+		extension = ".webp"
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", chatID); err != nil {
+		return err
+	}
+	if replyTo != nil {
+		if err := writer.WriteField("reply_parameters", fmt.Sprintf(`{"message_id":%d}`, *replyTo)); err != nil {
+			return err
+		}
+	}
+	part, err := writer.CreateFormFile("photo", "generated"+extension)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(data); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendPhoto", &body)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	client := b.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("telegram sendPhoto returned %s", response.Status)
+	}
+	return nil
 }
 
 func (b *TelegramBot) setToolDetail(enabled bool) {
