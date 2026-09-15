@@ -595,6 +595,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider, tools []agent.Tool, history []agent.Message, prompt string, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
 	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent)
 	started := false
+	lastRetryAttempt := 0
 	for attempt := 1; runErr != nil && r.AutoRetryEnabled && attempt <= r.AutoRetryMaxRetries && ctx.Err() == nil; attempt++ {
 		if !providerpkg.IsRetryableProviderError(runErr.Error()) {
 			break
@@ -605,6 +606,7 @@ func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider,
 		}
 		if onEvent != nil {
 			started = true
+			lastRetryAttempt = attempt
 			onEvent(agent.Event{Type: "auto_retry_start", Attempt: attempt, MaxAttempts: r.AutoRetryMaxRetries, DelayMs: int(delay / time.Millisecond), ErrorMessage: runErr.Error()})
 		}
 		if delay > 0 {
@@ -630,7 +632,7 @@ func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider,
 		}
 	}
 	if onEvent != nil && started && runErr != nil {
-		onEvent(agent.Event{Type: "auto_retry_end", Attempt: r.AutoRetryMaxRetries, Success: false, FinalError: runErr.Error(), IsError: true})
+		onEvent(agent.Event{Type: "auto_retry_end", Attempt: lastRetryAttempt, Success: false, FinalError: runErr.Error(), IsError: true})
 	}
 	return result, runErr
 }
