@@ -35,6 +35,20 @@ type openAIToolCall struct {
 	} `json:"function"`
 }
 
+type openAIUsage struct {
+	PromptTokens         int `json:"prompt_tokens"`
+	CachedTokens         int `json:"cached_tokens"`
+	PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
+	CompletionTokens     int `json:"completion_tokens"`
+	PromptTokensDetails  *struct {
+		CachedTokens     int `json:"cached_tokens"`
+		CacheWriteTokens int `json:"cache_write_tokens"`
+	} `json:"prompt_tokens_details"`
+	CompletionTokensDetails *struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
+}
+
 type OpenAICompletions struct {
 	BaseURL         string
 	APIKey          string
@@ -255,22 +269,11 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			break
 		}
 		var event struct {
-			ID    string `json:"id"`
-			Model string `json:"model"`
-			Usage *struct {
-				PromptTokens         int `json:"prompt_tokens"`
-				CachedTokens         int `json:"cached_tokens"`
-				PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
-				CompletionTokens     int `json:"completion_tokens"`
-				PromptTokensDetails  *struct {
-					CachedTokens     int `json:"cached_tokens"`
-					CacheWriteTokens int `json:"cache_write_tokens"`
-				} `json:"prompt_tokens_details"`
-				CompletionTokensDetails *struct {
-					ReasoningTokens int `json:"reasoning_tokens"`
-				} `json:"completion_tokens_details"`
-			} `json:"usage"`
+			ID      string       `json:"id"`
+			Model   string       `json:"model"`
+			Usage   *openAIUsage `json:"usage"`
 			Choices []struct {
+				Usage *openAIUsage `json:"usage"`
 				Delta struct {
 					Content          json.RawMessage   `json:"content"`
 					Reasoning        string            `json:"reasoning"`
@@ -299,22 +302,12 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			result.ResponseModel = event.Model
 		}
 		if event.Usage != nil {
-			result.Usage.Output = event.Usage.CompletionTokens
-			if event.Usage.CompletionTokensDetails != nil {
-				result.Usage.Reasoning = event.Usage.CompletionTokensDetails.ReasoningTokens
-			}
-			result.Usage.CacheRead = event.Usage.CachedTokens
-			if event.Usage.PromptCacheHitTokens != 0 {
-				result.Usage.CacheRead = event.Usage.PromptCacheHitTokens
-			}
-			if event.Usage.PromptTokensDetails != nil {
-				result.Usage.CacheRead = event.Usage.PromptTokensDetails.CachedTokens
-				result.Usage.CacheWrite = event.Usage.PromptTokensDetails.CacheWriteTokens
-			}
-			result.Usage.Input = max(0, event.Usage.PromptTokens-result.Usage.CacheRead-result.Usage.CacheWrite)
-			result.Usage.TotalTokens = result.Usage.Input + result.Usage.Output + result.Usage.CacheRead + result.Usage.CacheWrite
+			applyOpenAIUsage(&result, event.Usage)
 		}
 		for _, choice := range event.Choices {
+			if event.Usage == nil && choice.Usage != nil {
+				applyOpenAIUsage(&result, choice.Usage)
+			}
 			reasoning := choice.Delta.ReasoningContent
 			if reasoning == "" {
 				reasoning = choice.Delta.Reasoning
@@ -462,6 +455,23 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		result.StopReason = "toolUse"
 	}
 	return result, nil
+}
+
+func applyOpenAIUsage(result *agent.Response, usage *openAIUsage) {
+	result.Usage.Output = usage.CompletionTokens
+	if usage.CompletionTokensDetails != nil {
+		result.Usage.Reasoning = usage.CompletionTokensDetails.ReasoningTokens
+	}
+	result.Usage.CacheRead = usage.CachedTokens
+	if usage.PromptCacheHitTokens != 0 {
+		result.Usage.CacheRead = usage.PromptCacheHitTokens
+	}
+	if usage.PromptTokensDetails != nil {
+		result.Usage.CacheRead = usage.PromptTokensDetails.CachedTokens
+		result.Usage.CacheWrite = usage.PromptTokensDetails.CacheWriteTokens
+	}
+	result.Usage.Input = max(0, usage.PromptTokens-result.Usage.CacheRead-result.Usage.CacheWrite)
+	result.Usage.TotalTokens = result.Usage.Input + result.Usage.Output + result.Usage.CacheRead + result.Usage.CacheWrite
 }
 
 func openAIToolArguments(raw json.RawMessage) string {
