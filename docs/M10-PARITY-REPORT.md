@@ -61,6 +61,11 @@ content while preserving its existing bounded text path. TypeScript authority:
 `packages/coding-agent/src/core/tools/read.ts`; Go evidence:
 `internal/tools/read.go` and `TestReadToolReturnsImagesThroughRichResults`.
 
+Interactive CLI `!`/`!!` bash execution now persists the command outcome
+metadata alongside its output and context-exclusion flag. TypeScript authority:
+`packages/coding-agent/src/core/agent-session.ts:3182-3253`; Go evidence:
+`cmd/theoses/main.go` and `TestInteractiveBashCommandPersistsExitMetadata`.
+
 Settings-selected provider/model/thinking values now configure the live shared
 runner when no explicit `YEN_*` override is present; explicit environment
 configuration wins. This closes the prior read-but-not-applied settings bug.
