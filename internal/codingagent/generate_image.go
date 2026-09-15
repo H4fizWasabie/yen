@@ -6,6 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -78,7 +82,23 @@ func (t generateImageTool) ExecuteRich(ctx context.Context, args map[string]any)
 		return agent.ToolResult{Text: text}, nil
 	}
 	mimeType := sniffImageMIME(data)
+	if !generatedImageIsDecodable(data, mimeType) {
+		return agent.ToolResult{Text: text + "\n[Image omitted: could not be converted to a supported inline image format.]"}, nil
+	}
 	return agent.ToolResult{Text: text, Images: []string{"data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)}}, nil
+}
+
+func generatedImageIsDecodable(data []byte, mimeType string) bool {
+	if len(data) == 0 {
+		return false
+	}
+	// The standard library has no WebP decoder; preserve valid provider WebP
+	// payloads and let the downstream provider/channel decide how to handle them.
+	if strings.Contains(strings.ToLower(mimeType), "webp") {
+		return true
+	}
+	_, _, err := image.DecodeConfig(bytes.NewReader(data))
+	return err == nil
 }
 
 func (t generateImageTool) generate(ctx context.Context, prompt string) ([]byte, string, string, error) {
