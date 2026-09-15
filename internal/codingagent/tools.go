@@ -47,5 +47,6 @@ func newTools(workspace string, current *session.Session, provider agent.Provide
 			operationalNotesTool{path: filepath.Join(workspace, ".theoses-go", "operational-notes.md")},
 		)
 	}
+	result = append(result, loadExternalTools()...)
 	return result
 }

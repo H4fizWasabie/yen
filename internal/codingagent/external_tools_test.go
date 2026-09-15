@@ -2,6 +2,7 @@ package codingagent
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,67 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestHTTPSidecarLoadsAndExecutesUntrustedTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/tools":
+			_, _ = w.Write([]byte(`{"tools":[{"name":"external_echo","description":"echo","inputSchema":{"type":"object"}}]}`))
+		case "/execute":
+			var request map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request["tool"] != "external_echo" {
+				t.Fatalf("request=%#v err=%v", request, err)
+			}
+			_, _ = w.Write([]byte(`{"result":{"ok":true}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("YEN_HTTP_SIDECAR_URL", server.URL)
+	tools := loadExternalTools()
+	if len(tools) != 1 || tools[0].Name() != "external_echo" {
+		t.Fatalf("tools=%#v", tools)
+	}
+	result, err := tools[0].Execute(context.Background(), map[string]any{"value": "ok"})
+	if err != nil || !strings.Contains(result, "UNTRUSTED EXTERNAL CONTENT") || !strings.Contains(result, `"ok":true`) {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+func TestMCPHTTPLoadsAndCallsTools(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if request["method"] == "notifications/initialized" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		result := any(map[string]any{})
+		switch request["method"] {
+		case "initialize":
+			result = map[string]any{"protocolVersion": "2025-06-18"}
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]any{"name": "mcp_echo", "inputSchema": map[string]any{"type": "object"}}}}
+		case "tools/call":
+			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request["id"], "result": result})
+	}))
+	defer server.Close()
+	tools := loadMCPHTTP(server.URL)
+	if len(tools) != 1 || tools[0].Name() != "mcp_echo" {
+		t.Fatalf("tools=%#v", tools)
+	}
+	result, err := tools[0].Execute(context.Background(), map[string]any{})
+	if err != nil || !strings.Contains(result, "UNTRUSTED EXTERNAL CONTENT") {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
 
 func TestWebSearchFormatsTavilyResults(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
