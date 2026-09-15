@@ -34,6 +34,48 @@ func NewOpenAIResponses(baseURL, apiKey, model string) OpenAIResponses {
 	return OpenAIResponses{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Model: model}
 }
 
+func (p OpenAIResponses) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	client := p.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.BaseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if p.APIKeyHeader != "" {
+		request.Header.Set(p.APIKeyHeader, p.APIKey)
+	} else if p.APIKey != "" {
+		request.Header.Set("Authorization", "Bearer "+p.APIKey)
+	}
+	for name, value := range p.Headers {
+		request.Header.Set(name, value)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("model catalog returned %s", response.Status)
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	models := make([]ModelInfo, 0, len(payload.Data))
+	for _, model := range payload.Data {
+		if strings.TrimSpace(model.ID) != "" {
+			models = append(models, ModelInfo{Provider: p.name(), ID: model.ID})
+		}
+	}
+	return models, nil
+}
+
 func (p OpenAIResponses) Next(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
 	return p.next(ctx, messages, toolNames, nil)
 }
