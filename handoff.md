@@ -74,6 +74,9 @@ by `TestTelegramBotUsesCaptionForMessageAndReply`.
 Telegram stop controls now accept the pinned case-insensitive `stop`, `halt`,
 `/stop`, and `/cancel` forms, retaining Yen's existing `/abort` alias.
 
+Telegram replies now attempt the oracle's `sendRichMessage` Bot API method and
+fall back to classic `sendMessage` on any unsupported or failed request.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical

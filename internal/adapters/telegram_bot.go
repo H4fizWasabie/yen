@@ -182,6 +182,9 @@ func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string, repl
 		client = http.DefaultClient
 	}
 	for _, chunk := range chunkTelegramText(text) {
+		if err := b.sendRichMessage(ctx, chatID, chunk, replyTo); err == nil {
+			continue
+		}
 		payloadValues := map[string]string{"chat_id": chatID, "text": chunk}
 		if replyTo != nil {
 			payloadValues["reply_to_message_id"] = strconv.FormatInt(*replyTo, 10)
@@ -204,6 +207,45 @@ func (b *TelegramBot) sendMessage(ctx context.Context, chatID, text string, repl
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return fmt.Errorf("telegram sendMessage returned %s", response.Status)
 		}
+	}
+	return nil
+}
+
+func (b *TelegramBot) sendRichMessage(ctx context.Context, chatID, text string, replyTo *int64) error {
+	payload := map[string]any{
+		"chat_id":      chatID,
+		"rich_message": map[string]string{"markdown": text},
+	}
+	if replyTo != nil {
+		payload["reply_parameters"] = map[string]int64{"message_id": *replyTo}
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(b.APIBase, "/")+"/bot"+url.PathEscape(b.Token)+"/sendRichMessage", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := b.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("telegram sendRichMessage returned %s", response.Status)
+	}
+	var result telegramResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return err
+	}
+	if !result.OK {
+		return errors.New(result.Description)
 	}
 	return nil
 }

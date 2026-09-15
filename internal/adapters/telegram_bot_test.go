@@ -172,6 +172,33 @@ func TestTelegramBotChunksLongReplies(t *testing.T) {
 	}
 }
 
+func TestTelegramBotUsesRichMessageBeforeClassicFallback(t *testing.T) {
+	var rich bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/sendRichMessage" {
+			rich = true
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload["chat_id"] != "42" || payload["rich_message"].(map[string]any)["markdown"] != "hello" {
+				t.Fatalf("payload=%#v", payload)
+			}
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		http.Error(w, "fallback not expected", http.StatusNotFound)
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Token: "token", APIBase: server.URL}
+	if err := bot.sendMessage(context.Background(), "42", "hello", nil); err != nil {
+		t.Fatal(err)
+	}
+	if !rich {
+		t.Fatal("rich message was not attempted")
+	}
+}
+
 func TestChunkTelegramTextMatchesTypeScriptLimit(t *testing.T) {
 	chunks := chunkTelegramText(strings.Repeat("x", 4001))
 	if len(chunks) != 2 || len([]rune(chunks[0])) != 4000 || len([]rune(chunks[1])) != 1 {
@@ -194,6 +221,10 @@ func TestTelegramBotCarriesReplyContextAndReplyTarget(t *testing.T) {
 	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
 	var replyTarget string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/sendRichMessage" {
+			http.NotFound(w, r)
+			return
+		}
 		var payload map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
