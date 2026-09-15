@@ -35,6 +35,7 @@ type command struct {
 	StreamingBehavior string     `json:"streamingBehavior,omitempty"`
 	Since             string     `json:"since,omitempty"`
 	EntryID           string     `json:"entryId,omitempty"`
+	Name              string     `json:"name,omitempty"`
 	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 }
@@ -125,6 +126,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		_, active := s.Runner.Active(s.Link.ConversationID)
 		return s.response(output, request.ID, request.Type, true, map[string]any{
 			"sessionId": s.Link.ConversationID, "isStreaming": active,
+			"sessionName":  session.SessionName(),
 			"messageCount": len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
 	case "get_messages":
@@ -178,6 +180,15 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"artifacts": session.Artifacts()}, nil)
+	case "set_session_name":
+		session, err := s.Runner.OpenSession(s.Link)
+		if err != nil {
+			return err
+		}
+		if _, err := session.AppendSessionInfo(request.Name); err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"name": session.SessionName()}, nil)
 	case "compact":
 		keep := request.KeepRecentTurns
 		if keep < 1 {

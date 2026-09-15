@@ -97,3 +97,27 @@ func TestBranchCommandPersistsActiveLeaf(t *testing.T) {
 		t.Fatalf("leaf=%q output=%s", opened.LeafID(), output.String())
 	}
 }
+
+func TestSetSessionNamePersistsAndReturnsName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "named.jsonl")
+	created := session.New(path, session.Header{ID: "named", ConversationID: "named", CWD: dir})
+	if _, err := created.Append(session.Message{Role: "assistant", Content: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "named", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{ID: "1", Type: "set_session_name", Name: "  nightly\ncheck  "}); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := session.Open(path)
+	if err != nil || opened.SessionName() != "nightly check" || !strings.Contains(output.String(), `"name":"nightly check"`) {
+		t.Fatalf("name=%q output=%s err=%v", opened.SessionName(), output.String(), err)
+	}
+}

@@ -100,6 +100,7 @@ type TreeEntry struct {
 	ParentID  *string  `json:"parentId,omitempty"`
 	Type      string   `json:"type"`
 	Timestamp string   `json:"timestamp"`
+	Name      string   `json:"name,omitempty"`
 	Message   *Message `json:"message,omitempty"`
 }
 
@@ -116,6 +117,7 @@ type sessionEntry struct {
 	Note                string      `json:"note,omitempty"`
 	Outcome             string      `json:"outcome,omitempty"`
 	Label               string      `json:"label,omitempty"`
+	Name                string      `json:"name,omitempty"`
 	Path                string      `json:"path,omitempty"`
 	Size                int64       `json:"size,omitempty"`
 	Compaction          *Compaction `json:"compaction,omitempty"`
@@ -424,6 +426,29 @@ func (s *Session) AppendWorkingNote(line string) (string, error) {
 	return s.appendWorkingNote(combined)
 }
 
+func (s *Session) SessionName() string {
+	for i := len(s.activeEntries()) - 1; i >= 0; i-- {
+		entry := s.activeEntries()[i]
+		if entry.Type == "session_info" {
+			return strings.TrimSpace(entry.Name)
+		}
+	}
+	return ""
+}
+
+func (s *Session) AppendSessionInfo(name string) (string, error) {
+	name = strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ").Replace(name))
+	id := newEntryID(s.entries)
+	parentID := s.currentParentID()
+	entry := sessionEntry{Type: "session_info", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Name: name}
+	s.entries = append(s.entries, entry)
+	s.leafID = id
+	if !s.flushed {
+		return id, s.publish()
+	}
+	return id, s.appendFile(entry)
+}
+
 func (s *Session) ClearWorkingNote() (string, error) { return s.appendWorkingNote("") }
 
 func (s *Session) IsWorkingNoteStale() bool {
@@ -589,7 +614,7 @@ func (s *Session) Messages() []Message {
 func (s *Session) Tree() []TreeEntry {
 	result := make([]TreeEntry, 0, len(s.entries))
 	for _, entry := range s.entries {
-		result = append(result, TreeEntry{ID: entry.ID, ParentID: entry.ParentID, Type: entry.Type, Timestamp: entry.Timestamp, Message: entry.Message})
+		result = append(result, TreeEntry{ID: entry.ID, ParentID: entry.ParentID, Type: entry.Type, Timestamp: entry.Timestamp, Name: entry.Name, Message: entry.Message})
 	}
 	return result
 }
