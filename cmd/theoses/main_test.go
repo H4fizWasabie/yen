@@ -163,6 +163,35 @@ func TestInteractiveSessionCommands(t *testing.T) {
 	}
 }
 
+func TestInteractiveCopyCopiesLastAssistantMessage(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	capture := filepath.Join(dir, "clipboard.txt")
+	program := filepath.Join(bin, "xclip")
+	if err := os.WriteFile(program, []byte("#!/bin/sh\ncat > \"$YEN_CLIPBOARD_CAPTURE\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("YEN_CLIPBOARD_CAPTURE", capture)
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1"})
+	if _, err := current.Append(session.Message{Role: "assistant", Content: []session.ContentPart{{Type: "thinking", Text: "hidden"}, {Type: "text", Text: " copied answer "}}}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/copy", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil || string(data) != "copied answer" {
+		t.Fatalf("clipboard=%q err=%v output=%q", data, err, output.String())
+	}
+}
+
 func TestInteractiveBashCommandsPersistOutputAndExclusion(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})
