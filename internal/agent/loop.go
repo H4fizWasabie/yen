@@ -215,6 +215,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		for _, call := range response.ToolCalls {
 			if onEvent != nil {
 				onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args})
+				onEvent(Event{Type: "tool_execution_start", ID: call.ID, Name: call.Name, Args: call.Args})
 			}
 			if response.StopReason == "length" {
 				result.Events = append(result.Events, "tool_execution_start:"+call.ID)
@@ -222,6 +223,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
 				result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
 				if onEvent != nil {
+					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true})
 					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true})
 				}
 				result.Events = append(result.Events, "message_end:toolResult")
@@ -234,6 +236,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				content := (&UnknownToolError{Name: call.Name}).Error()
 				result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
 				if onEvent != nil {
+					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true})
 					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true})
 				}
 				result.Events = append(result.Events, "message_end:toolResult")
@@ -246,6 +249,10 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				if ctx.Err() != nil {
 					result.Events = append(result.Events, "message_start:toolResult")
 					result.Messages = append(result.Messages, Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID})
+					if onEvent != nil {
+						onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true})
+						onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true})
+					}
 					result.Events = append(result.Events, "message_end:toolResult", "turn_end", "agent_end", "agent_settled")
 					return result, ctx.Err()
 				}
@@ -256,6 +263,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			result.Events = append(result.Events, "message_start:toolResult")
 			result.Messages = append(result.Messages, Message{Role: "tool", Content: content, ToolCallID: call.ID})
 			if onEvent != nil {
+				onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil})
 				onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil})
 			}
 			result.Events = append(result.Events, "message_end:toolResult")

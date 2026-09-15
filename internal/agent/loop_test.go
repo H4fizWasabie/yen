@@ -141,7 +141,7 @@ func TestRunDoesNotExecuteToolCallsFromLengthLimitedResponse(t *testing.T) {
 	if len(result.Messages) != 4 || !strings.Contains(result.Messages[2].Content, "arguments may be truncated") {
 		t.Fatalf("messages=%#v", result.Messages)
 	}
-	if len(events) != 4 || events[2].Type != "tool_result" || !events[2].IsError {
+	if len(events) != 6 || events[3].Type != "tool_execution_end" || !events[3].IsError || events[4].Type != "tool_result" || !events[4].IsError {
 		t.Fatalf("events=%#v", events)
 	}
 }
@@ -155,11 +155,11 @@ func TestRunWithEventsReportsDashboardToolAndUsageEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 4 || events[0].Type != "usage" || events[1].Type != "tool_call" || events[2].Type != "tool_result" || events[3].Type != "usage" {
+	if len(events) != 6 || events[0].Type != "usage" || events[1].Type != "tool_call" || events[2].Type != "tool_execution_start" || events[3].Type != "tool_execution_end" || events[4].Type != "tool_result" || events[5].Type != "usage" {
 		t.Fatalf("events = %#v", events)
 	}
-	if events[2].Result != "README contents" || events[2].IsError {
-		t.Fatalf("tool result = %#v", events[2])
+	if events[3].Result != "README contents" || events[3].IsError || events[4].Result != "README contents" || events[4].IsError {
+		t.Fatalf("tool result = %#v", events[3:5])
 	}
 }
 
