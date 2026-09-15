@@ -245,6 +245,10 @@ File-search result-count limits now emit the oracle's actionable notice for
 `ls` and `find`, including the requested larger limit. Go evidence:
 `internal/tools/fs_tools.go` and `TestFileSearchToolsReportResultLimit`.
 
+The `ls` limit now applies after the oracle's case-insensitive sort, so limiting
+a directory does not change which first entry is returned. Go evidence:
+`internal/tools/fs_tools.go` and `TestListToolSortsBeforeApplyingLimit`.
+
 OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
 fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
 instead of the generic `reasoning.effort` field. TypeScript authority:

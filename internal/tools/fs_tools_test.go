@@ -43,6 +43,20 @@ func TestFilesystemTools(t *testing.T) {
 	}
 }
 
+func TestListToolSortsBeforeApplyingLimit(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"Z.txt", "a.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := NewListTool(dir).Execute(context.Background(), map[string]any{"limit": 1})
+	if err != nil || !strings.HasPrefix(got, "a.txt\n") {
+		t.Fatalf("ls=%q err=%v", got, err)
+	}
+}
+
 func TestFindToolSupportsRecursiveGlobstar(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "internal", "nested"), 0o700); err != nil {
