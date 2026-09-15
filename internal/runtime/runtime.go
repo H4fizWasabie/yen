@@ -370,6 +370,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	if contextMessage, ok := codingagent.ContextMessage(turn.WorkspaceID); ok {
 		history = append([]agent.Message{contextMessage}, history...)
 	}
+	if skillsMessage, ok := codingagent.SkillsMessage(turn.WorkspaceID); ok {
+		history = append([]agent.Message{skillsMessage}, history...)
+	}
 	if current.IsWorkingNoteStale() {
 		if _, err := current.ClearWorkingNote(); err != nil {
 			return agent.Result{}, err
@@ -406,6 +409,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			history = toAgentMessages(current.ContextMessages())
 			if contextMessage, ok := codingagent.ContextMessage(turn.WorkspaceID); ok {
 				history = append([]agent.Message{contextMessage}, history...)
+			}
+			if skillsMessage, ok := codingagent.SkillsMessage(turn.WorkspaceID); ok {
+				history = append([]agent.Message{skillsMessage}, history...)
 			}
 			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
 		}

@@ -38,3 +38,21 @@ func TestContextMessageLoadsAncestorGuidanceInOrder(t *testing.T) {
 		t.Fatalf("message=%#v", message)
 	}
 }
+
+func TestSkillsMessageListsLazySkillFiles(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, ".agents", "skills", "release")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("---\nname: release\ndescription: Ship carefully\n---\nDetailed instructions"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := SkillsMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "<name>release</name>") || !strings.Contains(message.Content, "Ship carefully") {
+		t.Fatalf("message=%#v", message)
+	}
+	if strings.Contains(message.Content, "Detailed instructions") {
+		t.Fatal("skill body should remain lazy")
+	}
+}
