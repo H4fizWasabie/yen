@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -104,7 +105,9 @@ func TestVertexServiceAccountExchangesJWTForBearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var exchanges atomic.Int32
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		exchanges.Add(1)
 		if r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
 			t.Fatalf("request=%s content-type=%q", r.Method, r.Header.Get("Content-Type"))
 		}
@@ -115,7 +118,7 @@ func TestVertexServiceAccountExchangesJWTForBearerToken(t *testing.T) {
 		if len(parts) != 3 {
 			t.Fatalf("assertion=%q", r.Form.Get("assertion"))
 		}
-		_, _ = fmt.Fprint(w, `{"access_token":"vertex-access"}`)
+		_, _ = fmt.Fprint(w, `{"access_token":"vertex-access","expires_in":3600}`)
 	}))
 	defer tokenServer.Close()
 
@@ -142,9 +145,16 @@ func TestVertexServiceAccountExchangesJWTForBearerToken(t *testing.T) {
 	if err != nil || configuredToken != "vertex-access" {
 		t.Fatalf("configured token=%q err=%v", configuredToken, err)
 	}
-	token, err := vertexServiceAccountSource(path)(context.Background())
+	source := vertexServiceAccountSource(path)
+	token, err := source(context.Background())
 	if err != nil || token != "vertex-access" {
 		t.Fatalf("token=%q err=%v", token, err)
+	}
+	if token, err = source(context.Background()); err != nil || token != "vertex-access" {
+		t.Fatalf("cached token=%q err=%v", token, err)
+	}
+	if exchanges.Load() != 2 {
+		t.Fatalf("token exchanges=%d, want 2 including configured source", exchanges.Load())
 	}
 }
 
