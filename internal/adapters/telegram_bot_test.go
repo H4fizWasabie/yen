@@ -41,6 +41,16 @@ func (p *statusTelegramProvider) Next(context.Context, []agent.Message, []string
 	return agent.Response{Text: "done", StopReason: "stop"}, nil
 }
 
+type multiStatusTelegramProvider struct{ calls int }
+
+func (p *multiStatusTelegramProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{ToolCalls: []agent.ToolCall{{ID: "one", Name: "one"}, {ID: "two", Name: "two"}}, StopReason: "toolUse"}, nil
+	}
+	return agent.Response{Text: "done", StopReason: "stop"}, nil
+}
+
 func (p blockingTelegramProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
 	close(p.started)
 	<-p.release
@@ -173,6 +183,44 @@ func TestTelegramBotReportsToolStatus(t *testing.T) {
 	}
 	if len(messages) != 1 || messages[0] != "Running read..." || edited != "done" {
 		t.Fatalf("messages=%#v edited=%q", messages, edited)
+	}
+}
+
+func TestTelegramBotEditsOneStatusMessageAcrossToolCalls(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, &multiStatusTelegramProvider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	var sends, edits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottoken/sendRichMessage":
+			sends.Add(1)
+		case "/bottoken/editMessageText":
+			edits.Add(1)
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9}}`))
+	}))
+	defer server.Close()
+
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	message := &telegramMessage{MessageID: 3, Text: "read it"}
+	message.Chat.ID = 42
+	if err := bot.HandleUpdate(context.Background(), telegramUpdate{Message: message}); err != nil {
+		t.Fatal(err)
+	}
+	if sends.Load() != 1 || edits.Load() == 0 {
+		t.Fatalf("sends=%d edits=%d, want one status send followed by edits", sends.Load(), edits.Load())
 	}
 }
 

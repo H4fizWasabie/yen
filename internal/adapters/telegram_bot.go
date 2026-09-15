@@ -174,9 +174,12 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		replyContext = telegramMessageText(update.Message.ReplyToMessage)
 	}
 	var statusMessageID int64
+	var statusMu sync.Mutex
 	stopTyping := b.startTyping(ctx, chatID)
 	result, err := b.Adapter.HandleMessageWithImagesEvents(ctx, chatID, text, replyContext, image, func(event agent.Event) {
 		if event.Type == "tool_call" && event.Name != "" {
+			statusMu.Lock()
+			defer statusMu.Unlock()
 			b.toolMu.Lock()
 			detail := b.toolDetail
 			b.toolMu.Unlock()
@@ -184,7 +187,11 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 			if detail {
 				status = telegramToolStatus(event)
 			}
-			statusMessageID, _ = b.sendMessageWithID(ctx, chatID, status, messageReplyID(update.Message.MessageID))
+			if statusMessageID == 0 {
+				statusMessageID, _ = b.sendMessageWithID(ctx, chatID, status, messageReplyID(update.Message.MessageID))
+			} else {
+				_ = b.editMessage(ctx, chatID, statusMessageID, status)
+			}
 		}
 	})
 	stopTyping()
