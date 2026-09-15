@@ -280,6 +280,35 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err := fmt.Fprintln(stdout, catalog)
 		return true, err
+	case text == "/export" || strings.HasPrefix(text, "/export "):
+		path := strings.TrimSpace(strings.TrimPrefix(text, "/export"))
+		if path == "" {
+			path = filepath.Join(filepath.Dir(current.Path()), "session-export.jsonl")
+		}
+		if filepath.Ext(path) != ".jsonl" {
+			return true, fmt.Errorf("only .jsonl export is supported")
+		}
+		if _, err := session.Import(current.Path(), path); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintf(stdout, "Session exported to: %s\n", path)
+		return true, err
+	case text == "/import" || strings.HasPrefix(text, "/import "):
+		path := strings.TrimSpace(strings.TrimPrefix(text, "/import"))
+		if path == "" {
+			return true, fmt.Errorf("usage: /import <path.jsonl>")
+		}
+		if filepath.Clean(path) == filepath.Clean(current.Path()) {
+			return true, fmt.Errorf("cannot import the active session")
+		}
+		if _, err := session.Import(path, current.Path()); err != nil {
+			return true, err
+		}
+		if err := current.Reload(); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintf(stdout, "Session imported from: %s\n", path)
+		return true, err
 	case text == "/working-note":
 		note := current.WorkingNote()
 		if note == "" {

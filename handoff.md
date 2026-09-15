@@ -409,6 +409,12 @@ it executes in the session workspace, prints output, records a durable
 `cmd/theoses/main_test.go` covers the excluded form. The full gate is now 241
 tests; run the complete race/vet gate before the next parity slice.
 
+It also supports `/export [path.jsonl]` and `/import <path.jsonl>` using the
+existing validated session copy primitive; import reloads the active session
+from disk. The focused test covers both directions. The full gate is now 242
+tests plus race/vet/diff. Clone/new and the full TUI selector flow still need
+an active-session ownership slice.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future

@@ -285,6 +285,16 @@ func Import(source, destination string) (*Session, error) {
 	return Open(destination)
 }
 
+// Reload replaces the in-memory view with the validated contents on disk.
+func (s *Session) Reload() error {
+	reloaded, err := Open(s.path)
+	if err != nil {
+		return err
+	}
+	*s = *reloaded
+	return nil
+}
+
 func migrateSession(s *Session) bool {
 	version := s.header.Version
 	if version == 0 {

@@ -176,6 +176,36 @@ func TestInteractiveBashCommandsPersistOutputAndExclusion(t *testing.T) {
 	}
 }
 
+func TestInteractiveSessionExportAndImport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	current := session.New(path, session.Header{ID: "session-1", CWD: dir})
+	if _, err := current.Append(session.Message{Role: "user", Content: "before"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(dir, "copy.jsonl")
+	var output bytes.Buffer
+	handled, err := handleInteractiveCommand("/export "+exportPath, current, &runtime.Runner{}, conversation.Link{}, &output)
+	if err != nil || !handled {
+		t.Fatalf("export handled=%v err=%v", handled, err)
+	}
+	importSource := filepath.Join(dir, "incoming.jsonl")
+	incoming := session.New(importSource, session.Header{ID: "incoming", CWD: dir})
+	if _, err := incoming.Append(session.Message{Role: "user", Content: "after"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := incoming.Append(session.Message{Role: "assistant", Content: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	handled, err = handleInteractiveCommand("/import "+importSource, current, &runtime.Runner{}, conversation.Link{}, &output)
+	if err != nil || !handled || len(current.Messages()) != 2 || current.Messages()[0].Content != "after" {
+		t.Fatalf("import handled=%v err=%v messages=%#v", handled, err, current.Messages())
+	}
+}
+
 func TestInteractiveProviderAndTrustCommands(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", ConversationID: "conv-1", CWD: dir})
