@@ -249,14 +249,19 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		case "get_entries":
 			entries := session.Tree()
 			if request.Since != "" {
+				found := false
 				for index, entry := range entries {
 					if entry.ID == request.Since {
 						entries = entries[index+1:]
+						found = true
 						break
 					}
 				}
+				if !found {
+					return fmt.Errorf("entry not found: %s", request.Since)
+				}
 			}
-			return s.response(output, request.ID, request.Type, true, map[string]any{"entries": entries}, nil)
+			return s.response(output, request.ID, request.Type, true, map[string]any{"entries": entries, "leafId": session.LeafID()}, nil)
 		case "get_last_assistant_text":
 			messages := session.Messages()
 			for index := len(messages) - 1; index >= 0; index-- {

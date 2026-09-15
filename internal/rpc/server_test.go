@@ -264,6 +264,33 @@ func TestSessionStatsAndForkMessagesCommands(t *testing.T) {
 	}
 }
 
+func TestGetEntriesReturnsLeafAndRejectsUnknownSince(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "entries.jsonl")
+	saved := session.New(path, session.Header{ID: "entries", ConversationID: "entries", CWD: dir})
+	if _, err := saved.Append(session.Message{Role: "user", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saved.Append(session.Message{Role: "assistant", Content: "world"}); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := Server{Runner: runtime.New(queue, rpcProvider{}, nil), Link: conversation.Link{ConversationID: "entries", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{Type: "get_entries"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"leafId"`) {
+		t.Fatalf("response=%s", output.String())
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "get_entries", Since: "missing"}); err == nil || !strings.Contains(err.Error(), "entry not found") {
+		t.Fatalf("unknown since error=%v", err)
+	}
+}
+
 func TestSetModelCommandReplacesConfiguredProvider(t *testing.T) {
 	dir := t.TempDir()
 	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))

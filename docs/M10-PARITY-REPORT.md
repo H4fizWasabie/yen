@@ -65,6 +65,12 @@ Go evidence: `internal/provider/anthropic.go` and its streaming usage fixture in
 `internal/provider/anthropic_test.go`; the full 264-test race/vet/diff gate
 passes.
 
+RPC `get_entries` now returns the active `leafId` and rejects an unknown
+`since` entry instead of silently returning the full tree. TypeScript
+authority: `packages/coding-agent/src/modes/rpc/rpc-mode.ts:632-650`; Go
+evidence: `internal/rpc/server.go` and
+`internal/rpc/server_test.go`; the full 265-test race/vet/diff gate passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

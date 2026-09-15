@@ -526,6 +526,10 @@ computes total tokens from the stream, matching the oracle's message-start and
 message-delta handling. Focused provider coverage and the full 264-test
 race/vet/diff gate pass.
 
+RPC `get_entries` now matches the oracle's `leafId` response and explicit
+unknown-`since` error. Focused protocol coverage and the full 265-test
+race/vet/diff gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
