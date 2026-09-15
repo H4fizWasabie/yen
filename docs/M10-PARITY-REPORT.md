@@ -168,9 +168,11 @@ full 303-test race/vet/diff gate passes. Extension loading, command/rendering
 hooks, and provider interception remain open.
 
 The built-in `find` tool now supports recursive `**` glob patterns across
-nested directories, matching the pinned file-search contract. TypeScript
-authority: `packages/coding-agent/src/core/tools/find.ts`; Go evidence:
-`internal/tools/fs_tools.go` and `TestFindToolSupportsRecursiveGlobstar`.
+nested directories, and `grep` applies the same path-aware glob filtering,
+matching the pinned file-search contract. TypeScript authority:
+`packages/coding-agent/src/core/tools/find.ts` and `grep.ts`; Go evidence:
+`internal/tools/fs_tools.go`, `TestFindToolSupportsRecursiveGlobstar`, and
+`TestGrepToolMatchesRecursiveGlobstarPaths`.
 
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
