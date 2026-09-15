@@ -23,6 +23,7 @@ type GoogleGenerativeAI struct {
 	BaseURL       string
 	APIKey        string
 	BearerToken   string
+	BearerSource  func(context.Context) (string, error)
 	Model         string
 	ProviderName  string
 	ThinkingLevel string
@@ -47,16 +48,20 @@ func (p GoogleGenerativeAI) NextWithEvents(ctx context.Context, messages []agent
 }
 
 func (p GoogleGenerativeAI) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	bearer, err := p.bearerToken(ctx)
+	if err != nil {
+		return nil, err
+	}
 	endpoint := p.BaseURL + "/models"
-	if p.BearerToken == "" {
+	if bearer == "" {
 		endpoint += "?key=" + url.QueryEscape(p.APIKey)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	if p.BearerToken != "" {
-		request.Header.Set("Authorization", "Bearer "+p.BearerToken)
+	if bearer != "" {
+		request.Header.Set("Authorization", "Bearer "+bearer)
 	}
 	client := p.Client
 	if client == nil {
@@ -145,7 +150,11 @@ func (p GoogleGenerativeAI) next(ctx context.Context, messages []agent.Message, 
 }
 
 func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
-	if p.APIKey == "" && p.BearerToken == "" {
+	bearer, err := p.bearerToken(ctx)
+	if err != nil {
+		return agent.Response{}, err
+	}
+	if p.APIKey == "" && bearer == "" {
 		return agent.Response{}, fmt.Errorf("no Google credential configured")
 	}
 	payload := map[string]any{"contents": googleContents(messages)}
@@ -167,7 +176,7 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 		return agent.Response{}, err
 	}
 	endpoint := p.BaseURL + "/models/" + url.PathEscape(p.Model) + ":streamGenerateContent?alt=sse"
-	if p.BearerToken == "" {
+	if bearer == "" {
 		endpoint += "&key=" + url.QueryEscape(p.APIKey)
 	}
 	client := p.Client
@@ -181,8 +190,8 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 			return agent.Response{}, requestErr
 		}
 		request.Header.Set("Content-Type", "application/json")
-		if p.BearerToken != "" {
-			request.Header.Set("Authorization", "Bearer "+p.BearerToken)
+		if bearer != "" {
+			request.Header.Set("Authorization", "Bearer "+bearer)
 		}
 		response, err = client.Do(request)
 		if err != nil {
@@ -297,6 +306,13 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 		emit(agent.StreamEvent{Type: "done", Partial: partial})
 	}
 	return result, nil
+}
+
+func (p GoogleGenerativeAI) bearerToken(ctx context.Context) (string, error) {
+	if p.BearerToken != "" || p.BearerSource == nil {
+		return p.BearerToken, nil
+	}
+	return p.BearerSource(ctx)
 }
 
 func googleContents(messages []agent.Message) []googleContent {

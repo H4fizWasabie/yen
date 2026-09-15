@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -179,6 +180,16 @@ func googleVertexConfigured(model string) GoogleGenerativeAI {
 	client.BearerToken = os.Getenv("YEN_GOOGLE_VERTEX_ACCESS_TOKEN")
 	if client.BearerToken != "" {
 		client.APIKey = ""
+	} else if client.APIKey == "" {
+		path := strings.TrimSpace(os.Getenv("YEN_GOOGLE_APPLICATION_CREDENTIALS"))
+		if path == "" {
+			if home, err := os.UserHomeDir(); err == nil {
+				path = filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
+			}
+		}
+		if path != "" {
+			client.BearerSource = vertexServiceAccountSource(path)
+		}
 	}
 	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 	return client
