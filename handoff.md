@@ -114,6 +114,9 @@ canonical turns, explicit additive migration helpers, and agent-facing
 The engine also applies extracted fact/edge/episode batches idempotently before
 advancing a checkpoint, and exposes an explicit one-provider-call
 `Consolidate` path for structured JSON extraction.
+Consolidation edge writes now enforce the TypeScript closed relation vocabulary
+(`prefers`, `attributed_to`, `depends_on`, `located_at`, `requires`,
+`supersedes`, `used_in`, `maintains`).
 Migration accepts semantic Markdown or the legacy JSONL memory file explicitly;
 it is never automatic and leaves source stores intact.
 

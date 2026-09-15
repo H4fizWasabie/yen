@@ -41,6 +41,11 @@ type ConsolidatedEpisode struct {
 	RelatedSemanticNodeIDs []string
 }
 
+var allowedEdgeRelations = map[string]struct{}{
+	"prefers": {}, "attributed_to": {}, "depends_on": {}, "located_at": {},
+	"requires": {}, "supersedes": {}, "used_in": {}, "maintains": {},
+}
+
 func OpenEngine(dir string) (*Engine, error) {
 	episodic, err := OpenEpisodicStore(filepath.Join(dir, "episodes.db"))
 	if err != nil {
@@ -144,6 +149,9 @@ func (e *Engine) applyConsolidation(turnID, conversationID, workspaceID, adapter
 		nodes[node.ID] = node
 	}
 	for _, edge := range edges {
+		if _, ok := allowedEdgeRelations[edge.Rel]; !ok {
+			continue
+		}
 		from, fromNew := ids[edge.From]
 		if !fromNew && safeID(edge.From) {
 			from = edge.From
