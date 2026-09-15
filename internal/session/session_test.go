@@ -63,6 +63,33 @@ func TestSessionDefersFirstWriteUntilAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestOpenSessionSkipsMalformedLinesBeforeAndAfterHeader(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	s := New(path, Header{ID: "session-1", CWD: "/workspace", Channel: "telegram", ChannelSessionID: "42"})
+	if _, err := s.Append(Message{Role: "user", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(Message{Role: "assistant", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append([]byte("not-json\n\n"), append(content[:bytes.IndexByte(content, '\n')+1], append([]byte("broken-entry\n"), content[bytes.IndexByte(content, '\n')+1:]...)...)...)
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opened.Messages()) != 2 {
+		t.Fatalf("messages=%d, want 2", len(opened.Messages()))
+	}
+}
+
 func TestOpenSessionContinuesParentChain(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")

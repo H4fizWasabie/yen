@@ -128,7 +128,9 @@ not use the newer checkout as an unqualified oracle.
 ## What exists
 
 - `internal/session`: v3 JSONL creation, deferred first publication, parent
-  links, open, append, and restart continuation.
+  links, open, append, and restart continuation. Session open now scans past
+  malformed/blank lines before the header and malformed entries after it, as
+  covered by `TestOpenSessionSkipsMalformedLinesBeforeAndAfterHeader`.
   Opening a pinned TypeScript v1/v2 JSONL session now migrates it in place to
   v3: IDs and parent links are assigned, `hookMessage` becomes `custom`, and
   TypeScript flat compaction entries are read. Raw extension entries and

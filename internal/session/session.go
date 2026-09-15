@@ -168,6 +168,7 @@ func Open(path string) (*Session, error) {
 	s := &Session{path: path, flushed: true}
 	scanner := bufio.NewScanner(file)
 	line := 0
+	headerFound := false
 	for scanner.Scan() {
 		line++
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
@@ -177,10 +178,13 @@ func Open(path string) (*Session, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
 			continue
 		}
-		if len(s.entries) == 0 && s.header.Type == "" {
-			if err := json.Unmarshal(scanner.Bytes(), &s.header); err != nil || s.header.Type != "session" || s.header.ID == "" {
-				return nil, fmt.Errorf("session header missing")
+		if !headerFound {
+			var header sessionHeader
+			if err := json.Unmarshal(scanner.Bytes(), &header); err != nil || header.Type != "session" || header.ID == "" {
+				continue
 			}
+			s.header = header
+			headerFound = true
 			continue
 		}
 		var entry sessionEntry
@@ -193,7 +197,7 @@ func Open(path string) (*Session, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	if line == 0 {
+	if line == 0 || !headerFound {
 		return nil, fmt.Errorf("empty session")
 	}
 	if migrateSession(s) {
