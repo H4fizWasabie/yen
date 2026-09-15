@@ -241,6 +241,10 @@ without cutting through a filename line. TypeScript authority:
 Go evidence: `internal/tools/fs_tools.go` and
 `TestFileSearchToolsBoundOutput`.
 
+File-search result-count limits now emit the oracle's actionable notice for
+`ls` and `find`, including the requested larger limit. Go evidence:
+`internal/tools/fs_tools.go` and `TestFileSearchToolsReportResultLimit`.
+
 OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
 fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
 instead of the generic `reasoning.effort` field. TypeScript authority:
