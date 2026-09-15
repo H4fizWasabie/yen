@@ -20,9 +20,9 @@ adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
 Provider credentials are intentionally split: Yen must use the separate
-`/etc/theoses-go/yen-provider.env` file. The existing Theoses provider env is
-not a valid Yen deployment input. The Yen pilot is currently stopped until
-that file is provisioned with Yen's own key.
+`/etc/yen/yen-provider.env` file. Yen deployment configuration lives under
+`/etc/yen` and `/var/lib/yen`; the existing Theoses provider env is not a Yen
+deployment input.
 
 The dashboard SSE seam now emits the TypeScript event names and payload shapes
 for `delta`, `tool_call`, `tool_result`, `usage`, `done`, and `error`, including
@@ -41,6 +41,12 @@ pilot clients. The response is covered by the dashboard HTTP test.
 Dashboard session listing now maps registry links to the TypeScript session-view
 shape (`id`, `channel`, `title`, `modified`, `messageCount`, `path`), includes
 both dashboard and Telegram links, and de-duplicates shared conversation IDs.
+
+The live Go pilot now runs release `eb73910` with Yen-owned configuration and
+data paths. A real dashboard request succeeded through the separate Yen
+provider key after the data migration; all four Go/TypeScript units were
+verified active. Auto-consolidation was not enabled for this split-provider
+check.
 
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot

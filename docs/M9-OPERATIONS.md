@@ -34,8 +34,8 @@ secret file; it is managed separately and must not enter an archive.
 
 ```sh
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-tar -C /var/lib -czf "/var/backups/yen-theoses-go-$stamp.tgz" theoses-go-telegram
-tar -tzf "/var/backups/yen-theoses-go-$stamp.tgz" >/dev/null
+tar -C /var/lib -czf "/var/backups/yen-$stamp.tgz" yen
+tar -tzf "/var/backups/yen-$stamp.tgz" >/dev/null
 ```
 
 Rollback is a unit-only change: point each Go unit at the previous release,
