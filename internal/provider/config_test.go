@@ -1,11 +1,45 @@
 package provider
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/auth"
 )
+
+func TestCloudflareProvidersUseYenCredentialsAndRouting(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/account/gateway/chat/completions" {
+			t.Fatalf("path=%q", r.URL.Path)
+		}
+		if r.Header.Get("cf-aig-authorization") != "Bearer gateway-key" {
+			t.Fatalf("gateway auth=%q", r.Header.Get("cf-aig-authorization"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+	t.Setenv("YEN_CLOUDFLARE_API_KEY", "gateway-key")
+	t.Setenv("YEN_CLOUDFLARE_BASE_URL", server.URL+"/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}")
+	t.Setenv("YEN_CLOUDFLARE_ACCOUNT_ID", "account")
+	t.Setenv("YEN_CLOUDFLARE_GATEWAY_ID", "gateway")
+	configured, err := NewConfigured("cloudflare-ai-gateway", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := configured.(OpenAICompletions)
+	client.Client = server.Client()
+	result, err := client.Next(context.Background(), nil, nil)
+	if err != nil || result.Text != "ok" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if client.BaseURL != server.URL+"/v1/account/gateway" {
+		t.Fatalf("base URL=%q", client.BaseURL)
+	}
+}
 
 func TestNewFromEnvPrefersYenProviderCredentials(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "openrouter")

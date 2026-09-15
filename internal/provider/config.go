@@ -42,6 +42,8 @@ var providerDefaults = map[string]string{
 	"zai":                        "https://api.z.ai/api/coding/paas/v4",
 	"zai-coding-cn":              "https://open.bigmodel.cn/api/coding/paas/v4",
 	"vercel-ai-gateway":          "https://ai-gateway.vercel.sh",
+	"cloudflare-workers-ai":      "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+	"cloudflare-ai-gateway":      "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
 }
 
 var providerKeyEnvs = map[string]string{
@@ -75,6 +77,26 @@ var providerKeyEnvs = map[string]string{
 	"zai":                        "YEN_ZAI_API_KEY",
 	"zai-coding-cn":              "YEN_ZAI_CODING_CN_API_KEY",
 	"vercel-ai-gateway":          "YEN_VERCEL_AI_GATEWAY_API_KEY",
+	"cloudflare-workers-ai":      "YEN_CLOUDFLARE_API_KEY",
+	"cloudflare-ai-gateway":      "YEN_CLOUDFLARE_API_KEY",
+}
+
+func cloudflareConfigured(providerID, model string) OpenAICompletions {
+	baseURL := os.Getenv("YEN_CLOUDFLARE_BASE_URL")
+	if baseURL == "" {
+		baseURL = providerDefaults[providerID]
+	}
+	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_ACCOUNT_ID}", os.Getenv("YEN_CLOUDFLARE_ACCOUNT_ID"))
+	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_GATEWAY_ID}", os.Getenv("YEN_CLOUDFLARE_GATEWAY_ID"))
+	key := os.Getenv("YEN_CLOUDFLARE_API_KEY")
+	client := NewOpenAICompletions(baseURL, key, model)
+	client.ProviderName = providerID
+	if providerID == "cloudflare-ai-gateway" {
+		client.APIKey = ""
+		client.Headers = map[string]string{"cf-aig-authorization": "Bearer " + key}
+	}
+	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
+	return client
 }
 
 func NewFromEnv() OpenAICompletions {
@@ -85,6 +107,13 @@ func NewFromEnv() OpenAICompletions {
 	}
 	if providerID == "" {
 		providerID = "openai"
+	}
+	if providerID == "cloudflare-workers-ai" || providerID == "cloudflare-ai-gateway" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+		}
+		return cloudflareConfigured(providerID, model)
 	}
 	baseURL := os.Getenv("YEN_OPENAI_BASE_URL")
 	if baseURL == "" {
@@ -199,6 +228,12 @@ func ConfiguredFromEnv() agent.Provider {
 func NewConfigured(providerID, model string) (agent.Provider, error) {
 	providerID = strings.ToLower(strings.TrimSpace(providerID))
 	model = strings.TrimSpace(model)
+	if providerID == "cloudflare-workers-ai" || providerID == "cloudflare-ai-gateway" {
+		if model == "" {
+			model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+		}
+		return cloudflareConfigured(providerID, model), nil
+	}
 	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
 		if model == "" {
 			model = "gpt-4.1"

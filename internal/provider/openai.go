@@ -37,6 +37,7 @@ type openAIToolCall struct {
 type OpenAICompletions struct {
 	BaseURL         string
 	APIKey          string
+	Headers         map[string]string
 	Model           string
 	ProviderName    string
 	ReasoningEffort string
@@ -56,6 +57,9 @@ func (p OpenAICompletions) ListModels(ctx context.Context) ([]ModelInfo, error) 
 	}
 	if p.APIKey != "" {
 		request.Header.Set("Authorization", "Bearer "+p.APIKey)
+	}
+	for name, value := range p.Headers {
+		request.Header.Set(name, value)
 	}
 	response, err := client.Do(request)
 	if err != nil {
@@ -147,6 +151,9 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		request.Header.Set("Content-Type", "application/json")
 		if p.APIKey != "" {
 			request.Header.Set("Authorization", "Bearer "+p.APIKey)
+		}
+		for name, value := range p.Headers {
+			request.Header.Set(name, value)
 		}
 		response, err = client.Do(request)
 		if err != nil {
