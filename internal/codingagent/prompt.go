@@ -135,6 +135,56 @@ func SkillsMessage(workspace string) (agent.Message, bool) {
 	return agent.Message{Role: "system", Content: content}, true
 }
 
+// SkillCommands exposes the same local skill discovery to headless command
+// clients without loading skill bodies into the prompt.
+func SkillCommands(workspace string) []map[string]any {
+	workspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return nil
+	}
+	resourceSettings, _ := settings.Load(workspace)
+	if resourceSettings.Trusted != nil && !*resourceSettings.Trusted && os.Getenv("YEN_TRUST_PROJECT") != "1" {
+		return nil
+	}
+	paths := []string{filepath.Join(workspace, ".theoses", "skills"), filepath.Join(workspace, ".agents", "skills")}
+	for _, configured := range resourceSettings.SkillDirs {
+		if !filepath.IsAbs(configured) {
+			configured = filepath.Join(workspace, configured)
+		}
+		paths = append(paths, configured)
+	}
+	if dir := os.Getenv("YEN_SKILLS_DIR"); dir != "" {
+		paths = append(paths, dir)
+	}
+	commands := make([]map[string]any, 0)
+	for _, root := range paths {
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil || entry == nil {
+				return nil
+			}
+			if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			if entry.IsDir() || entry.Name() != "SKILL.md" {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil
+			}
+			name, description := parseSkillFrontmatter(string(data))
+			if name != "" && description != "" {
+				commands = append(commands, map[string]any{
+					"name": "skill:" + name, "description": description, "source": "skill",
+					"sourceInfo": map[string]string{"path": path},
+				})
+			}
+			return nil
+		})
+	}
+	return commands
+}
+
 func parseSkillFrontmatter(content string) (string, string) {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {

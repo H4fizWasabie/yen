@@ -530,6 +530,11 @@ RPC `get_entries` now matches the oracle's `leafId` response and explicit
 unknown-`since` error. Focused protocol coverage and the full 265-test
 race/vet/diff gate pass.
 
+RPC `get_commands` now advertises trusted local skills as `skill:<name>` with
+description and source-path metadata. Focused command-discovery coverage and
+the full 265-test race/vet/diff gate pass; executing extension, prompt, and
+skill commands remains a separate open surface.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

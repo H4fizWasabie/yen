@@ -408,7 +408,18 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"mode": request.Mode}, nil)
 	case "get_commands":
-		return s.response(output, request.ID, request.Type, true, map[string]any{"commands": builtinCommands()}, nil)
+		commands := make([]map[string]any, 0)
+		for _, command := range builtinCommands() {
+			commands = append(commands, command)
+		}
+		workspace := link.WorkspaceID
+		if workspace == "" {
+			if current, err := s.Runner.OpenSession(link); err == nil {
+				workspace = current.Header().CWD
+			}
+		}
+		commands = append(commands, codingagent.SkillCommands(workspace)...)
+		return s.response(output, request.ID, request.Type, true, map[string]any{"commands": commands}, nil)
 	case "set_model":
 		if strings.TrimSpace(request.Provider) == "" || strings.TrimSpace(request.Model) == "" {
 			return errors.New("provider and modelId are required")
@@ -536,8 +547,8 @@ func (s *Server) modes() (string, string) {
 	return steering, followUp
 }
 
-func builtinCommands() []map[string]string {
-	return []map[string]string{
+func builtinCommands() []map[string]any {
+	return []map[string]any{
 		{"name": "settings", "description": "Open settings menu", "source": "builtin"},
 		{"name": "model", "description": "Select model", "source": "builtin"},
 		{"name": "thinking", "description": "Set thinking level", "source": "builtin"},

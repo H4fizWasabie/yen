@@ -348,11 +348,17 @@ func TestRetryControlCommandsUpdateProvider(t *testing.T) {
 
 func TestQueueModeAndCommandDiscovery(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".theoses", "skills", "summarize"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".theoses", "skills", "summarize", "SKILL.md"), []byte("---\nname: summarize\ndescription: Summarize the current work\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := Server{Runner: runtime.New(queue, rpcProvider{}, nil), Link: conversation.Link{ConversationID: "commands"}}
+	server := Server{Runner: runtime.New(queue, rpcProvider{}, nil), Link: conversation.Link{ConversationID: "commands", WorkspaceID: dir}}
 	var output bytes.Buffer
 	if err := server.handle(context.Background(), &output, command{Type: "set_steering_mode", Mode: "all"}); err != nil {
 		t.Fatal(err)
@@ -366,7 +372,7 @@ func TestQueueModeAndCommandDiscovery(t *testing.T) {
 	if err := server.handle(context.Background(), &output, command{Type: "get_commands"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), `"steeringMode":"all"`) || !strings.Contains(output.String(), `"name":"compact"`) {
+	if !strings.Contains(output.String(), `"steeringMode":"all"`) || !strings.Contains(output.String(), `"name":"compact"`) || !strings.Contains(output.String(), `"name":"skill:summarize"`) {
 		t.Fatalf("output=%s", output.String())
 	}
 }

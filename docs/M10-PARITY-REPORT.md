@@ -71,6 +71,13 @@ authority: `packages/coding-agent/src/modes/rpc/rpc-mode.ts:632-650`; Go
 evidence: `internal/rpc/server.go` and
 `internal/rpc/server_test.go`; the full 265-test race/vet/diff gate passes.
 
+RPC command discovery now includes trusted local skill resources as
+`skill:<name>` commands with description and source-path metadata, matching
+the oracle's skill portion of `get_commands`. TypeScript authority:
+`packages/coding-agent/src/modes/rpc/rpc-mode.ts:650-690`; Go evidence:
+`internal/codingagent/prompt.go`, `internal/rpc/server.go`, and
+`internal/rpc/server_test.go`; the full 265-test race/vet/diff gate passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 
