@@ -119,14 +119,6 @@ remains open.
 
 ## Checkpoint update: 2026-09-15
 
-Resource context loading now includes the oracle's `THEOSES.md` persona at the
-global and ancestor scopes, preserving root-to-workspace ordering alongside
-the existing Yen context files. TypeScript authority:
-`packages/coding-agent/src/core/resource-loader.ts:220-260`. Go evidence:
-`internal/codingagent/prompt.go` and
-`TestContextMessageLoadsTheosesPersonaAtEachScope`; broader resource-loader
-diagnostics and extension discovery remain open.
-
 Dropped-memory distillation now retries transient provider failures with the
 same bounded exponential policy as the oracle's compaction path, while leaving
 non-transient failures best-effort and non-blocking. TypeScript authority:
