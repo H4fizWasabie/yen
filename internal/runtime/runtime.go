@@ -518,6 +518,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	if note := current.WorkingNote(); note != "" {
 		history = append([]agent.Message{codingagent.WorkingNoteMessage(note)}, history...)
 	}
+	if catalog := current.ArtifactCatalog(2000); catalog != "" {
+		history = append([]agent.Message{codingagent.ArtifactCatalogMessage(catalog)}, history...)
+	}
 	var tools []agent.Tool
 	if r.SessionToolFactoryWithProvider != nil {
 		tools = r.SessionToolFactoryWithProvider(turn.WorkspaceID, current, r.Provider)
@@ -554,6 +557,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			}
 			if note := current.WorkingNote(); note != "" {
 				history = append([]agent.Message{codingagent.WorkingNoteMessage(note)}, history...)
+			}
+			if catalog := current.ArtifactCatalog(2000); catalog != "" {
+				history = append([]agent.Message{codingagent.ArtifactCatalogMessage(catalog)}, history...)
 			}
 			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 		}
