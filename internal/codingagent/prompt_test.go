@@ -79,6 +79,21 @@ func TestContextMessageUsesOnlyHighestPriorityContextFilePerDirectory(t *testing
 	}
 }
 
+func TestContextMessageEmptyHigherPriorityFileShadowsLowerPriority(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.override.md"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("lower priority guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	message, ok := ContextMessage(workspace)
+	if ok || strings.Contains(message.Content, "lower priority guidance") {
+		t.Fatalf("message=%#v", message)
+	}
+}
+
 func TestContextMessageLoadsConfiguredAgentPersonaFirst(t *testing.T) {
 	workspace := t.TempDir()
 	agentDir := t.TempDir()
