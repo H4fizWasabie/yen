@@ -785,7 +785,7 @@ func openOrCreate(path string, turn conversation.Turn) (*session.Session, error)
 func toAgentMessages(messages []session.Message) []agent.Message {
 	result := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
-		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model}
+		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, ToolName: message.ToolName, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model}
 		if message.Usage != nil {
 			converted.Usage = &agent.Usage{
 				Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
@@ -876,7 +876,7 @@ func toSessionMessage(message agent.Message) session.Message {
 		}
 	}
 	if message.Role == "tool" {
-		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, Images: message.Images, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
+		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, ToolName: message.ToolName, Images: message.Images, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
 	}
 	if len(message.ToolCalls) > 0 || message.TextSignature != "" || message.Thinking != "" || message.ThinkingSignature != "" {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)

@@ -67,6 +67,7 @@ type Message struct {
 	Content            any      `json:"content"`
 	Images             []string `json:"images,omitempty"`
 	ToolCallID         string   `json:"toolCallId,omitempty"`
+	ToolName           string   `json:"toolName,omitempty"`
 	StopReason         string   `json:"stopReason,omitempty"`
 	ErrorMessage       string   `json:"errorMessage,omitempty"`
 	ResponseID         string   `json:"responseId,omitempty"`
