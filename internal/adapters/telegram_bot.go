@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/H4fizWasabie/yen/internal/agent"
 )
 
 type TelegramBot struct {
@@ -117,7 +119,11 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 		replyContext = telegramMessageText(update.Message.ReplyToMessage)
 	}
 	stopTyping := b.startTyping(ctx, chatID)
-	result, err := b.Adapter.HandleMessageWithReply(ctx, chatID, text, replyContext)
+	result, err := b.Adapter.HandleMessageWithReplyEvents(ctx, chatID, text, replyContext, func(event agent.Event) {
+		if event.Type == "tool_call" && event.Name != "" {
+			_ = b.sendMessage(ctx, chatID, "Running "+event.Name+"...", messageReplyID(update.Message.MessageID))
+		}
+	})
 	stopTyping()
 	if err != nil {
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))

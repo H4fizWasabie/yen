@@ -21,17 +21,18 @@ func (s Service) Send(ctx context.Context, adapter, adapterKey, workspace, text 
 	if s.Registry == nil || s.Runner == nil {
 		return conversation.Turn{}, agent.Result{}, errors.New("adapter service is not configured")
 	}
-	var link conversation.Link
-	var err error
-	if s.CanonicalConversationID != "" {
-		link, err = s.Registry.ResolveShared(adapter, adapterKey, workspace, s.CanonicalConversationID)
-	} else {
-		link, err = s.Registry.Resolve(adapter, adapterKey, workspace)
-	}
+	link, err := s.resolve(adapter, adapterKey, workspace)
 	if err != nil {
 		return conversation.Turn{}, agent.Result{}, err
 	}
 	return s.SendLink(ctx, link, text)
+}
+
+func (s Service) resolve(adapter, adapterKey, workspace string) (conversation.Link, error) {
+	if s.CanonicalConversationID != "" {
+		return s.Registry.ResolveShared(adapter, adapterKey, workspace, s.CanonicalConversationID)
+	}
+	return s.Registry.Resolve(adapter, adapterKey, workspace)
 }
 
 func (s Service) SendLink(ctx context.Context, link conversation.Link, text string) (conversation.Turn, agent.Result, error) {
@@ -53,13 +54,29 @@ func (a Telegram) HandleMessage(ctx context.Context, chatID, text string) (agent
 }
 
 func (a Telegram) HandleMessageWithReply(ctx context.Context, chatID, text, replyContext string) (agent.Result, error) {
+	return a.handleMessageWithReply(ctx, chatID, text, replyContext, nil)
+}
+
+func (a Telegram) HandleMessageWithReplyEvents(ctx context.Context, chatID, text, replyContext string, onEvent agent.EventFunc) (agent.Result, error) {
+	return a.handleMessageWithReply(ctx, chatID, text, replyContext, onEvent)
+}
+
+func (a Telegram) handleMessageWithReply(ctx context.Context, chatID, text, replyContext string, onEvent agent.EventFunc) (agent.Result, error) {
 	if replyContext != "" {
 		if len([]rune(replyContext)) > 2000 {
 			replyContext = string([]rune(replyContext)[:2000])
 		}
 		text = "[Quoted message context]\n" + replyContext + "\n[/Quoted message context]\n\n" + text
 	}
-	_, result, err := a.Service.Send(ctx, "telegram", chatID, a.Workspace, text)
+	link, err := a.Service.resolve("telegram", chatID, a.Workspace)
+	if err != nil {
+		return agent.Result{}, err
+	}
+	turn, err := a.Service.Runner.Submit(link, text)
+	if err != nil {
+		return agent.Result{}, err
+	}
+	_, result, err := a.Service.Runner.RunSubmittedWithEvents(ctx, turn, nil, onEvent)
 	return result, err
 }
 

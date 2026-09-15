@@ -28,6 +28,16 @@ type blockingTelegramProvider struct {
 	release chan struct{}
 }
 
+type statusTelegramProvider struct{ calls int }
+
+func (p *statusTelegramProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{ToolCalls: []agent.ToolCall{{ID: "read-1", Name: "read"}}, StopReason: "toolUse"}, nil
+	}
+	return agent.Response{Text: "done", StopReason: "stop"}, nil
+}
+
 func (p blockingTelegramProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
 	close(p.started)
 	<-p.release
@@ -73,6 +83,47 @@ func TestTelegramBotSendsTypingActionDuringTurn(t *testing.T) {
 	close(provider.release)
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTelegramBotReportsToolStatus(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, &statusTelegramProvider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	var messages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/sendRichMessage" {
+			var payload struct {
+				RichMessage struct {
+					Markdown string `json:"markdown"`
+				} `json:"rich_message"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			messages = append(messages, payload.RichMessage.Markdown)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	update := telegramUpdate{Message: &telegramMessage{MessageID: 3, Text: "read it"}}
+	update.Message.Chat.ID = 42
+	if err := bot.HandleUpdate(context.Background(), update); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 || messages[0] != "Running read..." || messages[1] != "done" {
+		t.Fatalf("messages=%#v", messages)
 	}
 }
 

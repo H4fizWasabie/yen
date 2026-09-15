@@ -88,6 +88,10 @@ turn without serial poll-loop blocking.
 Classic Telegram fallback now escapes and formats common Markdown constructs as
 HTML before `sendMessage`; the rich path remains preferred.
 
+Telegram now emits a `Running <tool>...` status message for tool calls,
+covered by `TestTelegramBotReportsToolStatus`; canonical shared-session routing
+is preserved through the event-enabled path.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
