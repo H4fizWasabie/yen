@@ -57,6 +57,21 @@ func TestListToolSortsBeforeApplyingLimit(t *testing.T) {
 	}
 }
 
+func TestListToolSkipsBrokenSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "good.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "missing.txt"), filepath.Join(dir, "broken.txt")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	got, err := NewListTool(dir).Execute(context.Background(), map[string]any{})
+	if err != nil || !strings.Contains(got, "good.txt") || strings.Contains(got, "broken.txt") {
+		t.Fatalf("ls=%q err=%v", got, err)
+	}
+}
+
 func TestFindToolSupportsRecursiveGlobstar(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "internal", "nested"), 0o700); err != nil {

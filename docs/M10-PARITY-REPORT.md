@@ -284,6 +284,11 @@ Grep match lines now use the oracle's `path:line: text` spacing. TypeScript
 authority: `packages/coding-agent/src/core/tools/grep.ts:327-334`; Go evidence:
 `internal/tools/fs_tools.go` and `TestGrepToolUsesOracleMatchSpacing`.
 
+The `ls` tool now follows entry targets while listing and skips entries that
+cannot be statted, matching the oracle's broken-symlink behavior. TypeScript
+authority: `packages/coding-agent/src/core/tools/ls.ts:143-160`; Go evidence:
+`internal/tools/fs_tools.go` and `TestListToolSkipsBrokenSymlinks`.
+
 OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
 fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
 instead of the generic `reasoning.effort` field. TypeScript authority:

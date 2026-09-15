@@ -25,6 +25,11 @@ func (t ListTool) Execute(ctx context.Context, args map[string]any) (string, err
 	if err != nil { return "", fmt.Errorf("cannot read directory: %w", err) }
 	limit := intArg(args, "limit", 500)
 	if limit < 1 { limit = 1 }
+	validEntries := make([]os.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		if _, err := os.Stat(filepath.Join(path, entry.Name())); err == nil { validEntries = append(validEntries, entry) }
+	}
+	entries = validEntries
 	limitReached := len(entries) > limit
 	sort.SliceStable(entries, func(i, j int) bool { return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name()) })
 	lines := make([]string, 0, min(len(entries), limit))
