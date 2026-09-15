@@ -35,6 +35,25 @@ func TestAnthropicMessagesStreamsTextAndThinking(t *testing.T) {
 	}
 }
 
+func TestAnthropicMessagesPreservesThinkingSignatureDeltas(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"plan","signature":"sig-"}}`)
+		fmt.Fprintln(w, `data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"more"}}`)
+		fmt.Fprintln(w, `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}`)
+	}))
+	defer server.Close()
+
+	provider := NewAnthropicMessages(server.URL, "key", "claude-test")
+	result, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Thinking != "plan" || result.ThinkingSignature != "sig-more" {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
 func TestAnthropicMessagesReconstructsToolCallsAndImages(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

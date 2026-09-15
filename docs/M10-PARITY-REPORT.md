@@ -45,6 +45,13 @@ pass.
 
 ## Checkpoint update: 2026-09-16
 
+Anthropic Messages streaming now preserves initial thinking signatures,
+incremental `signature_delta` values, and redacted-thinking signatures for
+multi-turn replay. TypeScript authority:
+`packages/ai/src/api/anthropic-messages.ts:620-637,691-697`; Go evidence:
+`internal/provider/anthropic.go` and
+`TestAnthropicMessagesPreservesThinkingSignatureDeltas`.
+
 Bedrock Converse usage now preserves cache-read and cache-write token
 breakdowns and falls back to the component sum when the service omits total
 tokens. TypeScript authority:

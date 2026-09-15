@@ -147,14 +147,18 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 			} `json:"message"`
 			Index        int `json:"index"`
 			ContentBlock struct {
-				Type string `json:"type"`
-				ID   string `json:"id"`
-				Name string `json:"name"`
+				Type      string `json:"type"`
+				ID        string `json:"id"`
+				Name      string `json:"name"`
+				Thinking  string `json:"thinking"`
+				Signature string `json:"signature"`
+				Data      string `json:"data"`
 			} `json:"content_block"`
 			Delta struct {
 				Type         string `json:"type"`
 				Text         string `json:"text"`
 				Thinking     string `json:"thinking"`
+				Signature    string `json:"signature"`
 				PartialJSON  string `json:"partial_json"`
 				StopReason   string `json:"stop_reason"`
 				OutputTokens int    `json:"output_tokens"`
@@ -181,7 +185,17 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		}
 		switch event.Type {
 		case "content_block_start":
-			if event.ContentBlock.Type == "tool_use" {
+			if event.ContentBlock.Type == "thinking" {
+				result.Thinking += event.ContentBlock.Thinking
+				partial.Thinking += event.ContentBlock.Thinking
+				result.ThinkingSignature = event.ContentBlock.Signature
+				partial.ThinkingSignature = event.ContentBlock.Signature
+			} else if event.ContentBlock.Type == "redacted_thinking" {
+				result.Thinking += "[Reasoning redacted]"
+				partial.Thinking += "[Reasoning redacted]"
+				result.ThinkingSignature = event.ContentBlock.Data
+				partial.ThinkingSignature = event.ContentBlock.Data
+			} else if event.ContentBlock.Type == "tool_use" {
 				toolMeta[event.Index] = agent.ToolCall{ID: event.ContentBlock.ID, Name: event.ContentBlock.Name}
 				toolArgs[event.Index] = ""
 			}
@@ -202,6 +216,9 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 				if emit != nil {
 					emit(agent.StreamEvent{Type: "thinking_delta", Delta: event.Delta.Thinking, Partial: partial})
 				}
+			case "signature_delta":
+				result.ThinkingSignature += event.Delta.Signature
+				partial.ThinkingSignature += event.Delta.Signature
 			case "input_json_delta":
 				toolArgs[event.Index] += event.Delta.PartialJSON
 			}
