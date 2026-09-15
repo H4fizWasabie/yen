@@ -19,7 +19,7 @@ var providerDefaults = map[string]string{
 	"baseten":                    "https://inference.baseten.co/v1",
 	"cerebras":                   "https://api.cerebras.ai/v1",
 	"deepseek":                   "https://api.deepseek.com/v1",
-	"fireworks":                  "https://api.fireworks.ai/inference",
+	"fireworks":                  "https://api.fireworks.ai/inference/v1",
 	"groq":                       "https://api.groq.com/openai/v1",
 	"huggingface":                "https://router.huggingface.co/v1",
 	"kimi-coding":                "https://api.kimi.com/coding",
@@ -51,6 +51,33 @@ var providerDefaults = map[string]string{
 	"github-copilot":             "https://api.individual.githubcopilot.com",
 	"openai-codex":               "https://chatgpt.com/backend-api/codex",
 	"azure-openai-responses":     "",
+}
+
+var fireworksAnthropicModels = map[string]struct{}{
+	"accounts/fireworks/models/deepseek-v4-flash-0731":         {},
+	"accounts/fireworks/models/deepseek-v4-flash-vision-exp":   {},
+	"accounts/fireworks/models/deepseek-v4-pro-0813":           {},
+	"accounts/fireworks/models/deepseek-v4p1-flash":            {},
+	"accounts/fireworks/models/glm-5p3":                        {},
+	"accounts/fireworks/models/glm-5p3-flash":                  {},
+	"accounts/fireworks/models/gpt-oss-120b":                   {},
+	"accounts/fireworks/models/inkling":                        {},
+	"accounts/fireworks/models/kimi-k2p6":                      {},
+	"accounts/fireworks/models/kimi-k2p7-code":                 {},
+	"accounts/fireworks/models/minimax-m3":                     {},
+	"accounts/fireworks/models/mistral-large-3-fp8":            {},
+	"accounts/fireworks/models/muse-glimmer-30b":               {},
+	"accounts/fireworks/models/nemotron-3-ultra-nvfp4":         {},
+	"accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b": {},
+	"accounts/fireworks/models/qwen3p7-plus":                   {},
+	"accounts/fireworks/models/qwen3p8-2p4t-a95b":              {},
+	"accounts/fireworks/models/qwen3p8-max":                    {},
+	"accounts/fireworks/routers/glm-5p3-fast":                  {},
+}
+
+func isFireworksAnthropicModel(model string) bool {
+	_, ok := fireworksAnthropicModels[model]
+	return ok
 }
 
 var providerKeyEnvs = map[string]string{
@@ -563,6 +590,16 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 			key = storedCredentialKey(providerID)
 		}
 		client := NewAnthropicMessages(providerDefaults[providerID], key, model)
+		client.ProviderName = providerID
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client, nil
+	}
+	if providerID == "fireworks" && isFireworksAnthropicModel(model) {
+		key := os.Getenv(providerKeyEnvs[providerID])
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
+		client := NewAnthropicMessages(strings.TrimSuffix(providerDefaults[providerID], "/v1"), key, model)
 		client.ProviderName = providerID
 		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 		return client, nil
