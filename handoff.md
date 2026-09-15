@@ -227,6 +227,8 @@ tool arguments and return the same re-issue guidance shape as the TypeScript
 agent loop.
 The agent callback also exposes `tool_execution_start` and
 `tool_execution_end` lifecycle events with arguments, result, and error state.
+Recoverable provider `length` stops now use the existing overflow opt-in to
+compact once and retry once, matching the pinned TypeScript recovery path.
 Consolidation now carries session-entry timestamps into the transcript prefix.
 Persisted tool errors are labeled `FAILED` in that transcript, matching the
 TypeScript consolidation summary.

@@ -305,7 +305,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	}
 	tools = append(tools, recallTurnsTool{history: history})
 	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, turn.Prompt, images, queues, onUpdate, onEvent)
-	if runErr != nil && r.AutoCompactOnOverflow && providerpkg.IsContextOverflowError(runErr.Error()) {
+	if r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && recoverableLengthStop(result)) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
 			keepRecentTurns = 2
@@ -338,6 +338,14 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		}
 	}
 	return result, runErr
+}
+
+func recoverableLengthStop(result agent.Result) bool {
+	if len(result.Messages) == 0 {
+		return false
+	}
+	last := result.Messages[len(result.Messages)-1]
+	return last.Role == "assistant" && last.StopReason == "length"
 }
 
 func toConsolidationTurns(messages []session.TimedMessage) []memory.ConsolidationTurn {

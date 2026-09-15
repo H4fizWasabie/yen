@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -73,6 +74,20 @@ func (p *overflowRecoveryProvider) Next(context.Context, []agent.Message, []stri
 		return agent.Response{}, errors.New("400 input exceeds the model's maximum context length of 128 tokens")
 	case 2:
 		return agent.Response{Text: "overflow summary", StopReason: "stop"}, nil
+	default:
+		return agent.Response{Text: "recovered", StopReason: "stop"}, nil
+	}
+}
+
+type lengthRecoveryProvider struct{ calls int }
+
+func (p *lengthRecoveryProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.calls++
+	switch p.calls {
+	case 1:
+		return agent.Response{Text: "truncated", StopReason: "length"}, nil
+	case 2:
+		return agent.Response{Text: `{"episode":{"summary":"compacted","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`, StopReason: "stop"}, nil
 	default:
 		return agent.Response{Text: "recovered", StopReason: "stop"}, nil
 	}
@@ -432,7 +447,7 @@ func TestRunnerRetriesOnceAfterOptInContextOverflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "recovered" {
-		t.Fatalf("result=%#v err=%v", result, err)
+		t.Fatalf("result=%#v err=%v calls=%d", result, err, provider.calls)
 	}
 	if provider.calls != 3 {
 		t.Fatalf("provider calls=%d, want overflow, summary, retry", provider.calls)
@@ -443,6 +458,46 @@ func TestRunnerRetriesOnceAfterOptInContextOverflow(t *testing.T) {
 	}
 	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "overflow summary") {
 		t.Fatalf("context=%#v", reopened.ContextMessages())
+	}
+}
+
+func TestRunnerCompactsAndRetriesRecoverableLengthStop(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-length.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-length", ConversationID: "conv-length", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &lengthRecoveryProvider{}
+	runner := New(queue, provider, nil)
+	runner.AutoCompactOnOverflow = true
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-length", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "continue"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "recovered" {
+		t.Fatalf("result=%#v err=%v calls=%d", result, err, provider.calls)
+	}
+	if provider.calls != 3 {
+		t.Fatalf("provider calls=%d, want compaction and one retry", provider.calls)
+	}
+	reopened, err := session.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(fmt.Sprint(reopened.Messages()), "truncated") || !strings.Contains(fmt.Sprint(reopened.Messages()), "recovered") {
+		t.Fatalf("persisted messages=%#v", reopened.Messages())
 	}
 }
 
