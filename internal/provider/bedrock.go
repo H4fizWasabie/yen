@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	bedrockdocument "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
@@ -21,16 +22,44 @@ import (
 
 // BedrockConverse implements the AWS credential-chain ConverseStream API.
 type BedrockConverse struct {
-	Region       string
-	Profile      string
-	BaseURL      string
-	Model        string
-	ProviderName string
-	Client       *bedrockruntime.Client
+	Region        string
+	Profile       string
+	BaseURL       string
+	Model         string
+	ProviderName  string
+	Client        *bedrockruntime.Client
+	CatalogClient *bedrock.Client
 }
 
 func NewBedrockConverse(region, model string) BedrockConverse {
 	return BedrockConverse{Region: region, Model: model, ProviderName: "amazon-bedrock"}
+}
+
+func (p BedrockConverse) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	client := p.CatalogClient
+	if client == nil {
+		cfg, err := p.awsConfig(ctx)
+		if err != nil {
+			return nil, err
+		}
+		client = bedrock.NewFromConfig(cfg)
+	}
+	out, err := client.ListFoundationModels(ctx, &bedrock.ListFoundationModelsInput{})
+	if err != nil {
+		return nil, err
+	}
+	providerName := p.ProviderName
+	if providerName == "" {
+		providerName = "amazon-bedrock"
+	}
+	models := make([]ModelInfo, 0, len(out.ModelSummaries))
+	for _, summary := range out.ModelSummaries {
+		if summary.ModelId != nil && strings.TrimSpace(*summary.ModelId) != "" {
+			models = append(models, ModelInfo{Provider: providerName, ID: *summary.ModelId})
+		}
+	}
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	return models, nil
 }
 
 func (p BedrockConverse) Next(ctx context.Context, messages []agent.Message, tools []string) (agent.Response, error) {
@@ -55,14 +84,7 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	}
 	client := p.Client
 	if client == nil {
-		region := p.Region
-		if region == "" {
-			region = os.Getenv("AWS_REGION")
-		}
-		if region == "" {
-			region = "us-east-1"
-		}
-		cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region), awsconfig.WithSharedConfigProfile(p.Profile))
+		cfg, err := p.awsConfig(ctx)
 		if err != nil {
 			return agent.Response{}, err
 		}
@@ -186,6 +208,24 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 		emit(agent.StreamEvent{Type: "done", Partial: partial})
 	}
 	return result, nil
+}
+
+func (p BedrockConverse) awsConfig(ctx context.Context) (aws.Config, error) {
+	region := p.Region
+	if region == "" {
+		region = os.Getenv("AWS_REGION")
+	}
+	if region == "" {
+		region = os.Getenv("AWS_DEFAULT_REGION")
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(region)}
+	if p.Profile != "" {
+		options = append(options, awsconfig.WithSharedConfigProfile(p.Profile))
+	}
+	return awsconfig.LoadDefaultConfig(ctx, options...)
 }
 
 func bedrockInput(messages []agent.Message, toolNames []string, model string) (*bedrockruntime.ConverseStreamInput, error) {

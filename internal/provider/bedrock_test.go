@@ -1,10 +1,16 @@
 package provider
 
 import (
+	"context"
 	"encoding/base64"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	sdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
@@ -89,5 +95,30 @@ func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
 	redacted, ok := block.Value.(*bedrocktypes.ReasoningContentBlockMemberRedactedContent)
 	if !ok || string(redacted.Value) != string([]byte{1, 2, 3}) {
 		t.Fatalf("reasoning=%#v", block.Value)
+	}
+}
+
+func TestBedrockListsModelsFromAWSCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/foundation-models" {
+			t.Fatalf("method=%s path=%q", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"modelSummaries":[{"modelId":"z-model"},{"modelId":"a-model"},{"modelId":""}]}`))
+	}))
+	defer server.Close()
+	cfg := sdk.Config{
+		Region:       "us-east-1",
+		BaseEndpoint: sdk.String(server.URL),
+		Credentials:  credentials.NewStaticCredentialsProvider("access", "secret", ""),
+	}
+	provider := NewBedrockConverse("us-east-1", "model")
+	provider.CatalogClient = bedrock.NewFromConfig(cfg)
+	models, err := provider.ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "a-model" || models[1].ID != "z-model" || models[0].Provider != "amazon-bedrock" {
+		t.Fatalf("models=%#v", models)
 	}
 }
