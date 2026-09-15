@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/conversation"
 	"github.com/H4fizWasabie/yen/internal/session"
 )
 
@@ -33,7 +34,7 @@ func (h DashboardHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.URL.Path == "/api/sessions" && r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, map[string]any{"sessions": h.Dashboard.Service.Registry.List("dashboard")})
+		writeJSON(w, http.StatusOK, map[string]any{"sessions": dashboardSessions(h.Dashboard.Service.Registry)})
 		return
 	}
 	if r.URL.Path == "/api/sessions" && r.Method == http.MethodPost {
@@ -45,6 +46,25 @@ func (h DashboardHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+}
+
+func dashboardSessions(registry *conversation.Registry) []map[string]any {
+	if registry == nil {
+		return []map[string]any{}
+	}
+	seen := make(map[string]bool)
+	sessions := make([]map[string]any, 0)
+	for _, link := range registry.List("") {
+		if link.Adapter != "dashboard" && link.Adapter != "telegram" || seen[link.ConversationID] {
+			continue
+		}
+		seen[link.ConversationID] = true
+		sessions = append(sessions, map[string]any{
+			"id": link.ConversationID, "channel": link.Adapter, "title": link.ConversationID,
+			"modified": link.CreatedAt, "messageCount": 0, "path": "",
+		})
+	}
+	return sessions
 }
 
 func (h DashboardHTTP) authorized(w http.ResponseWriter, r *http.Request) bool {

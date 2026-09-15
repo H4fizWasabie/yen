@@ -145,6 +145,9 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	if episodes, err := runner.Memory.Episodic.Recent(link.ConversationID, 8); err != nil || len(episodes) != 1 {
 		t.Fatalf("dashboard episodes=%#v err=%v", episodes, err)
 	}
+	if _, err := registry.ResolveShared("telegram", "chat-1", dir, link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
 	response, err = http.Get(server.URL + "/api/sessions")
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +159,9 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || len(sessions["sessions"].([]any)) != 1 {
 		t.Fatalf("sessions=%#v status=%d", sessions, response.StatusCode)
+	}
+	if sessions["sessions"].([]any)[0].(map[string]any)["id"] != link.ConversationID {
+		t.Fatalf("session view=%#v", sessions["sessions"])
 	}
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/sessions/"+link.ConversationID+"/messages", bytes.NewBufferString(`{"message":"stream"}`))
 	if err != nil {

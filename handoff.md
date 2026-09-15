@@ -33,6 +33,10 @@ Dashboard session GET now includes the TypeScript UI contract (`session`,
 `history`, and `runtime`) while retaining the earlier `messages` field for
 pilot clients. The response is covered by the dashboard HTTP test.
 
+Dashboard session listing now maps registry links to the TypeScript session-view
+shape (`id`, `channel`, `title`, `modified`, `messageCount`, `path`), includes
+both dashboard and Telegram links, and de-duplicates shared conversation IDs.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
