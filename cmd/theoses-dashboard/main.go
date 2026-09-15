@@ -39,6 +39,8 @@ func main() {
 	}
 	client := provider.ConfiguredFromEnv()
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
+	runner.PersistentTools = codingagent.NewExternalTools()
+	defer func() { _ = codingagent.CloseTools(runner.PersistentTools) }()
 	if current, err := settings.Load(workspace); err == nil {
 		runner.ApplySettings(current)
 	}
@@ -46,7 +48,7 @@ func main() {
 		return codingagent.NewToolsForSession(workspace, current)
 	}
 	runner.SessionToolFactoryWithProvider = func(workspace string, current *session.Session, client agent.Provider) []agent.Tool {
-		return codingagent.NewToolsForSessionWithProvider(workspace, current, client)
+		return codingagent.NewToolsForSessionWithProviderWithoutExternal(workspace, current, client)
 	}
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()

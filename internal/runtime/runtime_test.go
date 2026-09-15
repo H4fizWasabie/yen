@@ -24,6 +24,42 @@ func (provider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Re
 	return agent.Response{Text: "done", StopReason: "stop", Provider: "test-provider", Model: "test-model"}, nil
 }
 
+type closeTrackingTool struct{ closed *bool }
+
+func (t closeTrackingTool) Name() string { return "persistent" }
+
+func (t closeTrackingTool) Execute(context.Context, map[string]any) (string, error) { return "", nil }
+
+func (t closeTrackingTool) Close() error {
+	*t.closed = true
+	return nil
+}
+
+func TestRunnerKeepsPersistentToolsOpenAcrossTurns(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := false
+	tool := closeTrackingTool{closed: &closed}
+	runner := New(queue, provider{}, nil)
+	runner.PersistentTools = []agent.Tool{tool}
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "persistent-tools", WorkspaceID: dir}
+	for _, prompt := range []string{"one", "two"} {
+		if _, err := runner.Submit(link, prompt); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+			t.Fatal(err)
+		}
+		if closed {
+			t.Fatal("persistent tool was closed between turns")
+		}
+	}
+}
+
 type autoConsolidationProvider struct{ calls int }
 
 func (p *autoConsolidationProvider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Response, error) {

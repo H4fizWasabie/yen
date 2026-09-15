@@ -29,6 +29,14 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+External HTTP/MCP tools are now initialized once by each Yen runtime and kept
+open across turns, while turn-scoped built-ins are still closed after each
+operation; process shutdown closes the persistent resources. This matches the
+Theoses2 SDK's session-level external-tool sources in
+`packages/coding-agent/src/core/sdk.ts:245-251,406-481`. Go evidence:
+`internal/runtime/runtime.go`, `internal/codingagent/tools.go`, and
+`TestRunnerKeepsPersistentToolsOpenAcrossTurns`.
+
 Bedrock image conversion now accepts the oracle-supported GIF and WEBP data
 formats in addition to PNG and JPEG/JPG, using the AWS SDK's native enum
 values. TypeScript authority:

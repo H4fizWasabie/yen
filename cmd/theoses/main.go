@@ -82,6 +82,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return reportError(stderr, err)
 	}
 	runner := runtime.New(queue, client, func(workspace string) []agent.Tool { return codingagent.NewTools(workspace) })
+	runner.PersistentTools = codingagent.NewExternalTools()
+	defer func() { _ = codingagent.CloseTools(runner.PersistentTools) }()
 	if current, err := settings.Load(cwd); err == nil {
 		runner.ApplySettings(current)
 	}
@@ -89,7 +91,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return codingagent.NewToolsForSession(workspace, current)
 	}
 	runner.SessionToolFactoryWithProvider = func(workspace string, current *session.Session, client agent.Provider) []agent.Tool {
-		return codingagent.NewToolsForSessionWithProvider(workspace, current, client)
+		return codingagent.NewToolsForSessionWithProviderWithoutExternal(workspace, current, client)
 	}
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()
