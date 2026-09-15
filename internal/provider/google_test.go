@@ -66,6 +66,24 @@ func TestGoogleGenerativeAIListsGenerativeModels(t *testing.T) {
 	}
 }
 
+func TestGoogleVertexCatalogPreservesProviderID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer access-token" {
+			t.Fatalf("authorization=%q", r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"models":[{"name":"publishers/google/models/gemini-test","supportedGenerationMethods":["generateContent"]}]}`))
+	}))
+	defer server.Close()
+
+	client := NewGoogleGenerativeAI(server.URL, "", "model")
+	client.ProviderName = "google-vertex"
+	client.BearerToken = "access-token"
+	models, err := client.ListModels(context.Background())
+	if err != nil || len(models) != 1 || models[0].Provider != "google-vertex" || models[0].ID != "publishers/google/models/gemini-test" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
 func TestGoogleGenerativeAIUsesYenConfiguration(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "google")
 	t.Setenv("YEN_MODEL", "gemini-test")
