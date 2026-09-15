@@ -489,6 +489,81 @@ func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error)
 	return plan, nil
 }
 
+// PrepareCompactionByTokens keeps the newest context-visible entries within a
+// conservative character-based token budget, matching the oracle's /4
+// estimator and never cutting before a tool result's assistant turn.
+func (s *Session) PrepareCompactionByTokens(keepRecentTokens int) (CompactionPlan, error) {
+	if keepRecentTokens <= 0 {
+		return CompactionPlan{}, fmt.Errorf("keep recent tokens must be positive")
+	}
+	if len(s.entries) > 0 && s.entries[len(s.entries)-1].Type == "compaction" {
+		return CompactionPlan{}, ErrAlreadyCompacted
+	}
+	start, previousSummary := s.compactionStart()
+	cutPoints := make([]int, 0)
+	for i := start; i < len(s.entries); i++ {
+		if s.entries[i].Message != nil && s.entries[i].Message.Role != "toolResult" {
+			cutPoints = append(cutPoints, i)
+		}
+	}
+	if len(cutPoints) == 0 {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	accumulated := 0
+	cut := cutPoints[0]
+	for i := len(s.entries) - 1; i >= start; i-- {
+		if s.entries[i].Message == nil {
+			continue
+		}
+		tokens := estimateMessageTokens(*s.entries[i].Message)
+		if tokens == 0 {
+			continue
+		}
+		accumulated += tokens
+		if accumulated >= keepRecentTokens {
+			for _, candidate := range cutPoints {
+				if candidate >= i {
+					cut = candidate
+					break
+				}
+			}
+			break
+		}
+	}
+	if accumulated < keepRecentTokens {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary}
+	for i := start; i < cut; i++ {
+		if s.entries[i].Message != nil {
+			plan.Messages = append(plan.Messages, *s.entries[i].Message)
+			plan.TokensBefore += estimateMessageTokens(*s.entries[i].Message)
+		}
+	}
+	if len(plan.Messages) == 0 {
+		return CompactionPlan{}, ErrNothingToCompact
+	}
+	return plan, nil
+}
+
+func (s *Session) compactionStart() (int, string) {
+	start, previousSummary := 0, ""
+	for i := len(s.entries) - 1; i >= 0; i-- {
+		if s.entries[i].Type != "compaction" || s.entries[i].Compaction == nil {
+			continue
+		}
+		previousSummary = s.entries[i].Compaction.Summary
+		for j, entry := range s.entries {
+			if entry.ID == s.entries[i].Compaction.FirstKeptEntryID {
+				start = j
+				break
+			}
+		}
+		break
+	}
+	return start, previousSummary
+}
+
 func estimateMessageTokens(message Message) int {
 	data, err := json.Marshal(message.Content)
 	if err != nil {

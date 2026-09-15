@@ -408,3 +408,23 @@ func TestSessionPreparesCompactionFromRecentTurns(t *testing.T) {
 		t.Fatalf("plan tokens=%d", plan.TokensBefore)
 	}
 }
+
+func TestSessionPreparesCompactionFromRecentTokenBudget(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token-compact.jsonl")
+	s := New(path, Header{ID: "token-compact", CWD: t.TempDir(), Channel: "cli"})
+	for _, text := range []string{"old one", "old two", "recent one", "recent two"} {
+		if _, err := s.Append(Message{Role: "user", Content: text}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := s.PrepareCompactionByTokens(len([]byte("recent one\nrecent two\n")) / 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Messages) != 2 || plan.Messages[0].Content != "old one" || plan.Messages[1].Content != "old two" {
+		t.Fatalf("plan=%#v", plan)
+	}
+	if plan.FirstKeptEntryID == "" || plan.TokensBefore == 0 {
+		t.Fatalf("plan metadata=%#v", plan)
+	}
+}
