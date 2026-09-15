@@ -60,6 +60,24 @@ func TestFindToolSupportsRecursiveGlobstar(t *testing.T) {
 	}
 }
 
+func TestGrepToolMatchesRecursiveGlobstarPaths(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "internal", "nested", "main.go")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("package nested\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{
+		"pattern": "package", "glob": "internal/**/*.go",
+	})
+	if err != nil || !strings.Contains(got, "internal/nested/main.go:1:package nested") {
+		t.Fatalf("grep=%q err=%v", got, err)
+	}
+}
+
 func TestEditRequiresUniqueOldText(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "x.txt"), []byte("x\nx\n"), 0o600); err != nil {
