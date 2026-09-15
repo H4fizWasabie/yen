@@ -329,7 +329,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			return result, err
 		}
 		if r.AutoConsolidate {
-			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, toConsolidationTurns(current.Messages()))
+			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, turn.Prompt, toConsolidationTurns(current.TimedMessages()))
 		}
 	}
 	if runErr == nil && r.Checkpoints != nil {
@@ -340,14 +340,15 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	return result, runErr
 }
 
-func toConsolidationTurns(messages []session.Message) []memory.ConsolidationTurn {
+func toConsolidationTurns(messages []session.TimedMessage) []memory.ConsolidationTurn {
 	turns := make([]memory.ConsolidationTurn, 0, len(messages))
-	for _, message := range messages {
+	for _, timed := range messages {
+		message := timed.Message
 		role := message.Role
 		if role == "toolResult" {
 			role = "tool"
 		}
-		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message)})
+		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message), Timestamp: timed.Timestamp})
 	}
 	return turns
 }

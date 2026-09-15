@@ -156,7 +156,11 @@ func (e *Engine) consolidationPrompt(turns []ConsolidationTurn, ctx Context) (st
 		if strings.TrimSpace(turn.Content) == "" {
 			continue
 		}
-		fmt.Fprintf(&transcript, "%s: %s\n", turn.Role, strings.TrimSpace(turn.Content))
+		if strings.TrimSpace(turn.Timestamp) != "" {
+			fmt.Fprintf(&transcript, "[%s] %s: %s\n", turn.Timestamp, turn.Role, strings.TrimSpace(turn.Content))
+		} else {
+			fmt.Fprintf(&transcript, "%s: %s\n", turn.Role, strings.TrimSpace(turn.Content))
+		}
 	}
 	if transcript.Len() == 0 {
 		return "", errors.New("consolidation turns are empty")

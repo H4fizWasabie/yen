@@ -608,9 +608,9 @@ func TestRunnerSteersActiveTurnThroughAgentQueue(t *testing.T) {
 
 func TestToConsolidationTurnsCondensesToolPayloads(t *testing.T) {
 	toolResult := strings.Repeat("r", consolidationToolResultChars+10)
-	turns := toConsolidationTurns([]session.Message{
-		{Role: "assistant", Content: []session.ContentPart{{Type: "toolCall", Name: "read", Arguments: map[string]any{"path": "README.md"}}}},
-		{Role: "toolResult", Content: []session.ContentPart{{Type: "text", Text: toolResult}}},
+	turns := toConsolidationTurns([]session.TimedMessage{
+		{Message: session.Message{Role: "assistant", Content: []session.ContentPart{{Type: "toolCall", Name: "read", Arguments: map[string]any{"path": "README.md"}}}}},
+		{Message: session.Message{Role: "toolResult", Content: []session.ContentPart{{Type: "text", Text: toolResult}}}},
 	})
 	if turns[0].Content != `called read({"path":"README.md"})` {
 		t.Fatalf("tool call transcript=%q", turns[0].Content)
@@ -622,11 +622,11 @@ func TestToConsolidationTurnsCondensesToolPayloads(t *testing.T) {
 
 func TestToConsolidationTurnsFormatsSpecialEntries(t *testing.T) {
 	exitCode := 2
-	turns := toConsolidationTurns([]session.Message{
-		{Role: "bashExecution", Command: "go test ./...", Output: "failed", ExitCode: &exitCode},
-		{Role: "bashExecution", Command: "sleep 10", Cancelled: true},
-		{Role: "branchSummary", Summary: "The branch chose the safer path."},
-		{Role: "compactionSummary", Summary: "Earlier context was compacted."},
+	turns := toConsolidationTurns([]session.TimedMessage{
+		{Message: session.Message{Role: "bashExecution", Command: "go test ./...", Output: "failed", ExitCode: &exitCode}},
+		{Message: session.Message{Role: "bashExecution", Command: "sleep 10", Cancelled: true}},
+		{Message: session.Message{Role: "branchSummary", Summary: "The branch chose the safer path."}},
+		{Message: session.Message{Role: "compactionSummary", Summary: "Earlier context was compacted."}},
 	})
 	want := []string{
 		"ran `go test ./...` — exit 2: failed",

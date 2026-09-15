@@ -194,6 +194,21 @@ func TestConsolidationPromptCapsTranscriptCharacters(t *testing.T) {
 	}
 }
 
+func TestConsolidationPromptIncludesEntryTimestamp(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	provider := &captureConsolidationProvider{text: `{"episode":{"summary":"timestamp","startedAt":"2026-01-01T00:00:00Z","endedAt":"2026-01-01T00:00:01Z"}}`}
+	if err := engine.Consolidate(context.Background(), provider, "turn-time-transcript", "conv-time-transcript", "work", "cli", []ConsolidationTurn{{Role: "user", Content: "hello", Timestamp: "2026-01-01T00:00:00Z"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(provider.seen, "[2026-01-01T00:00:00Z] user: hello") {
+		t.Fatalf("timestamp missing from prompt: %s", provider.seen)
+	}
+}
+
 func TestConsolidationRetriesProviderFailureOnlyWithinConsolidation(t *testing.T) {
 	oldDelay := consolidationRetryDelay
 	consolidationRetryDelay = 0

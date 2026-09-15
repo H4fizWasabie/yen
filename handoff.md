@@ -227,6 +227,7 @@ tool arguments and return the same re-issue guidance shape as the TypeScript
 agent loop.
 The agent callback also exposes `tool_execution_start` and
 `tool_execution_end` lifecycle events with arguments, result, and error state.
+Consolidation now carries session-entry timestamps into the transcript prefix.
 When the configured provider supports it, consolidation also requests the
 OpenAI-compatible `response_format: {type: "json_object"}` wire mode; generic
 test providers retain the prompt-only fallback.

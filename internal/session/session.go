@@ -76,6 +76,11 @@ type Message struct {
 	Summary        string   `json:"summary,omitempty"`
 }
 
+type TimedMessage struct {
+	Message
+	Timestamp string
+}
+
 type sessionEntry struct {
 	Type                string      `json:"type"`
 	Version             int         `json:"version,omitempty"`
@@ -332,6 +337,16 @@ func (s *Session) Messages() []Message {
 	for _, entry := range s.entries {
 		if entry.Message != nil {
 			messages = append(messages, *entry.Message)
+		}
+	}
+	return messages
+}
+
+func (s *Session) TimedMessages() []TimedMessage {
+	messages := make([]TimedMessage, 0, len(s.entries))
+	for _, entry := range s.entries {
+		if entry.Message != nil {
+			messages = append(messages, TimedMessage{Message: *entry.Message, Timestamp: entry.Timestamp})
 		}
 	}
 	return messages
