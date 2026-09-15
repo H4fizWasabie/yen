@@ -15,9 +15,9 @@ root_path() {
 	esac
 }
 state_dir=$(root_path "${YEN_STATE_DIR:-/opt/yen}")
-data_dir=$(root_path "${YEN_DATA_DIR:-/var/lib/theoses-go-telegram}")
-secrets_dir=$(root_path "${YEN_SECRETS_DIR:-/etc/theoses-go}")
-channel_env=${YEN_CHANNEL_ENV_FILE:-$secrets_dir/telegram.env}
+data_dir=$(root_path "${YEN_DATA_DIR:-/var/lib/yen}")
+secrets_dir=$(root_path "${YEN_SECRETS_DIR:-/etc/yen}")
+channel_env=${YEN_CHANNEL_ENV_FILE:-$secrets_dir/yen.env}
 provider_env=${YEN_PROVIDER_ENV_FILE:-$secrets_dir/yen-provider.env}
 release_id=${YEN_RELEASE_ID:-$(git -C "$source_dir" rev-parse --short=7 HEAD)}
 dashboard_addr=${YEN_DASHBOARD_ADDR:-127.0.0.1:30146}
@@ -32,17 +32,12 @@ if [ ! -f "$provider_env" ]; then
 	echo "missing provider environment file: $provider_env" >&2
 	exit 1
 fi
-if [ "$provider_env" = "/home/theoses/.theoses/agent/theoses.env" ]; then
-	echo "Yen provider environment must be separate from Theoses" >&2
-	exit 1
-fi
-
 cd "$source_dir"
 
 release_dir=$state_dir/releases/$release_id
 install -d -m 0755 "$release_dir" "$data_dir" "$secrets_dir"
-if [ "$channel_env" != "$secrets_dir/telegram.env" ]; then
-	install -m 0600 "$channel_env" "$secrets_dir/telegram.env"
+if [ "$channel_env" != "$secrets_dir/yen.env" ]; then
+	install -m 0600 "$channel_env" "$secrets_dir/yen.env"
 else
 	chmod 0600 "$channel_env"
 fi
@@ -55,20 +50,20 @@ set -eu
 set -a
 . "$provider_env"
 set +a
-api_key="\${OPENAI_API_KEY:-\${OPENROUTER_API_KEY:-}}"
+api_key="\${YEN_OPENAI_API_KEY:-\${YEN_OPENROUTER_API_KEY:-}}"
 exec env -i PATH=/usr/bin:/bin HOME=/root \\
   OPENAI_API_KEY="\$api_key" \\
-  THEOSES_TELEGRAM_BOT_TOKEN="\${THEOSES_TELEGRAM_BOT_TOKEN:-}" \\
-  THEOSES_TELEGRAM_CHAT_ID="\${THEOSES_TELEGRAM_CHAT_ID:-}" \\
-  THEOSES_CANONICAL_CONVERSATION_ID="\${THEOSES_CANONICAL_CONVERSATION_ID:-}" \\
-  THEOSES_TELEGRAM_API_BASE="\${THEOSES_TELEGRAM_API_BASE:-}" \\
-  THEOSES_DASHBOARD_TOKEN="\${THEOSES_DASHBOARD_TOKEN:-}" \\
-  THEOSES_AUTO_COMPACT_TURNS="\${THEOSES_AUTO_COMPACT_TURNS:-}" \\
-  THEOSES_AUTO_COMPACT_OVERFLOW="\${THEOSES_AUTO_COMPACT_OVERFLOW:-}" \\
-  THEOSES_AUTO_CONSOLIDATE="\${THEOSES_AUTO_CONSOLIDATE:-}" \\
+  THEOSES_TELEGRAM_BOT_TOKEN="\${YEN_TELEGRAM_BOT_TOKEN:-}" \\
+  THEOSES_TELEGRAM_CHAT_ID="\${YEN_TELEGRAM_CHAT_ID:-}" \\
+  THEOSES_CANONICAL_CONVERSATION_ID="\${YEN_CANONICAL_CONVERSATION_ID:-}" \\
+  THEOSES_TELEGRAM_API_BASE="\${YEN_TELEGRAM_API_BASE:-}" \\
+  THEOSES_DASHBOARD_TOKEN="\${YEN_DASHBOARD_TOKEN:-}" \\
+  THEOSES_AUTO_COMPACT_TURNS="\${YEN_AUTO_COMPACT_TURNS:-}" \\
+  THEOSES_AUTO_COMPACT_OVERFLOW="\${YEN_AUTO_COMPACT_OVERFLOW:-}" \\
+  THEOSES_AUTO_CONSOLIDATE="\${YEN_AUTO_CONSOLIDATE:-}" \\
   THEOSES_DATA_DIR="$data_dir" \\
-  THEOSES_OPENAI_BASE_URL="\${THEOSES_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
-  THEOSES_MODEL="\${THEOSES_MODEL:-z-ai/glm-5.3-flash}" \\
+  THEOSES_OPENAI_BASE_URL="\${YEN_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
+  THEOSES_MODEL="\${YEN_MODEL:-z-ai/glm-5.3-flash}" \\
   "$release_dir/theoses-telegram"
 EOF
 
@@ -78,17 +73,17 @@ set -eu
 set -a
 . "$provider_env"
 set +a
-api_key="\${OPENAI_API_KEY:-\${OPENROUTER_API_KEY:-}}"
+api_key="\${YEN_OPENAI_API_KEY:-\${YEN_OPENROUTER_API_KEY:-}}"
 exec env -i PATH=/usr/bin:/bin HOME=/root \\
   OPENAI_API_KEY="\$api_key" \\
-  THEOSES_CANONICAL_CONVERSATION_ID="\${THEOSES_CANONICAL_CONVERSATION_ID:-}" \\
-  THEOSES_DASHBOARD_TOKEN="\${THEOSES_DASHBOARD_TOKEN:-}" \\
-  THEOSES_AUTO_COMPACT_TURNS="\${THEOSES_AUTO_COMPACT_TURNS:-}" \\
-  THEOSES_AUTO_COMPACT_OVERFLOW="\${THEOSES_AUTO_COMPACT_OVERFLOW:-}" \\
-  THEOSES_AUTO_CONSOLIDATE="\${THEOSES_AUTO_CONSOLIDATE:-}" \\
+  THEOSES_CANONICAL_CONVERSATION_ID="\${YEN_CANONICAL_CONVERSATION_ID:-}" \\
+  THEOSES_DASHBOARD_TOKEN="\${YEN_DASHBOARD_TOKEN:-}" \\
+  THEOSES_AUTO_COMPACT_TURNS="\${YEN_AUTO_COMPACT_TURNS:-}" \\
+  THEOSES_AUTO_COMPACT_OVERFLOW="\${YEN_AUTO_COMPACT_OVERFLOW:-}" \\
+  THEOSES_AUTO_CONSOLIDATE="\${YEN_AUTO_CONSOLIDATE:-}" \\
   THEOSES_DATA_DIR="$data_dir" \\
-  THEOSES_OPENAI_BASE_URL="\${THEOSES_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
-  THEOSES_MODEL="\${THEOSES_MODEL:-z-ai/glm-5.3-flash}" \\
+  THEOSES_OPENAI_BASE_URL="\${YEN_OPENAI_BASE_URL:-https://openrouter.ai/api/v1}" \\
+  THEOSES_MODEL="\${YEN_MODEL:-z-ai/glm-5.3-flash}" \\
   "$release_dir/theoses-dashboard" -addr "$dashboard_addr"
 EOF
 chmod 0755 "$release_dir/run-telegram" "$release_dir/run-dashboard"
@@ -107,7 +102,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=$release_dir
-EnvironmentFile=$secrets_dir/telegram.env
+EnvironmentFile=$secrets_dir/yen.env
 ExecStart=$release_dir/run-telegram
 Restart=on-failure
 RestartSec=5
@@ -128,7 +123,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=$release_dir
-EnvironmentFile=$secrets_dir/telegram.env
+EnvironmentFile=$secrets_dir/yen.env
 ExecStart=$release_dir/run-dashboard
 Restart=on-failure
 RestartSec=5

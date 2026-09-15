@@ -9,10 +9,10 @@ Date: 2026-09-14
 - Existing TypeScript units: `theoses2-telegram.service`,
   `theoses2-telegram-staging.service`, `theoses2-dashboard.service`, and
   `theoses2-dashboard-staging.service`
-- Go data directory: `/var/lib/theoses-go-telegram`
+- Go data directory: `/var/lib/yen`
 - Go dashboard health: `127.0.0.1:30146/healthz`
 - Go release layout: `/opt/yen/releases/<commit>/`
-- Go secret file: `/etc/theoses-go/telegram.env`, mode `600`; never commit or
+- Go secret file: `/etc/yen/yen.env`, mode `600`; never commit or
   print its values.
 
 The TypeScript units and their ports, working directories, data, and pollers
@@ -24,7 +24,7 @@ are not modified by Go rollout or rollback.
 systemctl is-active yen-telegram-pilot.service yen-dashboard-pilot.service
 curl -fsS http://127.0.0.1:30146/healthz
 journalctl -u yen-telegram-pilot.service -u yen-dashboard-pilot.service --since "10 minutes ago" --no-pager
-du -sh /var/lib/theoses-go-telegram
+du -sh /var/lib/yen
 ```
 
 ## Backup and rollback
