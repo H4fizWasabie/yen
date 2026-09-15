@@ -69,6 +69,28 @@ func TestAzureResponsesUsesAzureRouteAndAPIKeyHeader(t *testing.T) {
 	}
 }
 
+func TestOpenAIAndXAIUseResponsesProtocolConfiguration(t *testing.T) {
+	t.Setenv("YEN_OPENAI_API_KEY", "openai-key")
+	openai, err := NewConfigured("openai", "gpt-5.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openAIClient, ok := openai.(OpenAIResponses)
+	if !ok || openAIClient.ProviderName != "openai" || openAIClient.BaseURL != "https://api.openai.com/v1" || openAIClient.APIKey != "openai-key" {
+		t.Fatalf("openai=%#v", openai)
+	}
+	t.Setenv("YEN_XAI_API_KEY", "xai-key")
+	t.Setenv("YEN_XAI_BASE_URL", "http://fixture/v1")
+	xai, err := NewConfigured("xai", "grok-4.6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	xaiClient, ok := xai.(OpenAIResponses)
+	if !ok || xaiClient.ProviderName != "xai" || xaiClient.BaseURL != "http://fixture/v1" || xaiClient.APIKey != "xai-key" {
+		t.Fatalf("xai=%#v", xai)
+	}
+}
+
 func mustJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)

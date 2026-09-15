@@ -191,6 +191,27 @@ func codexConfigured(model string) (OpenAIResponses, error) {
 	return client, nil
 }
 
+func nativeResponsesConfigured(providerID, model string) OpenAIResponses {
+	baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
+	if providerID == "xai" {
+		baseURL = os.Getenv("YEN_XAI_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = os.Getenv("YEN_OPENAI_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = providerDefaults[providerID]
+	}
+	key := os.Getenv(providerKeyEnvs[providerID])
+	if key == "" {
+		key = storedCredentialKey(providerID)
+	}
+	client := NewOpenAIResponses(baseURL, key, model)
+	client.ProviderName = providerID
+	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+	return client
+}
+
 func cloudflareConfigured(providerID, model string) OpenAICompletions {
 	baseURL := os.Getenv("YEN_CLOUDFLARE_BASE_URL")
 	if baseURL == "" {
@@ -277,6 +298,16 @@ func ConfiguredFromEnv() agent.Provider {
 			return NewFromEnv()
 		}
 		return client
+	}
+	if providerID == "openai" || providerID == "xai" {
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "gpt-5.5"
+			if providerID == "xai" {
+				model = "grok-4.6"
+			}
+		}
+		return nativeResponsesConfigured(providerID, model)
 	}
 	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
 		baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
@@ -401,6 +432,15 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 			model = "gpt-5"
 		}
 		return codexConfigured(model)
+	}
+	if providerID == "openai" || providerID == "xai" {
+		if model == "" {
+			model = "gpt-5.5"
+			if providerID == "xai" {
+				model = "grok-4.6"
+			}
+		}
+		return nativeResponsesConfigured(providerID, model), nil
 	}
 	if providerID == "cloudflare-workers-ai" || providerID == "cloudflare-ai-gateway" {
 		if model == "" {
