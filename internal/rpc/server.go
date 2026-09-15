@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -36,6 +37,7 @@ type command struct {
 	Since             string     `json:"since,omitempty"`
 	EntryID           string     `json:"entryId,omitempty"`
 	Name              string     `json:"name,omitempty"`
+	Path              string     `json:"path,omitempty"`
 	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 }
@@ -189,6 +191,23 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"name": session.SessionName()}, nil)
+	case "fork":
+		session, err := s.Runner.OpenSession(s.Link)
+		if err != nil {
+			return err
+		}
+		forkID := "fork-" + session.LeafID()
+		path := request.Path
+		if path == "" {
+			path = filepath.Join(filepath.Dir(session.Path()), forkID+".jsonl")
+		}
+		header := session.Header()
+		header.ID = forkID
+		forked, err := session.Fork(path, request.EntryID, header)
+		if err != nil {
+			return err
+		}
+		return s.response(output, request.ID, request.Type, true, map[string]any{"sessionId": forkID, "path": forked.Path(), "leafId": forked.LeafID()}, nil)
 	case "compact":
 		keep := request.KeepRecentTurns
 		if keep < 1 {

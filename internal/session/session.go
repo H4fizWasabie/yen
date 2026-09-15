@@ -427,13 +427,20 @@ func (s *Session) AppendWorkingNote(line string) (string, error) {
 }
 
 func (s *Session) SessionName() string {
-	for i := len(s.activeEntries()) - 1; i >= 0; i-- {
-		entry := s.activeEntries()[i]
+	entries := s.activeEntries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry := entries[i]
 		if entry.Type == "session_info" {
 			return strings.TrimSpace(entry.Name)
 		}
 	}
 	return ""
+}
+
+func (s *Session) Path() string { return s.path }
+
+func (s *Session) Header() Header {
+	return Header{ID: s.header.ID, ConversationID: s.header.ConversationID, WorkspaceID: s.header.WorkspaceID, CWD: s.header.CWD, Channel: s.header.Channel, ChannelSessionID: s.header.ChannelSessionID, ParentSession: s.header.ParentSession}
 }
 
 func (s *Session) AppendSessionInfo(name string) (string, error) {

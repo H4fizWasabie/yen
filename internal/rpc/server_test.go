@@ -121,3 +121,29 @@ func TestSetSessionNamePersistsAndReturnsName(t *testing.T) {
 		t.Fatalf("name=%q output=%s err=%v", opened.SessionName(), output.String(), err)
 	}
 }
+
+func TestForkCommandCreatesDurableSessionCopy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "source.jsonl")
+	saved := session.New(path, session.Header{ID: "source", ConversationID: "source", CWD: dir})
+	if _, err := saved.Append(session.Message{Role: "assistant", Content: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	entryID := saved.LeafID()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, rpcProvider{}, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	forkPath := filepath.Join(dir, "fork.jsonl")
+	server := Server{Runner: runner, Link: conversation.Link{ConversationID: "source", WorkspaceID: dir}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{ID: "1", Type: "fork", EntryID: entryID, Path: forkPath}); err != nil {
+		t.Fatal(err)
+	}
+	forked, err := session.Open(forkPath)
+	if err != nil || len(forked.Messages()) != 1 || !strings.Contains(output.String(), `"success":true`) {
+		t.Fatalf("messages=%#v output=%s err=%v", forked.Messages(), output.String(), err)
+	}
+}
