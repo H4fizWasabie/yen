@@ -35,7 +35,11 @@ fi
 
 release_dir=$state_dir/releases/$release_id
 install -d -m 0755 "$release_dir" "$data_dir" "$secrets_dir"
-install -m 0600 "$channel_env" "$secrets_dir/telegram.env"
+if [ "$channel_env" != "$secrets_dir/telegram.env" ]; then
+	install -m 0600 "$channel_env" "$secrets_dir/telegram.env"
+else
+	chmod 0600 "$channel_env"
+fi
 go build -o "$release_dir/theoses-telegram" "$source_dir/cmd/theoses-telegram"
 go build -o "$release_dir/theoses-dashboard" "$source_dir/cmd/theoses-dashboard"
 
