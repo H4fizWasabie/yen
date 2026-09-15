@@ -872,11 +872,14 @@ func (b *TelegramBot) editRichMessage(ctx context.Context, chatID string, messag
 }
 
 var (
-	telegramFencePattern  = regexp.MustCompile("(?s)```[^\\n]*\\n(.*?)```")
-	telegramCodePattern   = regexp.MustCompile("`([^`\\n]+)`")
-	telegramLinkPattern   = regexp.MustCompile("[[]([^]]+)[]][(]([^)]+)[)]")
-	telegramBoldPattern   = regexp.MustCompile("[*][*](.+?)[*][*]")
-	telegramStrikePattern = regexp.MustCompile(`~~(.+?)~~`)
+	telegramFencePattern     = regexp.MustCompile("(?s)```(\\w*)\\n(.*?)```")
+	telegramCodePattern      = regexp.MustCompile("`([^`\\n]+)`")
+	telegramLinkPattern      = regexp.MustCompile("[[]([^]]+)[]][(]([^)]+)[)]")
+	telegramBoldPattern      = regexp.MustCompile("[*][*](.+?)[*][*]")
+	telegramItalicPattern    = regexp.MustCompile("(^|[^*])[*]([^*\\n]+)[*]")
+	telegramUnderlinePattern = regexp.MustCompile("__([^_\\n]+)__")
+	telegramSpoilerPattern   = regexp.MustCompile(`[|][|](.+?)[|][|]`)
+	telegramStrikePattern    = regexp.MustCompile(`~~(.+?)~~`)
 )
 
 func formatTelegramHTML(markdown string) string {
@@ -885,14 +888,17 @@ func formatTelegramHTML(markdown string) string {
 		stash = append(stash, value)
 		return fmt.Sprintf("\\x00TELEGRAM_STASH_%d\\x00", len(stash)-1)
 	}
-	text := html.EscapeString(markdown)
-	text = telegramFencePattern.ReplaceAllStringFunc(text, func(match string) string {
-		body := strings.TrimSuffix(strings.TrimPrefix(match, "```"), "```")
-		if newline := strings.IndexByte(body, '\n'); newline >= 0 {
-			body = body[newline+1:]
-		}
-		return put("<pre><code>" + body + "</code></pre>")
+	text := telegramFencePattern.ReplaceAllStringFunc(markdown, func(match string) string {
+		parts := telegramFencePattern.FindStringSubmatch(match)
+		return put("<pre><code" + func() string {
+			if parts[1] == "" {
+				return ">"
+			}
+			return ` class="language-` + html.EscapeString(parts[1]) + `">`
+		}() + html.EscapeString(parts[2]) + "</code></pre>")
 	})
+	text = formatTelegramBlockquotes(text, put)
+	text = html.EscapeString(text)
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -912,11 +918,48 @@ func formatTelegramHTML(markdown string) string {
 	})
 	text = telegramLinkPattern.ReplaceAllString(text, `<a href="$2">$1</a>`)
 	text = telegramBoldPattern.ReplaceAllString(text, "<b>$1</b>")
+	text = telegramItalicPattern.ReplaceAllString(text, "$1<i>$2</i>")
+	text = telegramUnderlinePattern.ReplaceAllString(text, "<u>$1</u>")
+	text = telegramSpoilerPattern.ReplaceAllString(text, "<tg-spoiler>$1</tg-spoiler>")
 	text = telegramStrikePattern.ReplaceAllString(text, "<s>$1</s>")
 	for i, value := range stash {
 		text = strings.ReplaceAll(text, fmt.Sprintf("\\x00TELEGRAM_STASH_%d\\x00", i), value)
 	}
 	return text
+}
+
+func formatTelegramBlockquotes(text string, put func(string) string) string {
+	lines := strings.Split(text, "\n")
+	formatted := make([]string, 0, len(lines))
+	var block []string
+	expandable := false
+	flush := func() {
+		if len(block) == 0 {
+			return
+		}
+		tag := "<blockquote>"
+		if expandable {
+			tag = "<blockquote expandable>"
+		}
+		formatted = append(formatted, put(tag+html.EscapeString(strings.Join(block, "\n"))+"</blockquote>"))
+		block = nil
+		expandable = false
+	}
+	for _, line := range lines {
+		if strings.HasPrefix(line, ">!") {
+			expandable = true
+			block = append(block, strings.TrimPrefix(strings.TrimPrefix(line, ">!"), " "))
+			continue
+		}
+		if strings.HasPrefix(line, ">") {
+			block = append(block, strings.TrimPrefix(strings.TrimPrefix(line, ">"), " "))
+			continue
+		}
+		flush()
+		formatted = append(formatted, line)
+	}
+	flush()
+	return strings.Join(formatted, "\n")
 }
 
 func (b *TelegramBot) sendChatAction(ctx context.Context, chatID string) error {

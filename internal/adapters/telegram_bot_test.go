@@ -394,6 +394,11 @@ func TestFormatTelegramHTMLCoversClassicFallback(t *testing.T) {
 	if got := formatTelegramHTML("```\n<safe>\n```"); got != "<pre><code>&lt;safe&gt;\n</code></pre>" {
 		t.Fatalf("fenced=%q", got)
 	}
+	got = formatTelegramHTML("> quote\n>! expandable\n\n*italic* __under__ ||secret||")
+	want = "<blockquote expandable>quote\nexpandable</blockquote>\n\n<i>italic</i> <u>under</u> <tg-spoiler>secret</tg-spoiler>"
+	if got != want {
+		t.Fatalf("extended formatting=%q, want %q", got, want)
+	}
 }
 
 func TestChunkTelegramTextMatchesTypeScriptLimit(t *testing.T) {
