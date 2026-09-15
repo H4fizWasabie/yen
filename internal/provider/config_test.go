@@ -193,7 +193,6 @@ func TestNewConfiguredSupportsPinnedOpenAICompatibleProviders(t *testing.T) {
 		{"cerebras", "YEN_CEREBRAS_API_KEY"},
 		{"fireworks", "YEN_FIREWORKS_API_KEY"},
 		{"huggingface", "YEN_HF_TOKEN"},
-		{"kimi-coding", "YEN_KIMI_API_KEY"},
 		{"moonshotai-cn", "YEN_MOONSHOT_API_KEY"},
 		{"nvidia", "YEN_NVIDIA_API_KEY"},
 		{"opencode", "YEN_OPENCODE_API_KEY"},
@@ -238,6 +237,19 @@ func TestNewConfiguredSupportsMiniMaxAnthropicProviders(t *testing.T) {
 				t.Fatalf("provider=%#v", configured)
 			}
 		})
+	}
+}
+
+func TestNewConfiguredUsesAnthropicProtocolForKimiCoding(t *testing.T) {
+	t.Setenv("YEN_KIMI_API_KEY", "kimi-key")
+	t.Setenv("YEN_REASONING_EFFORT", "high")
+	configured, err := NewConfigured("kimi-coding", "kimi-for-coding")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(AnthropicMessages)
+	if !ok || client.ProviderName != "kimi-coding" || client.BaseURL != providerDefaults["kimi-coding"] || client.APIKey != "kimi-key" || client.ThinkingLevel != "high" {
+		t.Fatalf("provider=%#v", configured)
 	}
 }
 
