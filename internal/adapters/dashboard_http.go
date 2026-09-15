@@ -24,6 +24,11 @@ func (h DashboardHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
+	if r.URL.Path == "/" && r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, dashboardHTML)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		if r.URL.Path == "/api/login" {
 			h.login(w, r)
@@ -335,3 +340,22 @@ func nullableString(value string) any {
 func mustJSON(value any) string { data, _ := json.Marshal(value); return string(data) }
 
 var _ http.Handler = DashboardHTTP{}
+
+const dashboardHTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Yen dashboard</title><style>
+:root{color-scheme:dark;font:15px system-ui,sans-serif}body{margin:0;background:#101214;color:#e9edf1}button,input,textarea{font:inherit}button{cursor:pointer}#app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}aside{border-right:1px solid #2b3036;padding:18px}main{max-width:900px;width:100%;margin:auto;padding:24px;box-sizing:border-box}.brand{font-weight:700;font-size:20px;margin-bottom:18px}button{border:1px solid #39414b;border-radius:7px;background:#1b222a;color:inherit;padding:8px 10px}button:hover{background:#26313c}.new{width:100%;margin-bottom:14px}.session{display:block;width:100%;text-align:left;margin:5px 0}.session.active{border-color:#73b7ff}.meta{display:block;color:#9ba8b5;font-size:12px;margin-top:3px}.bar{display:flex;gap:8px;align-items:center;border-bottom:1px solid #2b3036;padding-bottom:14px}.bar h1{font-size:20px;flex:1;margin:0}.messages{min-height:55vh;padding:18px 0}.turn{border:1px solid #2b3036;border-radius:9px;padding:12px;margin:10px 0;white-space:pre-wrap}.turn.user{background:#172431}.turn.assistant{background:#171a1e}.tool{color:#9ba8b5;font-size:12px;border-left:3px solid #687786;padding-left:8px;margin-top:8px}.compose{display:flex;gap:8px}.compose textarea{flex:1;min-height:52px;resize:vertical;background:#171a1e;color:inherit;border:1px solid #39414b;border-radius:7px;padding:10px}.login{max-width:360px;margin:18vh auto;padding:24px;border:1px solid #2b3036;border-radius:10px}.login input{box-sizing:border-box;width:100%;margin:10px 0;padding:10px;background:#171a1e;color:inherit;border:1px solid #39414b;border-radius:7px}.error{color:#ff9b9b;margin-top:10px}
+</style></head><body><section id="login" class="login"><h1>Yen</h1><p>Dashboard access</p><form><input id="token" type="password" autocomplete="current-password" placeholder="Access token"><button>Sign in</button></form><div id="error" class="error"></div></section>
+<section id="app" hidden><aside><div class="brand">Yen</div><button id="new" class="new">＋ New session</button><div id="sessions"></div></aside><main><div class="bar"><h1 id="title">No session</h1><button id="stop" hidden>Stop</button></div><div id="messages" class="messages"></div><form id="compose" class="compose"><textarea id="prompt" placeholder="Message Yen…"></textarea><button>Send</button></form></main></section>
+<script>
+const state={sessions:[],active:null};const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(path,options){const r=await fetch(path,options);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||r.status);return d}
+function renderSessions(){ $('sessions').innerHTML=state.sessions.map(s=>'<button class="session '+(state.active&&s.id===state.active.id?'active':'')+'" data-id="'+esc(s.id)+'">'+esc(s.title||s.id)+'<span class="meta">'+esc(s.channel||'')+'</span></button>').join('');document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>openSession(b.dataset.id)) }
+function renderHistory(history){$('messages').innerHTML=(history||[]).map(t=>{let body=(t.segments||[]).map(s=>s.type==='text'?esc(s.text):'<div class="tool">'+esc(s.name||'tool')+(s.result?' — '+esc(s.result):'')+'</div>').join('');return '<article class="turn '+esc(t.role)+'"><b>'+esc(t.role==='user'?'You':'Yen')+'</b><div>'+body+'</div></article>'}).join('')||'<p>No messages yet.</p>';$('messages').scrollTop=$('messages').scrollHeight}
+async function openSession(id){const d=await api('/api/sessions/'+encodeURIComponent(id));state.active=d.session;$('title').textContent=d.session.title||id;$('stop').hidden=true;renderSessions();renderHistory(d.history)}
+async function load(){const d=await api('/api/sessions');state.sessions=d.sessions||[];renderSessions();if(!state.active&&state.sessions[0])await openSession(state.sessions[0].id)}
+$('login').querySelector('form').onsubmit=async e=>{e.preventDefault();try{await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('token').value})});$('login').hidden=true;$('app').hidden=false;await load()}catch(err){$('error').textContent=err.message}};
+$('new').onclick=async()=>{try{await api('/api/sessions',{method:'POST'});state.active=null;await load()}catch(err){alert(err.message)}};
+$('compose').onsubmit=async e=>{e.preventDefault();if(!state.active||!$('prompt').value.trim())return;const message=$('prompt').value;$('prompt').value='';$('stop').hidden=false;try{await api('/api/sessions/'+encodeURIComponent(state.active.id)+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});await openSession(state.active.id)}catch(err){alert(err.message)}finally{$('stop').hidden=true}};
+$('stop').onclick=async()=>{if(state.active)await api('/api/sessions/'+encodeURIComponent(state.active.id)+'/stop',{method:'POST'})};
+</script></body></html>`

@@ -230,6 +230,9 @@ The agent callback also exposes `tool_execution_start` and
 Consolidation now carries session-entry timestamps into the transcript prefix.
 Persisted tool errors are labeled `FAILED` in that transcript, matching the
 TypeScript consolidation summary.
+The dashboard now serves a minimal same-origin HTML shell at `/` for login,
+session navigation, history, new sessions, messages, and stop; it intentionally
+does not claim full TypeScript dashboard UI parity.
 When the configured provider supports it, consolidation also requests the
 OpenAI-compatible `response_format: {type: "json_object"}` wire mode; generic
 test providers retain the prompt-only fallback.

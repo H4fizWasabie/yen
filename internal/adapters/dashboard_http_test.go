@@ -24,8 +24,17 @@ func TestDashboardHTTPRequiresAndAcceptsBearerToken(t *testing.T) {
 	dashboard := DashboardHTTP{AccessToken: "secret", Dashboard: Dashboard{Service: Service{Registry: registry}}}
 	server := httptest.NewServer(dashboard)
 	defer server.Close()
+	response, err := http.Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("<title>Yen dashboard</title>")) {
+		t.Fatalf("dashboard shell status=%d body=%q err=%v", response.StatusCode, body, err)
+	}
 
-	response, err := http.Get(server.URL + "/api/sessions")
+	response, err = http.Get(server.URL + "/api/sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
