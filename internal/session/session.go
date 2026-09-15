@@ -26,6 +26,7 @@ type Header struct {
 	CWD              string `json:"cwd"`
 	Channel          string `json:"channel"`
 	ChannelSessionID string `json:"channelSessionId"`
+	ParentSession    string `json:"parentSession,omitempty"`
 }
 
 type ContentPart struct {
@@ -164,12 +165,14 @@ type sessionHeader struct {
 	CWD              string `json:"cwd"`
 	Channel          string `json:"channel,omitempty"`
 	ChannelSessionID string `json:"channelSessionId,omitempty"`
+	ParentSession    string `json:"parentSession,omitempty"`
 }
 
 type Session struct {
 	path    string
 	header  sessionHeader
 	entries []sessionEntry
+	leafID  string
 	flushed bool
 }
 
@@ -186,6 +189,7 @@ func New(path string, header Header) *Session {
 			CWD:              header.CWD,
 			Channel:          header.Channel,
 			ChannelSessionID: header.ChannelSessionID,
+			ParentSession:    header.ParentSession,
 		},
 	}
 }
@@ -236,6 +240,9 @@ func Open(path string) (*Session, error) {
 		if err := s.rewrite(); err != nil {
 			return nil, err
 		}
+	}
+	if len(s.entries) > 0 {
+		s.leafID = s.entries[len(s.entries)-1].ID
 	}
 	return s, nil
 }
@@ -299,11 +306,7 @@ func (s *Session) Append(message Message) (string, error) {
 		return "", fmt.Errorf("message role is required")
 	}
 	id := newEntryID(s.entries)
-	var parentID *string
-	if len(s.entries) > 0 {
-		parent := s.entries[len(s.entries)-1].ID
-		parentID = &parent
-	}
+	parentID := s.currentParentID()
 	entry := sessionEntry{
 		Type:      "message",
 		ID:        id,
@@ -312,6 +315,7 @@ func (s *Session) Append(message Message) (string, error) {
 		Message:   &message,
 	}
 	s.entries = append(s.entries, entry)
+	s.leafID = id
 	if message.Role == "assistant" {
 		if !s.flushed {
 			if err := s.publish(); err != nil {
@@ -326,6 +330,52 @@ func (s *Session) Append(message Message) (string, error) {
 		}
 	}
 	return id, nil
+}
+
+func (s *Session) currentParentID() *string {
+	if s.leafID == "" {
+		return nil
+	}
+	parent := s.leafID
+	return &parent
+}
+
+func (s *Session) Branch(entryID string) error {
+	if entryID == "" {
+		return fmt.Errorf("entry ID is required")
+	}
+	for _, entry := range s.entries {
+		if entry.ID == entryID {
+			s.leafID = entryID
+			return nil
+		}
+	}
+	return fmt.Errorf("entry %q not found", entryID)
+}
+
+func (s *Session) Fork(path string, entryID string, header Header) (*Session, error) {
+	if entryID == "" {
+		entryID = s.leafID
+	}
+	pathEntries := s.activeEntries()
+	cut := -1
+	for i, entry := range pathEntries {
+		if entry.ID == entryID {
+			cut = i
+			break
+		}
+	}
+	if cut < 0 {
+		return nil, fmt.Errorf("entry %q is not on the active branch", entryID)
+	}
+	header.ParentSession = s.path
+	forked := New(path, header)
+	forked.entries = append([]sessionEntry(nil), pathEntries[:cut+1]...)
+	forked.leafID = entryID
+	if err := forked.publish(); err != nil {
+		return nil, err
+	}
+	return forked, nil
 }
 
 const workingNoteWriteCap = 2000
@@ -388,13 +438,10 @@ func (s *Session) AppendOperationFinished(outcome string) (string, error) {
 		return "", fmt.Errorf("invalid operation outcome %q", outcome)
 	}
 	id := newEntryID(s.entries)
-	var parentID *string
-	if len(s.entries) > 0 {
-		parent := s.entries[len(s.entries)-1].ID
-		parentID = &parent
-	}
+	parentID := s.currentParentID()
 	entry := sessionEntry{Type: "operation_finished", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Outcome: outcome}
 	s.entries = append(s.entries, entry)
+	s.leafID = id
 	if !s.flushed {
 		return id, s.publish()
 	}
@@ -471,13 +518,10 @@ func (s *Session) ArtifactCatalog(maxBytes int) string {
 
 func (s *Session) appendArtifact(artifact Artifact) (string, error) {
 	id := newEntryID(s.entries)
-	var parentID *string
-	if len(s.entries) > 0 {
-		parent := s.entries[len(s.entries)-1].ID
-		parentID = &parent
-	}
+	parentID := s.currentParentID()
 	entry := sessionEntry{Type: "artifact", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Label: artifact.Label, Path: artifact.Path, Size: artifact.Size}
 	s.entries = append(s.entries, entry)
+	s.leafID = id
 	if !s.flushed {
 		return id, s.publish()
 	}
@@ -486,13 +530,10 @@ func (s *Session) appendArtifact(artifact Artifact) (string, error) {
 
 func (s *Session) appendWorkingNote(note string) (string, error) {
 	id := newEntryID(s.entries)
-	var parentID *string
-	if len(s.entries) > 0 {
-		parent := s.entries[len(s.entries)-1].ID
-		parentID = &parent
-	}
+	parentID := s.currentParentID()
 	entry := sessionEntry{Type: "working_note", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, Note: note}
 	s.entries = append(s.entries, entry)
+	s.leafID = id
 	if !s.flushed {
 		return id, s.publish()
 	}
@@ -603,6 +644,11 @@ func (s *Session) activeEntries() []sessionEntry {
 	path := make([]sessionEntry, 0, len(s.entries))
 	seen := make(map[string]bool, len(s.entries))
 	index := len(s.entries) - 1
+	if s.leafID != "" {
+		if leafIndex, ok := byID[s.leafID]; ok {
+			index = leafIndex
+		}
+	}
 	for index >= 0 && !seen[s.entries[index].ID] {
 		entry := s.entries[index]
 		path = append(path, entry)
@@ -822,16 +868,13 @@ func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefor
 		return "", fmt.Errorf("compaction summary and first kept entry are required")
 	}
 	id := newEntryID(s.entries)
-	var parentID *string
-	if len(s.entries) > 0 {
-		parent := s.entries[len(s.entries)-1].ID
-		parentID = &parent
-	}
+	parentID := s.currentParentID()
 	entry := sessionEntry{
 		Type: "compaction", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID,
 		Compaction: &Compaction{Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Usage: usage},
 	}
 	s.entries = append(s.entries, entry)
+	s.leafID = id
 	if !s.flushed {
 		return id, s.publish()
 	}
