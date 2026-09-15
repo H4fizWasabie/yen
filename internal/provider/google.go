@@ -44,6 +44,46 @@ func (p GoogleGenerativeAI) NextWithEvents(ctx context.Context, messages []agent
 	return p.nextWithEvents(ctx, messages, toolNames, emit)
 }
 
+func (p GoogleGenerativeAI) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	endpoint := p.BaseURL + "/models?key=" + url.QueryEscape(p.APIKey)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := p.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+		return nil, fmt.Errorf("google models returned %s: %s", response.Status, strings.TrimSpace(string(message)))
+	}
+	var payload struct {
+		Models []struct {
+			Name                       string   `json:"name"`
+			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	result := make([]ModelInfo, 0, len(payload.Models))
+	for _, model := range payload.Models {
+		for _, method := range model.SupportedGenerationMethods {
+			if method == "generateContent" {
+				result = append(result, ModelInfo{Provider: "google", ID: strings.TrimPrefix(model.Name, "models/")})
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
 type googleContent struct {
 	Role  string       `json:"role,omitempty"`
 	Parts []googlePart `json:"parts"`
@@ -97,6 +137,9 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 		return agent.Response{}, fmt.Errorf("no API key for provider: google")
 	}
 	payload := map[string]any{"contents": googleContents(messages)}
+	if system := googleSystemInstruction(messages); system != "" {
+		payload["systemInstruction"] = map[string]any{"parts": []map[string]string{{"text": system}}}
+	}
 	if declarations := googleTools(toolNames); len(declarations) > 0 {
 		payload["tools"] = []any{map[string]any{"functionDeclarations": declarations}}
 	}
@@ -266,6 +309,16 @@ func googleContents(messages []agent.Message) []googleContent {
 	return result
 }
 
+func googleSystemInstruction(messages []agent.Message) string {
+	var instructions []string
+	for _, message := range messages {
+		if message.Role == "system" && strings.TrimSpace(message.Content) != "" {
+			instructions = append(instructions, message.Content)
+		}
+	}
+	return strings.Join(instructions, "\n\n")
+}
+
 func googleTools(names []string) []map[string]any {
 	result := make([]map[string]any, 0, len(names))
 	for _, name := range names {
@@ -304,3 +357,4 @@ func googleStopReason(reason string) string {
 
 var _ agent.Provider = GoogleGenerativeAI{}
 var _ agent.StreamingProviderWithEvents = GoogleGenerativeAI{}
+var _ ModelLister = GoogleGenerativeAI{}

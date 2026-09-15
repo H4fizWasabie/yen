@@ -49,6 +49,23 @@ func TestGoogleGenerativeAIStreamsNativeTextThinkingAndToolCall(t *testing.T) {
 	}
 }
 
+func TestGoogleGenerativeAIListsGenerativeModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("key") != "google-key" {
+			t.Fatalf("query=%s", r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/embed","supportedGenerationMethods":["embedContent"]}]}`))
+	}))
+	defer server.Close()
+	models, err := NewGoogleGenerativeAI(server.URL, "google-key", "model").ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].Provider != "google" || models[0].ID != "gemini-2.5-flash" {
+		t.Fatalf("models=%#v", models)
+	}
+}
+
 func TestGoogleGenerativeAIUsesYenConfiguration(t *testing.T) {
 	t.Setenv("YEN_PROVIDER", "google")
 	t.Setenv("YEN_MODEL", "gemini-test")
