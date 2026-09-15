@@ -218,7 +218,7 @@ func findSkillPath(workspace, name string) string {
 			if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") {
 				return filepath.SkipDir
 			}
-			if !entry.IsDir() && entry.Name() == "SKILL.md" {
+			if isDiscoverableSkillFile(path, entry) {
 				data, readErr := os.ReadFile(path)
 				if readErr == nil {
 					declared, description := parseSkillFile(path, string(data))
