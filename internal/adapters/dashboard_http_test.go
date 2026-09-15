@@ -172,7 +172,8 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 	}
 	var listed struct {
 		Sessions []struct {
-			MessageCount int `json:"messageCount"`
+			MessageCount int    `json:"messageCount"`
+			Title        string `json:"title"`
 		} `json:"sessions"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
@@ -180,7 +181,7 @@ func TestDashboardHTTPHealthSubmitReadbackAndStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || len(listed.Sessions) != 1 || listed.Sessions[0].MessageCount != 2 {
+	if response.StatusCode != http.StatusOK || len(listed.Sessions) != 1 || listed.Sessions[0].MessageCount != 2 || listed.Sessions[0].Title != "hello" {
 		t.Fatalf("session list=%#v status=%d", listed, response.StatusCode)
 	}
 	if _, ok := readback["runtime"].(map[string]any); !ok {

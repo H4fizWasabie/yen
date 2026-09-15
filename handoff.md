@@ -245,6 +245,8 @@ tool progress before refreshing the persisted session.
 Session-list metadata now reads the actual shared JSONL session for message
 count and last-entry timestamp instead of placeholder values.
 Visible dashboard sessions are sorted newest-first like the TypeScript dashboard.
+Dashboard session titles now use the first user message, capped at 80 runes,
+with the conversation ID as fallback.
 Consolidation timestamped messages now follow the active parent-linked branch,
 excluding inactive sibling entries.
 When the configured provider supports it, consolidation also requests the

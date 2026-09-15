@@ -66,15 +66,17 @@ func dashboardSessions(registry *conversation.Registry, runner *runtime.Runner) 
 			continue
 		}
 		seen[link.ConversationID] = true
-		modified, messageCount := link.CreatedAt, 0
+		modified, messageCount, title := link.CreatedAt, 0, link.ConversationID
 		if runner != nil {
 			if opened, err := runner.OpenSession(link); err == nil {
 				modified = opened.LastTimestamp()
-				messageCount = len(opened.Messages())
+				messages := opened.Messages()
+				messageCount = len(messages)
+				title = dashboardSessionTitle(messages, title)
 			}
 		}
 		sessions = append(sessions, map[string]any{
-			"id": link.ConversationID, "channel": link.Adapter, "title": link.ConversationID,
+			"id": link.ConversationID, "channel": link.Adapter, "title": title,
 			"modified": modified, "messageCount": messageCount, "path": "",
 		})
 	}
@@ -252,7 +254,7 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"session": map[string]any{"id": id, "channel": "dashboard", "title": id, "messageCount": len(session.Messages())},
+			"session": map[string]any{"id": id, "channel": "dashboard", "title": dashboardSessionTitle(session.Messages(), id), "messageCount": len(session.Messages())},
 			"history": dashboardHistory(session.Messages()),
 			"runtime": dashboardRuntime(session.Messages()),
 			// Keep the early Go pilot response available to non-UI clients.
@@ -262,6 +264,24 @@ func (h DashboardHTTP) session(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	}
+}
+
+func dashboardSessionTitle(messages []session.Message, fallback string) string {
+	for _, message := range messages {
+		if message.Role != "user" {
+			continue
+		}
+		title := strings.TrimSpace(contentText(message.Content))
+		if title == "" {
+			continue
+		}
+		runes := []rune(title)
+		if len(runes) > 80 {
+			return string(runes[:80])
+		}
+		return title
+	}
+	return fallback
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
