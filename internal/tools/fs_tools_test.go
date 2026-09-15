@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -86,6 +87,30 @@ func TestFindToolSupportsRecursiveGlobstar(t *testing.T) {
 
 	got, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "**/*.go"})
 	if err != nil || got != "internal/nested/main.go" {
+		t.Fatalf("find=%q err=%v", got, err)
+	}
+}
+
+func TestFindToolRespectsGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "-C", dir, "init", "-q").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored/\n*.secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"visible.txt", "ignored/hidden.txt", "private.secret"} {
+		fullPath := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "**/*"})
+	if err != nil || got != ".gitignore\nvisible.txt" {
 		t.Fatalf("find=%q err=%v", got, err)
 	}
 }

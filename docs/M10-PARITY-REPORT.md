@@ -384,6 +384,11 @@ so the complete context block is retained for the final allowed match. Go
 evidence: `internal/tools/fs_tools.go` and
 `TestGrepToolLimitCountsMatchesNotContextLines`.
 
+The `find` tool now asks Git to exclude paths ignored by repository
+`.gitignore` rules, matching the oracle's default file-search behavior while
+retaining searches outside Git repositories. Go evidence:
+`internal/tools/fs_tools.go` and `TestFindToolRespectsGitignore`.
+
 The `ls` tool now follows entry targets while listing and skips entries that
 cannot be statted, matching the oracle's broken-symlink behavior. TypeScript
 authority: `packages/coding-agent/src/core/tools/ls.ts:143-160`; Go evidence:

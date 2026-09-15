@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -64,6 +65,7 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 		if entry.IsDir() { return nil }
 		rel, err := filepath.Rel(root, path); if err != nil { return err }
 		rel = filepath.ToSlash(rel)
+		if gitIgnored(ctx, root, rel) { return nil }
 		matched := matchFindPattern(pattern, rel)
 		if matched {
 			matchCount++
@@ -77,6 +79,10 @@ func (t FindTool) Execute(ctx context.Context, args map[string]any) (string, err
 	output := truncateFileSearchOutput(strings.Join(matches, "\n"))
 	if matchCount > limit { output += fmt.Sprintf("\n\n[%d results limit reached]", limit) }
 	return output, nil
+}
+
+func gitIgnored(ctx context.Context, root, rel string) bool {
+	return exec.CommandContext(ctx, "git", "-C", root, "check-ignore", "--quiet", "--", filepath.FromSlash(rel)).Run() == nil
 }
 
 func matchFindPattern(pattern, rel string) bool {
