@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/H4fizWasabie/yen/internal/agent"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -149,6 +150,24 @@ func TestReadToolAcceptsFileURL(t *testing.T) {
 	content, err := NewReadTool(dir).Execute(context.Background(), map[string]any{"path": "file://" + path})
 	if err != nil || content != "file url" {
 		t.Fatalf("content=%q err=%v", content, err)
+	}
+}
+
+func TestReadToolReturnsImagesThroughRichResults(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	path := filepath.Join(dir, "image.png")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var rich agent.RichTool = NewReadTool(dir)
+	result, err := rich.ExecuteRich(context.Background(), map[string]any{"path": "image.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Text, "Read image file [image/png]") || len(result.Images) != 1 || !strings.HasPrefix(result.Images[0], "data:image/png;base64,") {
+		t.Fatalf("result=%#v", result)
 	}
 }
 

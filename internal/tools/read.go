@@ -2,12 +2,15 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/H4fizWasabie/yen/internal/agent"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -25,6 +28,39 @@ func NewReadTool(cwd string) ReadTool { return ReadTool{cwd: cwd} }
 func ResolvePath(rawPath, cwd string) string { return normalizeReadPath(rawPath, cwd) }
 
 func (ReadTool) Name() string { return "read" }
+
+func (t ReadTool) ExecuteRich(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
+	if err := ctx.Err(); err != nil {
+		return agent.ToolResult{}, err
+	}
+	rawPath, ok := args["path"].(string)
+	if !ok || rawPath == "" {
+		return agent.ToolResult{}, fmt.Errorf("path is required")
+	}
+	path := resolveReadPath(rawPath, t.cwd)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+	if mime := imageMIME(data); mime != "" {
+		return agent.ToolResult{
+			Text:   fmt.Sprintf("Read image file [%s]", mime),
+			Images: []string{"data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)},
+		}, nil
+	}
+	text, err := t.Execute(ctx, args)
+	return agent.ToolResult{Text: text}, err
+}
+
+func imageMIME(data []byte) string {
+	mime := http.DetectContentType(data)
+	switch mime {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp":
+		return mime
+	default:
+		return ""
+	}
+}
 
 func (t ReadTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if err := ctx.Err(); err != nil {
