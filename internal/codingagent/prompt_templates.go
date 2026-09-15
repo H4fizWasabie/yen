@@ -45,7 +45,7 @@ func loadPromptTemplates(workspace string) []promptTemplate {
 			if err != nil {
 				continue
 			}
-			body := string(data)
+			body := stripUTF8BOM(string(data))
 			name := strings.TrimSuffix(entry.Name(), ".md")
 			description, content := parsePromptTemplate(body)
 			if description == "" {
@@ -66,6 +66,7 @@ func loadPromptTemplates(workspace string) []promptTemplate {
 }
 
 func parsePromptTemplate(raw string) (description, content string) {
+	raw = stripUTF8BOM(raw)
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	content = raw
 	if !strings.HasPrefix(raw, "---\n") {
@@ -237,6 +238,7 @@ func findSkillPath(workspace, name string) string {
 }
 
 func stripPromptFrontmatter(raw string) string {
+	raw = stripUTF8BOM(raw)
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	if !strings.HasPrefix(raw, "---\n") {
 		return strings.TrimSpace(raw)
