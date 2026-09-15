@@ -3,6 +3,7 @@ package codingagent
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -75,6 +76,55 @@ func appendContextFiles(sections []string, dir string) []string {
 	return sections
 }
 
+func shadowedWorktreeContextFile(cwd string) string {
+	common, err := gitPath(cwd, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return ""
+	}
+	root, err := gitPath(cwd, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return ""
+	}
+	common, err = filepath.Abs(filepath.Join(cwd, common))
+	if err != nil {
+		return ""
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	common = canonicalPath(common)
+	root = canonicalPath(root)
+	mainRoot := filepath.Dir(common)
+	if filepath.Clean(root) == filepath.Clean(mainRoot) || !isWithin(root, mainRoot) || filepath.Clean(filepath.Join(mainRoot, ".git")) != filepath.Clean(common) {
+		return ""
+	}
+	for _, name := range contextFileNames {
+		path := filepath.Join(root, name)
+		if info, statErr := os.Stat(path); statErr == nil && info.Mode().IsRegular() {
+			return filepath.Join(mainRoot, name)
+		}
+	}
+	return ""
+}
+
+func canonicalPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(path)
+}
+
+func gitPath(dir string, args ...string) (string, error) {
+	output, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	return strings.TrimSpace(string(output)), err
+}
+
+func isWithin(path, parent string) bool {
+	rel, err := filepath.Rel(parent, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
 // ContextMessage loads the small, repository-local instruction surface used by
 // the coding-agent layer. Files are ordered from the workspace root downward.
 func ContextMessage(workspace string) (agent.Message, bool) {
@@ -97,8 +147,19 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 	if agentDir := contextAgentDir(); agentDir != "" {
 		sections = appendContextFiles(sections, agentDir)
 	}
+	shadowed := shadowedWorktreeContextFile(workspace)
 	for i := len(dirs) - 1; i >= 0; i-- {
 		sections = appendContextFiles(sections, dirs[i])
+	}
+	if shadowed != "" {
+		prefix := "[" + shadowed + "]\n"
+		filtered := sections[:0]
+		for _, section := range sections {
+			if !strings.HasPrefix(section, prefix) {
+				filtered = append(filtered, section)
+			}
+		}
+		sections = filtered
 	}
 	for _, configured := range resourceSettings.ContextFiles {
 		path := configured
