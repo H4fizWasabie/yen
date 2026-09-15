@@ -391,6 +391,11 @@ func TestFormatTelegramHTMLCoversClassicFallback(t *testing.T) {
 	if got != want {
 		t.Fatalf("formatted=%q, want %q", got, want)
 	}
+	got = formatTelegramHTML("| A | B |\n|---|---|\n| x | yy |")
+	want = "<pre>A  B \n─  ──\nx  yy</pre>"
+	if got != want {
+		t.Fatalf("table=%q, want %q", got, want)
+	}
 	if got := formatTelegramHTML("```\n<safe>\n```"); got != "<pre><code>&lt;safe&gt;\n</code></pre>" {
 		t.Fatalf("fenced=%q", got)
 	}

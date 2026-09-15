@@ -925,7 +925,7 @@ func formatTelegramHTML(markdown string) string {
 	for i, value := range stash {
 		text = strings.ReplaceAll(text, fmt.Sprintf("\\x00TELEGRAM_STASH_%d\\x00", i), value)
 	}
-	return text
+	return formatTelegramTables(text)
 }
 
 func formatTelegramBlockquotes(text string, put func(string) string) string {
@@ -960,6 +960,95 @@ func formatTelegramBlockquotes(text string, put func(string) string) string {
 	}
 	flush()
 	return strings.Join(formatted, "\n")
+}
+
+func formatTelegramTables(text string) string {
+	lines := strings.Split(text, "\n")
+	formatted := make([]string, 0, len(lines))
+	var table []string
+	flush := func() {
+		if len(table) == 0 {
+			return
+		}
+		cells := make([][]string, 0, len(table))
+		widths := []int(nil)
+		for _, line := range table {
+			parts := strings.Split(strings.TrimSpace(line), "|")
+			if len(parts) < 3 {
+				continue
+			}
+			row := make([]string, 0, len(parts)-2)
+			for _, part := range parts[1 : len(parts)-1] {
+				cell := strings.TrimSpace(strings.ReplaceAll(part, `\|`, "|"))
+				row = append(row, cell)
+			}
+			cells = append(cells, row)
+			for i, cell := range row {
+				visible := len([]rune(html.UnescapeString(telegramTagPattern.ReplaceAllString(cell, ""))))
+				if i >= len(widths) {
+					widths = append(widths, make([]int, i+1-len(widths))...)
+				}
+				if visible > widths[i] {
+					widths[i] = visible
+				}
+			}
+		}
+		if len(cells) == 0 {
+			formatted = append(formatted, table...)
+			table = nil
+			return
+		}
+		output := make([]string, 0, len(cells)+1)
+		for rowIndex, row := range cells {
+			values := make([]string, 0, len(row))
+			for i, cell := range row {
+				visible := len([]rune(html.UnescapeString(telegramTagPattern.ReplaceAllString(cell, ""))))
+				padding := 0
+				if i < len(widths) {
+					padding = widths[i] - visible
+				}
+				values = append(values, cell+strings.Repeat(" ", max(0, padding)))
+			}
+			output = append(output, strings.Join(values, "  "))
+			if rowIndex == 0 && len(cells) > 1 {
+				separators := make([]string, len(widths))
+				for i, width := range widths {
+					separators[i] = strings.Repeat("─", width)
+				}
+				output = append(output, strings.Join(separators, "  "))
+			}
+		}
+		formatted = append(formatted, "<pre>"+strings.Join(output, "\n")+"</pre>")
+		table = nil
+	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "|") && strings.HasSuffix(trimmed, "|") && len(trimmed) > 1 {
+			if telegramTableDivider(trimmed) {
+				if len(table) > 0 {
+					continue
+				}
+			} else {
+				table = append(table, trimmed)
+				continue
+			}
+		}
+		flush()
+		formatted = append(formatted, line)
+	}
+	flush()
+	return strings.Join(formatted, "\n")
+}
+
+var telegramTagPattern = regexp.MustCompile(`<[^>]+>`)
+
+func telegramTableDivider(line string) bool {
+	for _, char := range strings.Trim(line, "|") {
+		if char != '-' && char != ':' && char != '|' && char != ' ' {
+			return false
+		}
+	}
+	return true
 }
 
 func (b *TelegramBot) sendChatAction(ctx context.Context, chatID string) error {
