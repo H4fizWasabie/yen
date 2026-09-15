@@ -347,7 +347,7 @@ mapping. The full gate is now 233 tests plus race/vet/diff; commit and push this
 work before moving to the next provider or channel gap.
 
 The Gemini adapter also implements the native `/models` catalog and filters to
-models advertising `generateContent`; the current full gate remains 233 tests
+models advertising `generateContent`; the current full gate remains 234 tests
 plus race/vet/diff.
 
 ## Important deferred product change
