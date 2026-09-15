@@ -37,19 +37,20 @@ implementations and committed tests:
 | Cross-channel identity | `8629abf`, default `yen-primary` plus environment override | final live cross-channel replay trace |
 | Dashboard branches | `bb39d8b`, durable branch marker, tree API, branch UI, reopen test | browser-level acceptance and richer tree presentation |
 | RPC | `12a739c`, `808ff64`, JSONL server/client, prompt/events/state/messages/abort, Unix socket | complete command matrix and extension UI protocol |
-| External tools | `f238e3b`, `5a11297`, HTTP sidecar, MCP HTTP, untrusted-content boundary, deferred search/call | MCP stdio and full resource lifecycle |
+| External tools | `f238e3b`, `5a11297`, HTTP sidecar, MCP HTTP, untrusted-content boundary, deferred search/call, `6979a81` MCP stdio | full resource lifecycle and subprocess shutdown hardening |
 | Resources and trust | `3b6aa0e`, `d7bc219`, `ca967c4`, bounded context, lazy skills, settings, trust store | extension hooks and full settings parity |
-| Provider configuration | `49794a2`, Yen-owned provider/model/key resolution; `d6c176c` installer key isolation | full provider protocols, catalog, OAuth, and auth UI |
+| Provider configuration | `49794a2`, Yen-owned provider/model/key resolution; `d6c176c` installer key isolation; `197901d`, `ab7677e`, `521b164` Anthropic Messages streaming, stop mapping, and retry | full provider protocols, catalog, OAuth, and auth UI |
+| Episodic migration | `a513983` | enriched legacy SQLite rows preserve optional workspace, conversation, channel, and turn metadata; broader historical migration policy remains explicit-only |
 
-The current verified code gate is 187 tests, race tests, vet, and diff checks.
+The current verified code gate is 191 tests, race tests, vet, and diff checks.
 The side-by-side VPS read-back places the tested release at
-`/opt/yen/releases/ca967c4`; both Yen units and both Theoses2 units remain
+`/opt/yen/releases/a513983`; both Yen units and both Theoses2 units remain
 active, and Yen `/healthz` returns `{"ok":true}`.
 
 - Full normalized live-trace equivalence is not claimed beyond the recorded
   golden/local traces and live acceptance results.
-- Historical episodic migration, the full provider matrix and OAuth, MCP
-  stdio, extension hooks/commands/renderers/provider interception, and the
+- Historical episodic migration, the full provider matrix and OAuth, extension
+  hooks/commands/renderers/provider interception, and the
   complete RPC command matrix remain deferred by scope. Dashboard API
   authentication and basic branch navigation are implemented behind the Yen
   dashboard token; authenticated live acceptance is recorded. Live
