@@ -221,6 +221,9 @@ func radiusConfigured(model string) TheosesMessages {
 func codexConfigured(model string) (OpenAIResponses, error) {
 	token := os.Getenv("YEN_OPENAI_CODEX_ACCESS_TOKEN")
 	if token == "" {
+		token = storedCredentialKey("openai-codex")
+	}
+	if token == "" {
 		return OpenAIResponses{}, errors.New("openai codex access token is required")
 	}
 	accountID := codexAccountID(token)
