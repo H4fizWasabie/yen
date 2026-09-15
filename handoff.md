@@ -54,6 +54,11 @@ provider key; `/var/lib/yen/memory/consolidation-state.json` advanced and the
 SQLite episodic store read back a new current record. This acceptance did not
 modify or restart any TypeScript unit.
 
+The provider wrapper now maps `YEN_REASONING_EFFORT` to the OpenRouter
+`reasoning.effort` request field. The live Yen provider env sets it to `high`,
+and release `39cb375` passed a real dashboard request after restart. The
+request-shape contract is covered by `TestOpenAICompletionsSendsReasoningEffort`.
+
 A side-by-side VPS pilot is now active without touching the existing
 TypeScript units. The replacement Telegram token authenticates, the Go bot
 has produced a live reply, a Go CLI turn has appended to the same canonical
