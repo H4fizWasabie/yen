@@ -261,6 +261,10 @@ collecting matches. TypeScript authority:
 `packages/coding-agent/src/core/tools/grep.ts:348-375`; Go evidence:
 `internal/tools/fs_tools.go` and `TestGrepToolReportsMatchLimit`.
 
+Grep match lines now use the oracle's `path:line: text` spacing. TypeScript
+authority: `packages/coding-agent/src/core/tools/grep.ts:327-334`; Go evidence:
+`internal/tools/fs_tools.go` and `TestGrepToolUsesOracleMatchSpacing`.
+
 OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
 fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
 instead of the generic `reasoning.effort` field. TypeScript authority:

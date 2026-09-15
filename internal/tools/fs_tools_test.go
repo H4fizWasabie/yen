@@ -28,7 +28,7 @@ func TestFilesystemTools(t *testing.T) {
 		t.Fatalf("find=%q err=%v", find, err)
 	}
 	grep, err := NewGrepTool(dir).Execute(ctx, map[string]any{"pattern": "world"})
-	if err != nil || !strings.Contains(grep, "a.txt:2:world") {
+	if err != nil || !strings.Contains(grep, "a.txt:2: world") {
 		t.Fatalf("grep=%q err=%v", grep, err)
 	}
 	if _, err := NewWriteTool(dir).Execute(ctx, map[string]any{"path": "sub/new.txt", "content": "old"}); err != nil {
@@ -88,7 +88,7 @@ func TestGrepToolMatchesRecursiveGlobstarPaths(t *testing.T) {
 	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{
 		"pattern": "package", "glob": "internal/**/*.go",
 	})
-	if err != nil || !strings.Contains(got, "internal/nested/main.go:1:package nested") {
+	if err != nil || !strings.Contains(got, "internal/nested/main.go:1: package nested") {
 		t.Fatalf("grep=%q err=%v", got, err)
 	}
 }
@@ -106,6 +106,18 @@ func TestGrepToolTruncatesLongMatchingLines(t *testing.T) {
 	}
 	if !strings.Contains(got, "... [truncated]") || strings.Contains(got, strings.Repeat("x", 600)) {
 		t.Fatalf("grep=%q", got)
+	}
+}
+
+func TestGrepToolUsesOracleMatchSpacing(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "match.txt"), []byte("needle\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle"})
+	if err != nil || !strings.Contains(got, "match.txt:1: needle") {
+		t.Fatalf("grep=%q err=%v", got, err)
 	}
 }
 
