@@ -327,6 +327,22 @@ func (b *TelegramBot) storeAttachmentWithSession(ctx context.Context, message *t
 	// ponytail: one attachment lock protects session JSONL writes; use per-conversation locks if attachment throughput matters.
 	b.attachmentMu.Lock()
 	defer b.attachmentMu.Unlock()
+	if current != nil {
+		var note, image string
+		var err error
+		err = session.WithPathLock(current.Path(), func() error {
+			if _, statErr := os.Stat(current.Path()); statErr == nil {
+				if err := current.Reload(); err != nil {
+					return err
+				}
+			} else if !os.IsNotExist(statErr) {
+				return statErr
+			}
+			note, image, err = b.storeAttachmentWithSessionLocked(ctx, message, current)
+			return err
+		})
+		return note, image, err
+	}
 	return b.storeAttachmentWithSessionLocked(ctx, message, current)
 }
 

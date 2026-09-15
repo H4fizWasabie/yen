@@ -573,18 +573,29 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			outcome = "aborted"
 		}
 	}
-	for _, message := range result.Messages[len(history):] {
-		if _, err := current.Append(toSessionMessage(message)); err != nil {
-			return result, err
+	if err := session.WithPathLock(path, func() error {
+		if _, statErr := os.Stat(path); statErr == nil {
+			if err := current.Reload(); err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(statErr) {
+			return statErr
 		}
-	}
-	if _, err := current.AppendOperationFinished(outcome); err != nil {
+		for _, message := range result.Messages[len(history):] {
+			if _, err := current.Append(toSessionMessage(message)); err != nil {
+				return err
+			}
+		}
+		if _, err := current.AppendOperationFinished(outcome); err != nil {
+			return err
+		}
+		if outcome == "completed" && current.WorkingNote() != "" {
+			_, err := current.ClearWorkingNote()
+			return err
+		}
+		return nil
+	}); err != nil {
 		return result, err
-	}
-	if outcome == "completed" && current.WorkingNote() != "" {
-		if _, err := current.ClearWorkingNote(); err != nil {
-			return result, err
-		}
 	}
 	if runErr == nil && r.Memory != nil {
 		if err := r.Memory.RecordTurn(turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, expandedPrompt, result.FinalText); err != nil {
