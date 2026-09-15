@@ -23,11 +23,13 @@ type Server struct {
 	Runner *runtime.Runner
 	Link   conversation.Link
 
-	writeMu  sync.Mutex
-	linkMu   sync.RWMutex
-	activeMu sync.Mutex
-	active   map[string]conversation.Turn
-	wg       sync.WaitGroup
+	writeMu                    sync.Mutex
+	linkMu                     sync.RWMutex
+	activeMu                   sync.Mutex
+	active                     map[string]conversation.Turn
+	modeMu                     sync.RWMutex
+	steeringMode, followUpMode string
+	wg                         sync.WaitGroup
 }
 
 type command struct {
@@ -44,6 +46,7 @@ type command struct {
 	Model             string     `json:"modelId,omitempty"`
 	Level             string     `json:"level,omitempty"`
 	Direction         string     `json:"direction,omitempty"`
+	Mode              string     `json:"mode,omitempty"`
 	KeepRecentTurns   int        `json:"keepRecentTurns,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 }
@@ -141,6 +144,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			return err
 		}
 		_, active := s.Runner.Active(link.ConversationID)
+		steeringMode, followUpMode := s.modes()
 		return s.response(output, request.ID, request.Type, true, map[string]any{
 			"sessionId": link.ConversationID, "isStreaming": active,
 			"sessionName":   session.SessionName(),
@@ -148,7 +152,8 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 			"model":         func() string { _, model := providerpkg.Describe(s.Runner.Provider); return model }(),
 			"thinkingLevel": providerpkg.ThinkingLevel(s.Runner.Provider),
 			"autoRetry":     providerpkg.RetryEnabled(s.Runner.Provider),
-			"messageCount":  len(session.Messages()), "pendingMessageCount": 0,
+			"steeringMode":  steeringMode, "followUpMode": followUpMode,
+			"messageCount": len(session.Messages()), "pendingMessageCount": 0,
 		}, nil)
 	case "get_messages":
 		session, err := s.Runner.OpenSession(link)
@@ -263,6 +268,20 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		s.Runner.AutoCompactDisabled = !*request.Enabled
 		return s.response(output, request.ID, request.Type, true, map[string]any{"enabled": *request.Enabled}, nil)
+	case "set_steering_mode", "set_follow_up_mode":
+		if request.Mode != "all" && request.Mode != "one-at-a-time" {
+			return errors.New("mode must be all or one-at-a-time")
+		}
+		s.modeMu.Lock()
+		if request.Type == "set_steering_mode" {
+			s.steeringMode = request.Mode
+		} else {
+			s.followUpMode = request.Mode
+		}
+		s.modeMu.Unlock()
+		return s.response(output, request.ID, request.Type, true, map[string]any{"mode": request.Mode}, nil)
+	case "get_commands":
+		return s.response(output, request.ID, request.Type, true, map[string]any{"commands": builtinCommands()}, nil)
 	case "set_model":
 		if strings.TrimSpace(request.Provider) == "" || strings.TrimSpace(request.Model) == "" {
 			return errors.New("provider and modelId are required")
@@ -359,6 +378,32 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		return s.response(output, request.ID, request.Type, true, map[string]any{"level": providerpkg.ThinkingLevel(configured)}, nil)
 	default:
 		return fmt.Errorf("unsupported rpc command %q", request.Type)
+	}
+}
+
+func (s *Server) modes() (string, string) {
+	s.modeMu.RLock()
+	defer s.modeMu.RUnlock()
+	steering, followUp := s.steeringMode, s.followUpMode
+	if steering == "" {
+		steering = "one-at-a-time"
+	}
+	if followUp == "" {
+		followUp = "one-at-a-time"
+	}
+	return steering, followUp
+}
+
+func builtinCommands() []map[string]string {
+	return []map[string]string{
+		{"name": "settings", "description": "Open settings menu", "source": "builtin"},
+		{"name": "model", "description": "Select model", "source": "builtin"},
+		{"name": "thinking", "description": "Set thinking level", "source": "builtin"},
+		{"name": "session", "description": "Show session info and stats", "source": "builtin"},
+		{"name": "working-note", "description": "Show the current Working Note", "source": "builtin"},
+		{"name": "fork", "description": "Create a new fork", "source": "builtin"},
+		{"name": "new", "description": "Start a new session", "source": "builtin"},
+		{"name": "compact", "description": "Manually compact the session context", "source": "builtin"},
 	}
 }
 

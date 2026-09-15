@@ -266,3 +266,28 @@ func TestRetryControlCommandsUpdateProvider(t *testing.T) {
 		t.Fatalf("provider=%#v output=%s", runner.Provider, output.String())
 	}
 }
+
+func TestQueueModeAndCommandDiscovery(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := Server{Runner: runtime.New(queue, rpcProvider{}, nil), Link: conversation.Link{ConversationID: "commands"}}
+	var output bytes.Buffer
+	if err := server.handle(context.Background(), &output, command{Type: "set_steering_mode", Mode: "all"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "set_follow_up_mode", Mode: "one-at-a-time"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "get_state"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.handle(context.Background(), &output, command{Type: "get_commands"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"steeringMode":"all"`) || !strings.Contains(output.String(), `"name":"compact"`) {
+		t.Fatalf("output=%s", output.String())
+	}
+}
