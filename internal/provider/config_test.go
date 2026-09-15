@@ -45,6 +45,40 @@ func TestNewConfiguredSupportsOpenAICompatibleAndAnthropicProviders(t *testing.T
 	}
 }
 
+func TestNewConfiguredSupportsPinnedOpenAICompatibleProviders(t *testing.T) {
+	providers := []struct {
+		id  string
+		env string
+	}{
+		{"ant-ling", "YEN_ANT_LING_API_KEY"},
+		{"baseten", "YEN_BASETEN_API_KEY"},
+		{"cerebras", "YEN_CEREBRAS_API_KEY"},
+		{"fireworks", "YEN_FIREWORKS_API_KEY"},
+		{"huggingface", "YEN_HF_TOKEN"},
+		{"kimi-coding", "YEN_KIMI_API_KEY"},
+		{"moonshotai-cn", "YEN_MOONSHOT_API_KEY"},
+		{"nvidia", "YEN_NVIDIA_API_KEY"},
+		{"qwen-token-plan", "YEN_QWEN_TOKEN_PLAN_API_KEY"},
+		{"qwen-token-plan-cn", "YEN_QWEN_TOKEN_PLAN_CN_API_KEY"},
+		{"together", "YEN_TOGETHER_API_KEY"},
+		{"xiaomi-token-plan-sgp", "YEN_XIAOMI_TOKEN_PLAN_SGP_API_KEY"},
+		{"zai-coding-cn", "YEN_ZAI_CODING_CN_API_KEY"},
+	}
+	for _, test := range providers {
+		t.Run(test.id, func(t *testing.T) {
+			t.Setenv(test.env, "provider-key")
+			configured, err := NewConfigured(test.id, "fixture-model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, ok := configured.(OpenAICompletions)
+			if !ok || client.ProviderName != test.id || client.BaseURL != providerDefaults[test.id] || client.APIKey != "provider-key" {
+				t.Fatalf("provider=%#v", configured)
+			}
+		})
+	}
+}
+
 func TestSetThinkingLevelShapesProviderState(t *testing.T) {
 	openai := NewOpenAICompletions("http://fixture", "key", "model")
 	configured, err := SetThinkingLevel(openai, "high")

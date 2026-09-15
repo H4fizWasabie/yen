@@ -331,6 +331,14 @@ On 2026-09-15, direct JSONL RPC `bash` now persists a TypeScript-compatible
 entry. `internal/rpc/server_test.go` covers the durable record. The change is
 ready to commit and push with the open GitHub PR before selecting the next gap.
 
+The provider registry was then expanded to the pinned OpenAI-compatible
+provider aliases (including Ant Ling, Baseten, Cerebras, Fireworks, Hugging
+Face, Kimi, Moonshot CN, NVIDIA, Qwen token plans, Together, Xiaomi token
+plans, and Z.AI CN), each with Yen-owned credential variables and table-driven
+configuration tests. This is configuration/API-shape coverage only; providers
+with distinct protocols, OAuth, or provider-specific model catalogs remain
+open.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future
