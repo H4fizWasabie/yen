@@ -2,9 +2,16 @@ package provider
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,6 +96,55 @@ func TestGoogleVertexUsesYenBearerTokenWithoutAPIKeyQuery(t *testing.T) {
 	client.Client = server.Client()
 	if _, err := client.Next(context.Background(), []agent.Message{{Role: "user", Content: "hello"}}, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestVertexServiceAccountExchangesJWTForBearerToken(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
+			t.Fatalf("request=%s content-type=%q", r.Method, r.Header.Get("Content-Type"))
+		}
+		if err := r.ParseForm(); err != nil || r.Form.Get("grant_type") != "urn:ietf:params:oauth:grant-type:jwt-bearer" {
+			t.Fatalf("form=%v err=%v", r.Form, err)
+		}
+		parts := strings.Split(r.Form.Get("assertion"), ".")
+		if len(parts) != 3 {
+			t.Fatalf("assertion=%q", r.Form.Get("assertion"))
+		}
+		_, _ = fmt.Fprint(w, `{"access_token":"vertex-access"}`)
+	}))
+	defer tokenServer.Close()
+
+	privateKey, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := json.Marshal(map[string]string{
+		"type": "service_account", "client_email": "vertex@example.com",
+		"private_key": string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKey})),
+		"token_uri":   tokenServer.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "service-account.json")
+	if err := os.WriteFile(path, credentials, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_GOOGLE_APPLICATION_CREDENTIALS", path)
+	t.Setenv("YEN_GOOGLE_VERTEX_BASE_URL", tokenServer.URL)
+	client := googleVertexConfigured("fixture-model")
+	configuredToken, err := client.bearerToken(context.Background())
+	if err != nil || configuredToken != "vertex-access" {
+		t.Fatalf("configured token=%q err=%v", configuredToken, err)
+	}
+	token, err := vertexServiceAccountSource(path)(context.Background())
+	if err != nil || token != "vertex-access" {
+		t.Fatalf("token=%q err=%v", token, err)
 	}
 }
 
