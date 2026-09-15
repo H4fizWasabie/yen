@@ -207,6 +207,13 @@ func findSkillPath(workspace, name string) string {
 	}
 	workspace, _ = filepath.Abs(workspace)
 	paths := []string{filepath.Join(workspace, ".theoses", "skills"), filepath.Join(workspace, ".agents", "skills")}
+	resourceSettings, _ := settings.Load(workspace)
+	for _, configured := range resourceSettings.SkillDirs {
+		if !filepath.IsAbs(configured) {
+			configured = filepath.Join(workspace, configured)
+		}
+		paths = append(paths, configured)
+	}
 	if dir := os.Getenv("YEN_SKILLS_DIR"); dir != "" {
 		paths = append(paths, dir)
 	}
