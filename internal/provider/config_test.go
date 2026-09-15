@@ -117,7 +117,7 @@ func TestGitHubCopilotUsesDynamicHeadersAndYenToken(t *testing.T) {
 
 func TestOpenAICodexUsesAccountAndExperimentalHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/codex/responses" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer header.") || r.Header.Get("chatgpt-account-id") != "acct-1" || r.Header.Get("originator") != "yen" || r.Header.Get("OpenAI-Beta") != "responses=experimental" {
+		if r.URL.Path != "/codex/responses" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer header.") || r.Header.Get("chatgpt-account-id") != "acct-1" || r.Header.Get("originator") != "theoses" || r.Header.Get("OpenAI-Beta") != "responses=experimental" {
 			t.Fatalf("path=%q auth=%q account=%q originator=%q beta=%q", r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("chatgpt-account-id"), r.Header.Get("originator"), r.Header.Get("OpenAI-Beta"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")

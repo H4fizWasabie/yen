@@ -144,7 +144,7 @@ func codexConfigured(model string) (OpenAIResponses, error) {
 	client.ProviderName = "openai-codex"
 	client.Headers = map[string]string{
 		"chatgpt-account-id": accountID,
-		"originator":         "yen",
+		"originator":         "theoses",
 		"OpenAI-Beta":        "responses=experimental",
 		"Accept":             "text/event-stream",
 	}
