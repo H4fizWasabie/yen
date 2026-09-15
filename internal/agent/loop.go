@@ -86,6 +86,13 @@ type ToolResult struct {
 	Images []string
 }
 
+// ToolHooks are the execution interception seam used by extensions. Hooks run
+// after tool lookup and before the corresponding tool result events.
+type ToolHooks struct {
+	Before func(context.Context, Message, ToolCall) (block bool, reason string, err error)
+	After  func(context.Context, Message, ToolCall, ToolResult, bool) (ToolResult, bool, error)
+}
+
 type RichTool interface {
 	ExecuteRich(ctx context.Context, args map[string]any) (ToolResult, error)
 }
@@ -210,14 +217,21 @@ func RunFromWithQueuesAndEvents(ctx context.Context, provider Provider, tools []
 }
 
 func RunFromWithQueuesAndEventsAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
-	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent)
+	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent, nil)
+}
+
+// RunFromWithQueuesAndEventsAndImagesAndHooks is the opt-in hook-enabled form
+// of RunFromWithQueuesAndEventsAndImages. Existing callers retain unchanged
+// behavior through the nil-hooks wrapper above.
+func RunFromWithQueuesAndEventsAndImagesAndHooks(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc, hooks *ToolHooks) (Result, error) {
+	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent, hooks)
 }
 
 func runFromWithQueues(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
-	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, nil, queues, onUpdate, onEvent)
+	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, nil, queues, onUpdate, onEvent, nil)
 }
 
-func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
+func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc, hooks *ToolHooks) (Result, error) {
 	result := Result{Messages: append([]Message(nil), history...), Events: []string{"agent_start"}}
 	emitEvent(onEvent, Event{Type: "agent_start"})
 	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt, Images: images})
@@ -315,7 +329,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			return result, nil
 		}
 		if len(response.ToolCalls) > 1 && response.StopReason != "length" {
-			toolResults, err := runParallelToolCalls(ctx, &result, response.ToolCalls, toolMap, onEvent)
+			toolResults, err := runParallelToolCalls(ctx, &result, response.ToolCalls, toolMap, onEvent, hooks)
 			if err != nil {
 				result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
 				emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
@@ -367,6 +381,38 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
 				continue
 			}
+			if hooks != nil && hooks.Before != nil {
+				block, reason, hookErr := hooks.Before(ctx, assistant, call)
+				if hookErr != nil {
+					content := "Tool error: " + hookErr.Error()
+					result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
+					toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+					result.Messages = append(result.Messages, toolMessage)
+					toolResults = append(toolResults, toolMessage)
+					emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
+					emitEvent(onEvent, Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
+					emitEvent(onEvent, Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
+					result.Events = append(result.Events, "message_end:toolResult")
+					emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
+					continue
+				}
+				if block {
+					if reason == "" {
+						reason = "Tool execution was blocked"
+					}
+					content := reason
+					result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
+					toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
+					result.Messages = append(result.Messages, toolMessage)
+					toolResults = append(toolResults, toolMessage)
+					emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
+					emitEvent(onEvent, Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
+					emitEvent(onEvent, Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
+					result.Events = append(result.Events, "message_end:toolResult")
+					emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
+					continue
+				}
+			}
 			result.Events = append(result.Events, "tool_execution_start:"+call.ID)
 			toolResult, err := executeTool(ctx, tool, call.Args)
 			content, images := toolResult.Text, toolResult.Images
@@ -393,6 +439,16 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			} else {
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 			}
+			if hooks != nil && hooks.After != nil {
+				toolResult, isError, hookErr := hooks.After(ctx, assistant, call, ToolResult{Text: content, Images: images}, err != nil)
+				if hookErr != nil {
+					err = hookErr
+				}
+				if isError {
+					err = errors.New("tool result overridden as error")
+				}
+				content, images = toolResult.Text, toolResult.Images
+			}
 			result.Events = append(result.Events, "message_start:toolResult")
 			toolMessage := Message{Role: "tool", Content: content, Images: images, ToolCallID: call.ID}
 			result.Messages = append(result.Messages, toolMessage)
@@ -416,6 +472,7 @@ type parallelToolResult struct {
 	content string
 	images  []string
 	err     error
+	blocked bool
 }
 
 func executeTool(ctx context.Context, tool Tool, args map[string]any) (ToolResult, error) {
@@ -426,7 +483,7 @@ func executeTool(ctx context.Context, tool Tool, args map[string]any) (ToolResul
 	return ToolResult{Text: text}, err
 }
 
-func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc) ([]Message, error) {
+func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc, hooks *ToolHooks) ([]Message, error) {
 	outcomes := make([]parallelToolResult, len(calls))
 	var wait sync.WaitGroup
 	for i, call := range calls {
@@ -446,8 +503,35 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 				outcomes[i].err = errors.New(outcomes[i].content)
 				return
 			}
+			assistant := result.Messages[len(result.Messages)-1]
+			if hooks != nil && hooks.Before != nil {
+				block, reason, hookErr := hooks.Before(ctx, assistant, call)
+				if hookErr != nil {
+					outcomes[i].err = hookErr
+					return
+				}
+				if block {
+					if reason == "" {
+						reason = "Tool execution was blocked"
+					}
+					outcomes[i].content = reason
+					outcomes[i].blocked = true
+					return
+				}
+			}
 			toolResult, err := executeTool(ctx, tool, call.Args)
 			outcomes[i].content, outcomes[i].images, outcomes[i].err = toolResult.Text, toolResult.Images, err
+			if hooks != nil && hooks.After != nil {
+				updated, isError, hookErr := hooks.After(ctx, assistant, call, toolResult, err != nil)
+				if hookErr != nil {
+					outcomes[i].err = hookErr
+					return
+				}
+				outcomes[i].content, outcomes[i].images = updated.Text, updated.Images
+				if isError && outcomes[i].err == nil {
+					outcomes[i].err = errors.New("tool result overridden as error")
+				}
+			}
 		}(i, call)
 	}
 	wait.Wait()
@@ -463,6 +547,9 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 			} else {
 				content = "Tool error: " + outcome.err.Error()
 			}
+		}
+		if outcome.blocked {
+			isError = true
 		}
 		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
 		toolMessage := Message{Role: "tool", Content: content, Images: outcome.images, ToolCallID: outcome.call.ID}

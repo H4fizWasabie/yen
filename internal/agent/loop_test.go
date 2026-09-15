@@ -173,6 +173,45 @@ func TestRunExecutesToolThenContinues(t *testing.T) {
 	}
 }
 
+func TestRunToolHooksCanBlockAndRewriteResults(t *testing.T) {
+	calls := 0
+	tool := countingTool{calls: &calls}
+	result, err := RunFromWithQueuesAndEventsAndImagesAndHooks(context.Background(), &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-1", Name: "read"}}, StopReason: "toolUse"},
+		{Text: "done", StopReason: "stop"},
+	}}, []Tool{tool}, nil, "read it", nil, nil, nil, nil, &ToolHooks{
+		Before: func(_ context.Context, _ Message, call ToolCall) (bool, string, error) {
+			if call.Name != "read" {
+				t.Fatalf("hook tool=%q", call.Name)
+			}
+			return false, "", nil
+		},
+		After: func(_ context.Context, _ Message, _ ToolCall, result ToolResult, _ bool) (ToolResult, bool, error) {
+			result.Text = "rewritten"
+			return result, false, nil
+		},
+	})
+	if err != nil || result.FinalText != "done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if calls != 1 || result.Messages[2].Content != "rewritten" {
+		t.Fatalf("calls=%d messages=%#v", calls, result.Messages)
+	}
+
+	calls = 0
+	result, err = RunFromWithQueuesAndEventsAndImagesAndHooks(context.Background(), &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-2", Name: "read"}}, StopReason: "toolUse"},
+		{Text: "blocked", StopReason: "stop"},
+	}}, []Tool{tool}, nil, "read it", nil, nil, nil, nil, &ToolHooks{
+		Before: func(context.Context, Message, ToolCall) (bool, string, error) {
+			return true, "policy denied", nil
+		},
+	})
+	if err != nil || result.FinalText != "blocked" || calls != 0 || result.Messages[2].Content != "policy denied" {
+		t.Fatalf("blocked result=%#v err=%v calls=%d", result, err, calls)
+	}
+}
+
 func TestRunDoesNotExecuteToolCallsFromLengthLimitedResponse(t *testing.T) {
 	calls := 0
 	var events []Event
