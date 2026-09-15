@@ -105,7 +105,7 @@ func TestRunExecutesToolThenContinues(t *testing.T) {
 		"message_start:assistant", "message_end:assistant:toolUse", "tool_execution_start:read-1",
 		"tool_execution_end:read-1", "message_start:toolResult", "message_end:toolResult",
 		"turn_end", "turn_start", "message_start:assistant",
-		"message_end:assistant", "turn_end", "agent_end",
+		"message_end:assistant", "turn_end", "agent_end", "agent_settled",
 	}
 	if !reflect.DeepEqual(result.Events, wantEvents) {
 		t.Fatalf("events = %#v, want %#v", result.Events, wantEvents)
@@ -124,17 +124,17 @@ func TestRunNormalizedTracesMatchGoldenOutcomes(t *testing.T) {
 		{
 			name:     "success",
 			provider: updatingProvider{},
-			want:     []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_update", "message_update", "message_end:assistant", "turn_end", "agent_end"},
+			want:     []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_update", "message_update", "message_end:assistant", "turn_end", "agent_end", "agent_settled"},
 		},
 		{
 			name:     "tool",
 			provider: &scriptedProvider{responses: []Response{{ToolCalls: []ToolCall{{ID: "calc-1", Name: "read"}}, StopReason: "toolUse"}, {Text: "done", StopReason: "stop"}}},
-			want:     []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_end:assistant:toolUse", "tool_execution_start:calc-1", "tool_execution_end:calc-1", "message_start:toolResult", "message_end:toolResult", "turn_end", "turn_start", "message_start:assistant", "message_end:assistant", "turn_end", "agent_end"},
+			want:     []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_end:assistant:toolUse", "tool_execution_start:calc-1", "tool_execution_end:calc-1", "message_start:toolResult", "message_end:toolResult", "turn_end", "turn_start", "message_start:assistant", "message_end:assistant", "turn_end", "agent_end", "agent_settled"},
 		},
 		{
 			name:     "error",
 			provider: failingProvider{err: errors.New("provider down")},
-			want:     []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_end:assistant:error", "turn_end", "agent_end"},
+			want:     []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_end:assistant:error", "turn_end", "agent_end", "agent_settled"},
 		},
 	}
 	for _, tt := range tests {
@@ -149,7 +149,7 @@ func TestRunNormalizedTracesMatchGoldenOutcomes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	got, _ := Run(ctx, failingProvider{err: context.Canceled}, nil, "hello")
-	want := []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_end:assistant:aborted", "turn_end", "agent_end"}
+	want := []string{"agent_start", "turn_start", "message_start:user", "message_end:user", "message_start:assistant", "message_end:assistant:aborted", "turn_end", "agent_end", "agent_settled"}
 	if !reflect.DeepEqual(got.Events, want) {
 		t.Fatalf("abort events = %#v, want %#v", got.Events, want)
 	}
@@ -172,7 +172,7 @@ func TestRunRecordsAbortedAssistantBoundary(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || len(result.Messages) != 2 || result.Messages[1].StopReason != "aborted" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if !reflect.DeepEqual(result.Events[4:], []string{"message_start:assistant", "message_end:assistant:aborted", "turn_end", "agent_end"}) {
+	if !reflect.DeepEqual(result.Events[4:], []string{"message_start:assistant", "message_end:assistant:aborted", "turn_end", "agent_end", "agent_settled"}) {
 		t.Fatalf("events=%#v", result.Events)
 	}
 }
@@ -186,7 +186,7 @@ func TestRunRecordsAbortedToolResultBoundary(t *testing.T) {
 	if len(result.Messages) != 3 || result.Messages[2].Content != "Operation aborted" || result.Messages[2].Role != "tool" {
 		t.Fatalf("messages=%#v", result.Messages)
 	}
-	want := []string{"tool_execution_start:read-1", "tool_execution_end:read-1", "message_start:toolResult", "message_end:toolResult", "turn_end", "agent_end"}
+	want := []string{"tool_execution_start:read-1", "tool_execution_end:read-1", "message_start:toolResult", "message_end:toolResult", "turn_end", "agent_end", "agent_settled"}
 	if !reflect.DeepEqual(result.Events[len(result.Events)-len(want):], want) {
 		t.Fatalf("events=%#v", result.Events)
 	}
@@ -200,7 +200,7 @@ func TestRunContinuesAfterToolError(t *testing.T) {
 	if err != nil || result.FinalText != "recovered" || len(result.Messages) != 4 || result.Messages[2].Content != "Tool error: missing file" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if count := len(result.Events); count != 16 {
+	if count := len(result.Events); count != 17 {
 		t.Fatalf("events=%#v (count=%d)", result.Events, count)
 	}
 }

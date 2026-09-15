@@ -150,7 +150,7 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 				stopReason = "aborted"
 			}
 			result.Messages = append(result.Messages, Message{Role: "assistant", Content: err.Error(), StopReason: stopReason})
-			result.Events = append(result.Events, "message_end:assistant:"+stopReason, "turn_end", "agent_end")
+			result.Events = append(result.Events, "message_end:assistant:"+stopReason, "turn_end", "agent_end", "agent_settled")
 			return result, err
 		}
 		result.Messages = append(result.Messages, Message{Role: "assistant", Content: response.Text, ToolCalls: response.ToolCalls, StopReason: response.StopReason})
@@ -168,7 +168,7 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 				continue
 			}
 			result.FinalText = response.Text
-			result.Events = append(result.Events, "turn_end", "agent_end")
+			result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
 			return result, nil
 		}
 
@@ -188,7 +188,7 @@ func RunFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 				if ctx.Err() != nil {
 					result.Events = append(result.Events, "message_start:toolResult")
 					result.Messages = append(result.Messages, Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID})
-					result.Events = append(result.Events, "message_end:toolResult", "turn_end", "agent_end")
+					result.Events = append(result.Events, "message_end:toolResult", "turn_end", "agent_end", "agent_settled")
 					return result, ctx.Err()
 				}
 				content = "Tool error: " + err.Error()
