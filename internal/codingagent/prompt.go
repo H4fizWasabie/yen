@@ -127,7 +127,7 @@ func SkillsMessage(workspace string) (agent.Message, bool) {
 			if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") {
 				return filepath.SkipDir
 			}
-			if entry.IsDir() || entry.Name() != "SKILL.md" {
+			if !isDiscoverableSkillFile(path, entry) {
 				return nil
 			}
 			data, readErr := os.ReadFile(path)
@@ -155,6 +155,17 @@ func SkillsMessage(workspace string) (agent.Message, bool) {
 		content = string([]rune(content)[:8000]) + "\n</available_skills>"
 	}
 	return agent.Message{Role: "system", Content: content}, true
+}
+
+func isDiscoverableSkillFile(path string, entry os.DirEntry) bool {
+	if entry == nil || entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+		return false
+	}
+	if entry.Name() == "SKILL.md" {
+		return true
+	}
+	info, err := os.Stat(filepath.Join(filepath.Dir(path), "SKILL.md"))
+	return err != nil || !info.Mode().IsRegular()
 }
 
 func parseSkillFile(path, content string) (name, description string) {
@@ -212,7 +223,7 @@ func SkillCommands(workspace string) []map[string]any {
 			if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") {
 				return filepath.SkipDir
 			}
-			if entry.IsDir() || entry.Name() != "SKILL.md" {
+			if !isDiscoverableSkillFile(path, entry) {
 				return nil
 			}
 			data, readErr := os.ReadFile(path)

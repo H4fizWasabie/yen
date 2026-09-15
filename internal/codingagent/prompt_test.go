@@ -101,6 +101,28 @@ func TestSkillsMessageListsLazySkillFiles(t *testing.T) {
 	}
 }
 
+func TestSkillsDiscoverDirectMarkdownFiles(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, ".agents", "skills")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "release.md"), []byte("---\nname: release\ndescription: Ship carefully\n---\nBody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := SkillsMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "<name>release</name>") {
+		t.Fatalf("direct skill was not advertised: %#v", message)
+	}
+	commands := SkillCommands(workspace)
+	if len(commands) != 1 || commands[0]["name"] != "skill:release" {
+		t.Fatalf("direct skill command missing: %#v", commands)
+	}
+	if !strings.Contains(ExpandPrompt(workspace, "/skill:release"), `<skill name="release"`) {
+		t.Fatal("direct skill did not expand")
+	}
+}
+
 func TestSkillsUseParentDirectoryWhenNameIsOmitted(t *testing.T) {
 	workspace := t.TempDir()
 	root := filepath.Join(workspace, ".agents", "skills", "release")
