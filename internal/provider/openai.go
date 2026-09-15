@@ -3,8 +3,6 @@ package provider
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 )
@@ -508,8 +507,24 @@ func normalizeMistralToolID(id string) string {
 	if len(value) == 9 {
 		return value
 	}
-	digest := sha256.Sum256([]byte(id))
-	return hex.EncodeToString(digest[:])[:9]
+	seed := value
+	if seed == "" {
+		seed = id
+	}
+	return mistralShortHash(seed)[:9]
+}
+
+func mistralShortHash(value string) string {
+	var h1 uint32 = 0xdeadbeef
+	var h2 uint32 = 0x41c6ce57
+	for _, codeUnit := range utf16.Encode([]rune(value)) {
+		ch := uint32(codeUnit)
+		h1 = (h1 ^ ch) * 2654435761
+		h2 = (h2 ^ ch) * 1597334677
+	}
+	h1 = ((h1 ^ (h1 >> 16)) * 2246822507) ^ ((h2 ^ (h2 >> 13)) * 3266489909)
+	h2 = ((h2 ^ (h2 >> 16)) * 2246822507) ^ ((h1 ^ (h1 >> 13)) * 3266489909)
+	return strconv.FormatUint(uint64(h2), 36) + strconv.FormatUint(uint64(h1), 36)
 }
 
 func toolParameters(name string) map[string]any {
