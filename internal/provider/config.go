@@ -554,6 +554,19 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 		return client, nil
 	}
+	if providerID == "kimi-coding" {
+		if model == "" {
+			model = "kimi-for-coding"
+		}
+		key := os.Getenv(providerKeyEnvs[providerID])
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
+		client := NewAnthropicMessages(providerDefaults[providerID], key, model)
+		client.ProviderName = providerID
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client, nil
+	}
 	if providerID == "anthropic" {
 		if model == "" {
 			model = "claude-sonnet-4-20250514"
