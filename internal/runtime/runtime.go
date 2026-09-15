@@ -553,6 +553,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			if skillsMessage, ok := codingagent.SkillsMessage(turn.WorkspaceID); ok {
 				history = append([]agent.Message{skillsMessage}, history...)
 			}
+			if note := current.WorkingNote(); note != "" {
+				history = append([]agent.Message{codingagent.WorkingNoteMessage(note)}, history...)
+			}
 			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
 		}
 	}

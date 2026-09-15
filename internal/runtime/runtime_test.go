@@ -217,10 +217,14 @@ func (p *autoCompactionProvider) Next(_ context.Context, messages []agent.Messag
 	return agent.Response{Text: "continued", StopReason: "stop"}, nil
 }
 
-type overflowRecoveryProvider struct{ calls int }
+type overflowRecoveryProvider struct {
+	calls int
+	seen  [][]agent.Message
+}
 
-func (p *overflowRecoveryProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+func (p *overflowRecoveryProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
 	p.calls++
+	p.seen = append(p.seen, append([]agent.Message(nil), messages...))
 	switch p.calls {
 	case 1:
 		return agent.Response{}, errors.New("400 input exceeds the model's maximum context length of 128 tokens")
@@ -811,6 +815,9 @@ func TestRunnerRetriesOnceAfterOptInContextOverflow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := saved.AppendWorkingNote("keep this orientation"); err != nil {
+		t.Fatal(err)
+	}
 	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
 	if err != nil {
 		t.Fatal(err)
@@ -835,6 +842,9 @@ func TestRunnerRetriesOnceAfterOptInContextOverflow(t *testing.T) {
 	}
 	if !strings.Contains(reopened.ContextMessages()[0].Content.(string), "overflow summary") {
 		t.Fatalf("context=%#v", reopened.ContextMessages())
+	}
+	if len(provider.seen) != 3 || !strings.Contains(provider.seen[2][0].Content, "keep this orientation") {
+		t.Fatalf("retry context=%#v", provider.seen)
 	}
 }
 
