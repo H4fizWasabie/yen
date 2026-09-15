@@ -89,6 +89,8 @@ type Event struct {
 	Delta          string
 	StopReason     string
 	AssistantEvent string
+	ToolResults    []Message
+	Messages       []Message
 }
 
 type EventFunc func(Event)
@@ -172,8 +174,13 @@ func runFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 
 func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
 	result := Result{Messages: append([]Message(nil), history...), Events: []string{"agent_start"}}
+	emitEvent(onEvent, Event{Type: "agent_start"})
 	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt, Images: images})
 	result.Events = append(result.Events, "turn_start", "message_start:user", "message_end:user")
+	emitEvent(onEvent, Event{Type: "turn_start"})
+	userMessage := result.Messages[len(result.Messages)-1]
+	emitEvent(onEvent, Event{Type: "message_start", Message: &userMessage})
+	emitEvent(onEvent, Event{Type: "message_end", Message: &userMessage})
 
 	toolMap := make(map[string]Tool, len(tools))
 	toolNames := make([]string, 0, len(tools))
@@ -182,9 +189,16 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		toolNames = append(toolNames, tool.Name())
 	}
 
+	firstTurn := true
 	for {
-		appendQueuedMessages(&result, queues.drainSteering())
+		if firstTurn {
+			firstTurn = false
+		} else {
+			emitEvent(onEvent, Event{Type: "turn_start"})
+		}
+		appendQueuedMessages(&result, queues.drainSteering(), onEvent)
 		result.Events = append(result.Events, "message_start:assistant")
+		emitEvent(onEvent, Event{Type: "message_start", Message: &Message{Role: "assistant"}})
 		var response Response
 		var err error
 		if streaming, ok := provider.(StreamingProviderWithEvents); ok {
@@ -216,8 +230,13 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			if ctx.Err() != nil {
 				stopReason = "aborted"
 			}
-			result.Messages = append(result.Messages, Message{Role: "assistant", Content: err.Error(), StopReason: stopReason})
+			assistant := Message{Role: "assistant", Content: err.Error(), StopReason: stopReason}
+			result.Messages = append(result.Messages, assistant)
+			emitEvent(onEvent, Event{Type: "message_end", Message: &assistant, StopReason: stopReason})
 			result.Events = append(result.Events, "message_end:assistant:"+stopReason, "turn_end", "agent_end", "agent_settled")
+			emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, StopReason: stopReason})
+			emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 			return result, err
 		}
 		assistant := Message{Role: "assistant", Content: response.Text, Thinking: response.Thinking, ToolCalls: response.ToolCalls, StopReason: response.StopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
@@ -230,6 +249,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		} else {
 			result.Events = append(result.Events, "message_end:assistant")
 		}
+		emitEvent(onEvent, Event{Type: "message_end", Message: &assistant, StopReason: response.StopReason})
 
 		if len(response.ToolCalls) == 0 {
 			queued := queues.drainSteering()
@@ -237,23 +257,33 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				queued = queues.drainFollowUp()
 			}
 			if len(queued) > 0 {
-				appendQueuedMessages(&result, queued)
+				appendQueuedMessages(&result, queued, onEvent)
 				result.Events = append(result.Events, "turn_end", "turn_start")
+				emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant})
 				continue
 			}
 			result.FinalText = response.Text
 			result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
+			emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant})
+			emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 			return result, nil
 		}
 		if len(response.ToolCalls) > 1 && response.StopReason != "length" {
-			if err := runParallelToolCalls(ctx, &result, response.ToolCalls, toolMap, onEvent); err != nil {
+			toolResults, err := runParallelToolCalls(ctx, &result, response.ToolCalls, toolMap, onEvent)
+			if err != nil {
 				result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
+				emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
+				emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+				emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 				return result, err
 			}
 			result.Events = append(result.Events, "turn_end", "turn_start")
+			emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
 			continue
 		}
 
+		toolResults := make([]Message, 0, len(response.ToolCalls))
 		for _, call := range response.ToolCalls {
 			if onEvent != nil {
 				onEvent(Event{Type: "tool_call", ID: call.ID, Name: call.Name, Args: call.Args, Message: &assistant})
@@ -265,11 +295,14 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID, "message_start:toolResult")
 				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
 				result.Messages = append(result.Messages, toolMessage)
+				toolResults = append(toolResults, toolMessage)
+				emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
 				if onEvent != nil {
 					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
 					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
 				}
 				result.Events = append(result.Events, "message_end:toolResult")
+				emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
 				continue
 			}
 			tool, ok := toolMap[call.Name]
@@ -279,11 +312,14 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				content := (&UnknownToolError{Name: call.Name}).Error()
 				toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
 				result.Messages = append(result.Messages, toolMessage)
+				toolResults = append(toolResults, toolMessage)
+				emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
 				if onEvent != nil {
 					onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
 					onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: true, Message: &toolMessage})
 				}
 				result.Events = append(result.Events, "message_end:toolResult")
+				emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
 				continue
 			}
 			result.Events = append(result.Events, "tool_execution_start:"+call.ID)
@@ -294,11 +330,17 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 					result.Events = append(result.Events, "message_start:toolResult")
 					toolMessage := Message{Role: "tool", Content: "Operation aborted", ToolCallID: call.ID}
 					result.Messages = append(result.Messages, toolMessage)
+					toolResults = append(toolResults, toolMessage)
+					emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
 					if onEvent != nil {
 						onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true, Message: &toolMessage})
 						onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: "Operation aborted", IsError: true, Message: &toolMessage})
 					}
 					result.Events = append(result.Events, "message_end:toolResult", "turn_end", "agent_end", "agent_settled")
+					emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
+					emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: []Message{toolMessage}, StopReason: "aborted"})
+					emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+					emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 					return result, ctx.Err()
 				}
 				content = "Tool error: " + err.Error()
@@ -308,13 +350,17 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			result.Events = append(result.Events, "message_start:toolResult")
 			toolMessage := Message{Role: "tool", Content: content, ToolCallID: call.ID}
 			result.Messages = append(result.Messages, toolMessage)
+			toolResults = append(toolResults, toolMessage)
+			emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
 			if onEvent != nil {
 				onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage})
 				onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage})
 			}
 			result.Events = append(result.Events, "message_end:toolResult")
+			emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
 		}
 		result.Events = append(result.Events, "turn_end")
+		emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
 		result.Events = append(result.Events, "turn_start")
 	}
 }
@@ -325,7 +371,7 @@ type parallelToolResult struct {
 	err     error
 }
 
-func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc) error {
+func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc) ([]Message, error) {
 	outcomes := make([]parallelToolResult, len(calls))
 	var wait sync.WaitGroup
 	for i, call := range calls {
@@ -350,6 +396,7 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 	}
 	wait.Wait()
 	var canceled error
+	toolMessages := make([]Message, 0, len(outcomes))
 	for _, outcome := range outcomes {
 		content := outcome.content
 		isError := outcome.err != nil
@@ -364,16 +411,19 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
 		toolMessage := Message{Role: "tool", Content: content, ToolCallID: outcome.call.ID}
 		result.Messages = append(result.Messages, toolMessage)
+		toolMessages = append(toolMessages, toolMessage)
+		emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
 		if onEvent != nil {
 			onEvent(Event{Type: "tool_execution_end", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage})
 			onEvent(Event{Type: "tool_result", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage})
 		}
 		result.Events = append(result.Events, "message_end:toolResult")
+		emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
 	}
-	return canceled
+	return toolMessages, canceled
 }
 
-func appendQueuedMessages(result *Result, messages []Message) {
+func appendQueuedMessages(result *Result, messages []Message, onEvent EventFunc) {
 	for _, message := range messages {
 		role := message.Role
 		if role == "" {
@@ -381,6 +431,15 @@ func appendQueuedMessages(result *Result, messages []Message) {
 		}
 		result.Messages = append(result.Messages, message)
 		result.Events = append(result.Events, "message_start:"+role, "message_end:"+role)
+		queued := result.Messages[len(result.Messages)-1]
+		emitEvent(onEvent, Event{Type: "message_start", Message: &queued})
+		emitEvent(onEvent, Event{Type: "message_end", Message: &queued})
+	}
+}
+
+func emitEvent(onEvent EventFunc, event Event) {
+	if onEvent != nil {
+		onEvent(event)
 	}
 }
 
