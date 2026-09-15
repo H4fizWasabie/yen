@@ -45,3 +45,9 @@ func TestGenerateImageRichResultOmitsUndecodableImage(t *testing.T) {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 }
+
+func TestGeneratedImageRejectsOversizedInlinePayload(t *testing.T) {
+	if generatedImageIsDecodable(make([]byte, int(generatedImageMaxInlineBytes)), "image/webp") {
+		t.Fatal("oversized image accepted for inline attachment")
+	}
+}
