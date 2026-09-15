@@ -132,7 +132,8 @@ func TestOpenMigratesLegacyTypeScriptSessionToV3(t *testing.T) {
 	raw := strings.Join([]string{
 		`{"type":"session","id":"legacy","timestamp":"2026-01-01T00:00:00Z","cwd":"/workspace"}`,
 		`{"type":"message","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"old"}}`,
-		`{"type":"message","timestamp":"2026-01-01T00:00:02Z","message":{"role":"hookMessage","content":"note"}}`,
+		`{"type":"message","timestamp":"2026-01-01T00:00:02Z","message":{"role":"hookMessage","content":"note","provider":"legacy-provider","model":"legacy-model"}}`,
+		`{"type":"custom","timestamp":"2026-01-01T00:00:02Z","customType":"extension-state","data":{"enabled":true}}`,
 		`{"type":"compaction","timestamp":"2026-01-01T00:00:03Z","firstKeptEntryIndex":1,"summary":"older history","tokensBefore":9}`,
 		"",
 	}, "\n")
@@ -156,7 +157,7 @@ func TestOpenMigratesLegacyTypeScriptSessionToV3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"version":3`) || !strings.Contains(string(data), `"firstKeptEntryId"`) {
+	if !strings.Contains(string(data), `"version":3`) || !strings.Contains(string(data), `"firstKeptEntryId"`) || !strings.Contains(string(data), `"customType":"extension-state"`) || !strings.Contains(string(data), `"provider":"legacy-provider"`) || !strings.Contains(string(data), `"model":"legacy-model"`) {
 		t.Fatalf("session was not rewritten as v3: %s", data)
 	}
 	if strings.Contains(string(data), "firstKeptEntryIndex") || strings.Contains(string(data), "hookMessage") {

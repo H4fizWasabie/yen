@@ -82,6 +82,43 @@ type sessionEntry struct {
 	FirstKeptEntryIndex *int        `json:"firstKeptEntryIndex,omitempty"`
 	TokensBefore        int         `json:"tokensBefore,omitempty"`
 	Usage               *Usage      `json:"usage,omitempty"`
+	raw                 json.RawMessage
+}
+
+func (entry sessionEntry) MarshalJSON() ([]byte, error) {
+	if len(entry.raw) == 0 {
+		type plain sessionEntry
+		return json.Marshal(plain(entry))
+	}
+	var object map[string]any
+	if err := json.Unmarshal(entry.raw, &object); err != nil {
+		return nil, err
+	}
+	object["id"] = entry.ID
+	if entry.ParentID == nil {
+		object["parentId"] = nil
+	} else {
+		object["parentId"] = *entry.ParentID
+	}
+	if entry.Message != nil {
+		if message, ok := object["message"].(map[string]any); ok {
+			if entry.Message.Role == "custom" && message["role"] == "hookMessage" {
+				message["role"] = "custom"
+			}
+		} else {
+			object["message"] = entry.Message
+		}
+	}
+	if entry.Compaction != nil {
+		object["summary"] = entry.Compaction.Summary
+		object["firstKeptEntryId"] = entry.Compaction.FirstKeptEntryID
+		object["tokensBefore"] = entry.Compaction.TokensBefore
+		if entry.Compaction.Usage != nil {
+			object["usage"] = entry.Compaction.Usage
+		}
+		delete(object, "firstKeptEntryIndex")
+	}
+	return json.Marshal(object)
 }
 
 type sessionHeader struct {
@@ -148,6 +185,7 @@ func Open(path string) (*Session, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			continue
 		}
+		entry.raw = append(json.RawMessage(nil), scanner.Bytes()...)
 		s.entries = append(s.entries, entry)
 	}
 	if err := scanner.Err(); err != nil {
@@ -176,14 +214,12 @@ func migrateSession(s *Session) bool {
 		}
 		return false
 	}
-	ids := make(map[string]struct{}, len(s.entries))
 	var parent *string
 	for i := range s.entries {
 		entry := &s.entries[i]
 		if entry.ID == "" {
 			entry.ID = newEntryID(s.entries)
 		}
-		ids[entry.ID] = struct{}{}
 		entry.ParentID = parent
 		current := entry.ID
 		parent = &current

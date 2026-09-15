@@ -47,8 +47,9 @@ not use the newer checkout as an unqualified oracle.
   links, open, append, and restart continuation.
   Opening a pinned TypeScript v1/v2 JSONL session now migrates it in place to
   v3: IDs and parent links are assigned, `hookMessage` becomes `custom`, and
-  TypeScript flat compaction entries are read. Unknown/custom entry retention
-  and branch semantics remain open.
+  TypeScript flat compaction entries are read. Raw extension entries and
+  message metadata survive migration; branch semantics and malformed-line
+  recovery remain open.
   Assistant provider usage now round-trips through the session log.
   Compaction entries, active-context projection, and provider-backed
   `Runner.Compact` are supported. Set `THEOSES_AUTO_COMPACT_TURNS` to enable
