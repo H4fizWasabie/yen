@@ -136,6 +136,7 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 			Type    string `json:"type"`
 			Message struct {
 				ID    string `json:"id"`
+				Model string `json:"model"`
 				Usage struct {
 					InputTokens int `json:"input_tokens"`
 				} `json:"usage"`
@@ -163,6 +164,9 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		}
 		if eventName == "message_start" || event.Type == "message_start" {
 			result.ResponseID = event.Message.ID
+			if event.Message.Model != "" && event.Message.Model != p.Model {
+				result.ResponseModel = event.Message.Model
+			}
 			result.Usage.Input = event.Message.Usage.InputTokens
 		}
 		switch event.Type {
@@ -192,6 +196,7 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 				toolArgs[event.Index] += event.Delta.PartialJSON
 			}
 		case "message_delta":
+			result.RawStopReason = event.Delta.StopReason
 			result.StopReason = mapAnthropicStopReason(event.Delta.StopReason)
 			result.Usage.Output = event.Delta.OutputTokens
 		}
