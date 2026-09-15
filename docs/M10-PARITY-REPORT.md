@@ -58,6 +58,13 @@ Go evidence: `internal/provider/config.go` and
 passes. Model-specific Anthropic/Google/Responses catalog metadata remains
 open.
 
+Anthropic streaming now preserves cache-read and cache-creation input-token
+usage from `message_start`/`message_delta` events and computes total tokens.
+TypeScript authority: `packages/ai/src/api/anthropic-messages.ts:600-610,740-760`.
+Go evidence: `internal/provider/anthropic.go` and its streaming usage fixture in
+`internal/provider/anthropic_test.go`; the full 264-test race/vet/diff gate
+passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

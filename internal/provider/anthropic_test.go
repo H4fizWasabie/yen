@@ -19,7 +19,7 @@ func TestAnthropicMessagesStreamsTextAndThinking(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintln(w, "event: message_start")
-		fmt.Fprintln(w, `data: {"type":"message_start","message":{"id":"msg-1","model":"claude-served","usage":{"input_tokens":12}}}`)
+		fmt.Fprintln(w, `data: {"type":"message_start","message":{"id":"msg-1","model":"claude-served","usage":{"input_tokens":12,"cache_read_input_tokens":3,"cache_creation_input_tokens":5}}}`)
 		fmt.Fprintln(w, "event: content_block_delta")
 		fmt.Fprintln(w, `data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"plan"}}`)
 		fmt.Fprintln(w, `data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}`)
@@ -29,7 +29,7 @@ func TestAnthropicMessagesStreamsTextAndThinking(t *testing.T) {
 	provider := NewAnthropicMessages(server.URL, "anthropic-key", "claude-test")
 	var updates []string
 	result, err := provider.NextWithUpdates(context.Background(), []agent.Message{{Role: "user", Content: "hi"}}, nil, func(text string) { updates = append(updates, text) })
-	if err != nil || result.Text != "hello" || result.Thinking != "plan" || result.ResponseID != "msg-1" || result.ResponseModel != "claude-served" || result.RawStopReason != "end_turn" || result.StopReason != "stop" || strings.Join(updates, "") != "hello" {
+	if err != nil || result.Text != "hello" || result.Thinking != "plan" || result.ResponseID != "msg-1" || result.ResponseModel != "claude-served" || result.RawStopReason != "end_turn" || result.StopReason != "stop" || result.Usage.Input != 12 || result.Usage.Output != 4 || result.Usage.CacheRead != 3 || result.Usage.CacheWrite != 5 || result.Usage.TotalTokens != 24 || strings.Join(updates, "") != "hello" {
 		t.Fatalf("result=%#v updates=%#v err=%v", result, updates, err)
 	}
 }

@@ -139,7 +139,10 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 				ID    string `json:"id"`
 				Model string `json:"model"`
 				Usage struct {
-					InputTokens int `json:"input_tokens"`
+					InputTokens              int `json:"input_tokens"`
+					OutputTokens             int `json:"output_tokens"`
+					CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+					CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 				} `json:"usage"`
 			} `json:"message"`
 			Index        int `json:"index"`
@@ -157,7 +160,10 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 				OutputTokens int    `json:"output_tokens"`
 			} `json:"delta"`
 			Usage struct {
-				OutputTokens int `json:"output_tokens"`
+				InputTokens              int `json:"input_tokens"`
+				OutputTokens             int `json:"output_tokens"`
+				CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
@@ -169,6 +175,9 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 				result.ResponseModel = event.Message.Model
 			}
 			result.Usage.Input = event.Message.Usage.InputTokens
+			result.Usage.Output = event.Message.Usage.OutputTokens
+			result.Usage.CacheRead = event.Message.Usage.CacheReadInputTokens
+			result.Usage.CacheWrite = event.Message.Usage.CacheCreationInputTokens
 		}
 		switch event.Type {
 		case "content_block_start":
@@ -199,7 +208,21 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		case "message_delta":
 			result.RawStopReason = event.Delta.StopReason
 			result.StopReason = mapAnthropicStopReason(event.Delta.StopReason)
-			result.Usage.Output = event.Delta.OutputTokens
+			if event.Delta.OutputTokens != 0 {
+				result.Usage.Output = event.Delta.OutputTokens
+			}
+			if event.Usage.InputTokens != 0 {
+				result.Usage.Input = event.Usage.InputTokens
+			}
+			if event.Usage.OutputTokens != 0 {
+				result.Usage.Output = event.Usage.OutputTokens
+			}
+			if event.Usage.CacheReadInputTokens != 0 {
+				result.Usage.CacheRead = event.Usage.CacheReadInputTokens
+			}
+			if event.Usage.CacheCreationInputTokens != 0 {
+				result.Usage.CacheWrite = event.Usage.CacheCreationInputTokens
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -216,6 +239,7 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 	if len(result.ToolCalls) > 0 && result.StopReason == "" {
 		result.StopReason = "toolUse"
 	}
+	result.Usage.TotalTokens = result.Usage.Input + result.Usage.Output + result.Usage.CacheRead + result.Usage.CacheWrite
 	return result, nil
 }
 

@@ -521,6 +521,11 @@ larger than 6 KiB to a mode-600 temporary file, while preserving the path in
 the durable `bashExecution` record. Large-output coverage passes and the full
 gate is now 264 tests plus race/vet/diff.
 
+Anthropic streaming now preserves cache-read/cache-write input-token usage and
+computes total tokens from the stream, matching the oracle's message-start and
+message-delta handling. Focused provider coverage and the full 264-test
+race/vet/diff gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
