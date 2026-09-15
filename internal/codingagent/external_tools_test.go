@@ -45,6 +45,19 @@ func TestHTTPSidecarLoadsAndExecutesUntrustedTool(t *testing.T) {
 	}
 }
 
+func TestExternalCatalogRejectsMalformedToolEntries(t *testing.T) {
+	for _, value := range []any{
+		map[string]any{"tools": "not-a-list"},
+		[]any{map[string]any{"description": "missing name", "inputSchema": map[string]any{"type": "object"}}},
+		[]any{map[string]any{"name": "missing-schema"}},
+		[]any{map[string]any{"name": "array-schema", "inputSchema": []any{}}},
+	} {
+		if entries := parseExternalCatalog(value); entries != nil {
+			t.Fatalf("value=%#v entries=%#v", value, entries)
+		}
+	}
+}
+
 func TestMCPHTTPLoadsAndCallsTools(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request map[string]any

@@ -502,9 +502,39 @@ func parseExternalCatalog(value any) []externalCatalogEntry {
 	if object, ok := value.(map[string]any); ok {
 		value = object["tools"]
 	}
-	encoded, _ := json.Marshal(value)
-	var entries []externalCatalogEntry
-	_ = json.Unmarshal(encoded, &entries)
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	entries := make([]externalCatalogEntry, 0, len(items))
+	for _, item := range items {
+		object, ok := item.(map[string]any)
+		if !ok {
+			return nil
+		}
+		name, ok := object["name"].(string)
+		if !ok || name == "" {
+			return nil
+		}
+		schemaValue, ok := object["inputSchema"]
+		if !ok {
+			schemaValue, ok = object["schema"]
+		}
+		schema, ok := schemaValue.(map[string]any)
+		if !ok {
+			return nil
+		}
+		entry := externalCatalogEntry{Name: name}
+		if description, ok := object["description"].(string); ok {
+			entry.Description = description
+		}
+		if _, hasInputSchema := object["inputSchema"]; hasInputSchema {
+			entry.InputSchema = schema
+		} else {
+			entry.Schema = schema
+		}
+		entries = append(entries, entry)
+	}
 	return entries
 }
 
