@@ -27,6 +27,15 @@ deferred below.
 
 ## Accepted and deferred differences
 
+Artifact catalog projection now follows the oracle's live-branch rules: stale
+paths are omitted, repeated paths keep the newest entry, blank labels become
+`document`, and lines use the `label (size bytes): path` shape. TypeScript
+authority:
+`packages/coding-agent/src/core/session-manager.ts:1237-1260`; Go evidence:
+`internal/session/session.go` and
+`TestArtifactCatalogUsesLiveNewestUniquePaths`. The focused test and full
+369-test race/vet/diff gates pass.
+
 The Go `convert_doc` tool now preserves non-empty `markitdown` stderr when the
 conversion command fails, matching the oracle's `execFile` error propagation.
 TypeScript authority: `packages/coding-agent/src/core/tools/convert-doc.ts:18-35`;
