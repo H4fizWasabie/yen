@@ -249,6 +249,11 @@ The `ls` limit now applies after the oracle's case-insensitive sort, so limiting
 a directory does not change which first entry is returned. Go evidence:
 `internal/tools/fs_tools.go` and `TestListToolSortsBeforeApplyingLimit`.
 
+The `grep` match limit now emits the oracle's refinement hint when it stops
+collecting matches. TypeScript authority:
+`packages/coding-agent/src/core/tools/grep.ts:348-375`; Go evidence:
+`internal/tools/fs_tools.go` and `TestGrepToolReportsMatchLimit`.
+
 OpenAI-compatible Z.AI providers now use the oracle's native reasoning wire
 fields: enabled `thinking` with `clear_thinking: false` and `tool_stream: true`,
 instead of the generic `reasoning.effort` field. TypeScript authority:
