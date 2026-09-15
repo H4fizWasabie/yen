@@ -67,11 +67,27 @@ func (b *TelegramBot) Run(ctx context.Context) error {
 			if update.UpdateID >= b.Offset {
 				b.Offset = update.UpdateID + 1
 			}
-			if err := b.HandleUpdate(ctx, update); err != nil {
-				return err
-			}
+		}
+		if err := b.handleUpdates(ctx, updates); err != nil {
+			return err
 		}
 	}
+}
+
+func (b *TelegramBot) handleUpdates(ctx context.Context, updates []telegramUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	errs := make(chan error, len(updates))
+	for _, update := range updates {
+		go func(update telegramUpdate) { errs <- b.HandleUpdate(ctx, update) }(update)
+	}
+	for range updates {
+		if err := <-errs; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) error {

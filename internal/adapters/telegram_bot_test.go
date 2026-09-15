@@ -384,6 +384,42 @@ func TestTelegramBotPollsUpdatesAdvancesOffsetAndStops(t *testing.T) {
 	}
 }
 
+func TestTelegramBotHandlesPollBatchConcurrently(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, provider{}, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	var sends atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/sendMessage" || r.URL.Path == "/bottoken/sendRichMessage" {
+			sends.Add(1)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	updates := []telegramUpdate{
+		{Message: &telegramMessage{Text: "first"}},
+		{Message: &telegramMessage{Text: "second"}},
+	}
+	for i := range updates {
+		updates[i].Message.Chat.ID = 42
+	}
+	if err := bot.handleUpdates(context.Background(), updates); err != nil {
+		t.Fatal(err)
+	}
+	if sends.Load() != 2 {
+		t.Fatalf("sent=%d, want 2", sends.Load())
+	}
+}
+
 func TestTelegramBotStopConfirmsCancellation(t *testing.T) {
 	dir := t.TempDir()
 	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
