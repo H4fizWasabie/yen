@@ -64,6 +64,8 @@ not use the newer checkout as an unqualified oracle.
   adapter seams sharing the canonical registry, runner, and memory engine.
   Dashboard API authentication now supports the TypeScript-compatible Bearer
   and cookie login boundary when `THEOSES_DASHBOARD_TOKEN` is configured.
+  Telegram replies now split at the Bot API text limit without breaking
+  Unicode runes.
 - `cmd/theoses-dashboard`: local dashboard process with `/healthz`; a local
   start/readiness check has passed on `127.0.0.1:18789`.
 - `cmd/theoses-telegram`: standard-library Bot API polling process with an
