@@ -4,7 +4,7 @@ import "testing"
 
 func TestNewToolsMatchesCodingToolCore(t *testing.T) {
 	got := NewTools(t.TempDir())
-	want := []string{"read", "bash", "powershell", "edit", "write", "grep", "find", "ls", "convert_doc", "web_search"}
+	want := []string{"read", "bash", "powershell", "edit", "write", "grep", "find", "ls", "convert_doc", "web_search", "generate_image"}
 	if len(got) != len(want) {
 		t.Fatalf("tool count=%d, want %d", len(got), len(want))
 	}

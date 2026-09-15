@@ -31,6 +31,7 @@ func newTools(workspace string, current *session.Session) []agent.Tool {
 		tools.NewListTool(workspace),
 		convertDocTool{cwd: workspace},
 		NewWebSearchTool(),
+		generateImageTool{client: nil},
 	}
 	if current != nil {
 		result[1] = newSessionBashTool(workspace, current)
