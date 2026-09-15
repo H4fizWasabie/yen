@@ -87,6 +87,13 @@ prompt commands. TypeScript authority:
 `internal/codingagent/prompt_templates.go`, `internal/runtime/runtime.go`,
 and focused template/RPC tests; the full 267-test race/vet/diff gate passes.
 
+Skill commands now expand `/skill:name args` into the oracle-compatible XML
+skill block with relative-reference guidance and trailing arguments before the
+agent call. TypeScript authority:
+`packages/coding-agent/src/core/agent-session.ts:1395-1419`; Go evidence:
+`internal/codingagent/prompt_templates.go`, `internal/runtime/runtime.go`, and
+focused expansion tests; the full 268-test race/vet/diff gate passes.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

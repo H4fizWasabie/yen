@@ -540,6 +540,10 @@ Prompt templates now load from project/global/configured directories, expand
 source metadata. Focused expansion/discovery tests and the full 267-test
 race/vet/diff gate pass.
 
+Skill commands now expand `/skill:name args` into an XML skill block with the
+skill body, location, relative-reference guidance, and trailing arguments.
+Focused expansion coverage and the full 268-test race/vet/diff gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

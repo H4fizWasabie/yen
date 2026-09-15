@@ -3,6 +3,7 @@ package codingagent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,5 +36,21 @@ func TestExpandPromptLeavesUnknownAndNonPromptTextUntouched(t *testing.T) {
 	}
 	if got := ExpandPrompt(workspace, "/missing value"); got != "/missing value" {
 		t.Fatalf("unknown=%q", got)
+	}
+}
+
+func TestSkillPromptExpansionLoadsBodyAndArguments(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, ".agents", "skills", "release")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "SKILL.md")
+	if err := os.WriteFile(path, []byte("---\nname: release\ndescription: Release safely\n---\nRun the release checks."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := ExpandPrompt(workspace, "/skill:release v1.2")
+	if !strings.Contains(got, `<skill name="release"`) || !strings.Contains(got, "References are relative to "+root) || !strings.Contains(got, "Run the release checks.") || !strings.HasSuffix(got, "\n\nv1.2") {
+		t.Fatalf("expanded=%q", got)
 	}
 }

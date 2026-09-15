@@ -98,6 +98,25 @@ func ExpandPrompt(workspace, text string) string {
 	if !strings.HasPrefix(text, "/") {
 		return text
 	}
+	if strings.HasPrefix(text, "/skill:") {
+		value := strings.TrimPrefix(text, "/skill:")
+		name, args := value, ""
+		if index := strings.IndexByte(value, ' '); index >= 0 {
+			name, args = value[:index], strings.TrimSpace(value[index+1:])
+		}
+		if path := findSkillPath(workspace, name); path != "" {
+			if raw, err := os.ReadFile(path); err == nil {
+				body := stripPromptFrontmatter(string(raw))
+				block := `<skill name="` + xmlEscape(name) + `" location="` + xmlEscape(path) + `">` +
+					"\nReferences are relative to " + xmlEscape(filepath.Dir(path)) + ".\n\n" + body + "\n</skill>"
+				if args != "" {
+					block += "\n\n" + args
+				}
+				return block
+			}
+		}
+		return text
+	}
 	fields := strings.Fields(text[1:])
 	if len(fields) == 0 {
 		return text
@@ -108,6 +127,53 @@ func ExpandPrompt(workspace, text string) string {
 		}
 	}
 	return text
+}
+
+func findSkillPath(workspace, name string) string {
+	if name == "" {
+		return ""
+	}
+	workspace, _ = filepath.Abs(workspace)
+	paths := []string{filepath.Join(workspace, ".theoses", "skills"), filepath.Join(workspace, ".agents", "skills")}
+	if dir := os.Getenv("YEN_SKILLS_DIR"); dir != "" {
+		paths = append(paths, dir)
+	}
+	for _, root := range paths {
+		var found string
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry == nil || found != "" {
+				return nil
+			}
+			if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			if !entry.IsDir() && entry.Name() == "SKILL.md" {
+				data, readErr := os.ReadFile(path)
+				if readErr == nil {
+					declared, description := parseSkillFrontmatter(string(data))
+					if declared == name && description != "" {
+						found = path
+					}
+				}
+			}
+			return nil
+		})
+		if found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
+func stripPromptFrontmatter(raw string) string {
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	if !strings.HasPrefix(raw, "---\n") {
+		return strings.TrimSpace(raw)
+	}
+	if end := strings.Index(raw[4:], "\n---"); end >= 0 {
+		return strings.TrimSpace(raw[end+8:])
+	}
+	return strings.TrimSpace(raw)
 }
 
 func PromptCommands(workspace string) []map[string]any {
