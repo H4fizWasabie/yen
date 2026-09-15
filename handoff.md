@@ -471,6 +471,10 @@ constructed, matching the TypeScript tool-definition boundary while retaining
 legacy test construction that leaves keys unset. Fallback and snapshot tests
 pass; the full gate is now 257 tests plus race/vet/diff.
 
+Context discovery now includes the oracle's `AGENTS.MD` and `CLAUDE.md`
+resource names in addition to Yen's existing guidance files. The focused
+resource test and full 258-test gate pass.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

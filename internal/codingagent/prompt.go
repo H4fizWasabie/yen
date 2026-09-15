@@ -45,7 +45,7 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 	}
 	var sections []string
 	for i := len(dirs) - 1; i >= 0; i-- {
-		for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "CONTEXT.md"} {
+		for _, name := range []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CONTEXT.md"} {
 			path := filepath.Join(dirs[i], name)
 			data, err := os.ReadFile(path)
 			if err != nil || len(data) == 0 {

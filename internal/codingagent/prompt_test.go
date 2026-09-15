@@ -39,6 +39,20 @@ func TestContextMessageLoadsAncestorGuidanceInOrder(t *testing.T) {
 	}
 }
 
+func TestContextMessageLoadsClaudeAndUppercaseAgentsNames(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.MD"), []byte("uppercase guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "CLAUDE.md"), []byte("claude guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := ContextMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "uppercase guidance") || !strings.Contains(message.Content, "claude guidance") {
+		t.Fatalf("message=%#v", message)
+	}
+}
+
 func TestSkillsMessageListsLazySkillFiles(t *testing.T) {
 	workspace := t.TempDir()
 	root := filepath.Join(workspace, ".agents", "skills", "release")
