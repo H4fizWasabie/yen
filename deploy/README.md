@@ -13,7 +13,8 @@ It does not stop, modify, or replace any `theoses2-*` unit. It defaults to
 Required root environment files:
 
 - `YEN_CHANNEL_ENV_FILE` — Telegram chat/token, canonical conversation ID, and
-  optional dashboard/compaction settings. Defaults to
+  optional dashboard/compaction settings, including
+  `THEOSES_AUTO_COMPACT_TURNS` and `THEOSES_AUTO_COMPACT_OVERFLOW`. Defaults to
   `/etc/theoses-go/telegram.env`.
 - `YEN_PROVIDER_ENV_FILE` — provider credentials and optional model/base URL.
   Defaults to the existing provider environment file used by the pilot.

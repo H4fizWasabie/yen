@@ -49,7 +49,9 @@ not use the newer checkout as an unqualified oracle.
   Compaction entries, active-context projection, and provider-backed
   `Runner.Compact` are supported. Set `THEOSES_AUTO_COMPACT_TURNS` to enable
   the pre-prompt automatic threshold for a deployment; overflow retry and
-  full TypeScript compaction settings remain deferred.
+  `THEOSES_AUTO_COMPACT_OVERFLOW=1` to enable one bounded overflow
+  compact-and-retry attempt. Full TypeScript compaction settings remain
+  deferred.
 - `internal/agent`: tool-turn loop and normalized event collection.
 - `internal/provider`: one OpenAI-compatible SSE client with fragmented tool
   call argument assembly.
