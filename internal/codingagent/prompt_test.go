@@ -48,7 +48,21 @@ func TestContextMessageLoadsClaudeAndUppercaseAgentsNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	message, ok := ContextMessage(workspace)
-	if !ok || !strings.Contains(message.Content, "uppercase guidance") || !strings.Contains(message.Content, "claude guidance") {
+	if !ok || !strings.Contains(message.Content, "uppercase guidance") || strings.Contains(message.Content, "claude guidance") {
+		t.Fatalf("message=%#v", message)
+	}
+}
+
+func TestContextMessageUsesOnlyHighestPriorityContextFilePerDirectory(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("preferred guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "CLAUDE.md"), []byte("lower priority guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := ContextMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "preferred guidance") || strings.Contains(message.Content, "lower priority guidance") {
 		t.Fatalf("message=%#v", message)
 	}
 }
@@ -57,7 +71,7 @@ func TestContextMessageLoadsConfiguredAgentPersonaFirst(t *testing.T) {
 	workspace := t.TempDir()
 	agentDir := t.TempDir()
 	t.Setenv("YEN_AGENT_DIR", agentDir)
-	if err := os.WriteFile(filepath.Join(agentDir, "THEOSES.md"), []byte("global persona"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(agentDir, "YEN.md"), []byte("global persona"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("project guidance"), 0o600); err != nil {
