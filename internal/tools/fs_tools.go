@@ -130,7 +130,8 @@ func (t GrepTool) Execute(ctx context.Context, args map[string]any) (string, err
 		if e := ctx.Err(); e != nil { return e }
 		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules") { return filepath.SkipDir }
 		if entry.IsDir() { return nil }
-		rel, err := filepath.Rel(root, path); if err != nil { return err }; rel = filepath.ToSlash(rel)
+	rel, err := filepath.Rel(root, path); if err != nil { return err }; rel = filepath.ToSlash(rel)
+	if gitIgnored(ctx, root, rel) { return nil }
 	if glob != "" && !matchFindPattern(glob, rel) { return nil }
 		data, err := os.ReadFile(path); if err != nil { return nil }
 		lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")

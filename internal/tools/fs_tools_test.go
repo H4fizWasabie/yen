@@ -104,7 +104,7 @@ func TestFindToolRespectsGitignore(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(fullPath, nil, 0o600); err != nil {
+		if err := os.WriteFile(fullPath, []byte("needle\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -112,6 +112,11 @@ func TestFindToolRespectsGitignore(t *testing.T) {
 	got, err := NewFindTool(dir).Execute(context.Background(), map[string]any{"pattern": "**/*"})
 	if err != nil || got != ".gitignore\nvisible.txt" {
 		t.Fatalf("find=%q err=%v", got, err)
+	}
+
+	got, err = NewGrepTool(dir).Execute(context.Background(), map[string]any{"pattern": "needle"})
+	if err != nil || !strings.Contains(got, "visible.txt:1: needle") || strings.Contains(got, "hidden.txt") || strings.Contains(got, "private.secret") {
+		t.Fatalf("grep=%q err=%v", got, err)
 	}
 }
 
