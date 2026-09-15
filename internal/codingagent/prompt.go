@@ -25,20 +25,26 @@ func WorkingNoteMessage(note string) agent.Message {
 
 const contextPromptPrefix = "<project_context>\nThe following project guidance was loaded from context files; follow it unless current evidence requires otherwise.\n"
 
+func stripUTF8BOM(content string) string { return strings.TrimPrefix(content, "\ufeff") }
+
 var contextFileNames = []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD", "CONTEXT.md"}
 
 func appendContextFiles(sections []string, dir string) []string {
 	for _, name := range contextFileNames {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
-		if err == nil && strings.TrimSpace(string(data)) != "" {
-			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+		content := stripUTF8BOM(string(data))
+		if err == nil && strings.TrimSpace(content) != "" {
+			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
 			break
 		}
 	}
 	path := filepath.Join(dir, "YEN.md")
-	if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
-		sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+	if data, err := os.ReadFile(path); err == nil {
+		content := stripUTF8BOM(string(data))
+		if strings.TrimSpace(content) != "" {
+			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
+		}
 	}
 	return sections
 }
@@ -74,8 +80,9 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 			path = filepath.Join(workspace, path)
 		}
 		data, readErr := os.ReadFile(path)
-		if readErr == nil && strings.TrimSpace(string(data)) != "" {
-			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(string(data)))
+		content := stripUTF8BOM(string(data))
+		if readErr == nil && strings.TrimSpace(content) != "" {
+			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
 		}
 	}
 	if len(sections) == 0 {
@@ -177,6 +184,7 @@ func parseSkillFile(path, content string) (name, description string) {
 }
 
 func skillDisablesModelInvocation(content string) bool {
+	content = stripUTF8BOM(content)
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
 		return false
@@ -244,6 +252,7 @@ func SkillCommands(workspace string) []map[string]any {
 }
 
 func parseSkillFrontmatter(content string) (string, string) {
+	content = stripUTF8BOM(content)
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
 		return "", ""

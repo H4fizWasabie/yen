@@ -53,6 +53,18 @@ func TestContextMessageLoadsClaudeAndUppercaseAgentsNames(t *testing.T) {
 	}
 }
 
+func TestContextMessageStripsUTF8BOM(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("\ufeffbom guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	message, ok := ContextMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "bom guidance") || strings.Contains(message.Content, "\ufeff") {
+		t.Fatalf("message=%q", message.Content)
+	}
+}
+
 func TestContextMessageUsesOnlyHighestPriorityContextFilePerDirectory(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("preferred guidance"), 0o600); err != nil {
@@ -120,6 +132,22 @@ func TestSkillsDiscoverDirectMarkdownFiles(t *testing.T) {
 	}
 	if !strings.Contains(ExpandPrompt(workspace, "/skill:release"), `<skill name="release"`) {
 		t.Fatal("direct skill did not expand")
+	}
+}
+
+func TestSkillsMessageStripsUTF8BOM(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, ".agents", "skills", "release")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("\ufeff---\nname: release\ndescription: Ship carefully\n---\nBody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	message, ok := SkillsMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "<name>release</name>") {
+		t.Fatalf("message=%q", message.Content)
 	}
 }
 

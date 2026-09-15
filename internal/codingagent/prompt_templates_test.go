@@ -29,6 +29,21 @@ func TestPromptTemplateExpansionAndDiscovery(t *testing.T) {
 	}
 }
 
+func TestPromptTemplateExpansionStripsUTF8BOM(t *testing.T) {
+	workspace := t.TempDir()
+	dir := filepath.Join(workspace, ".theoses", "prompts")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "review.md"), []byte("\ufeff---\ndescription: Review\n---\nReview this."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ExpandPrompt(workspace, "/review"); got != "Review this." {
+		t.Fatalf("expanded=%q", got)
+	}
+}
+
 func TestExpandPromptLeavesUnknownAndNonPromptTextUntouched(t *testing.T) {
 	workspace := t.TempDir()
 	if got := ExpandPrompt(workspace, "hello"); got != "hello" {

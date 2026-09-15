@@ -318,6 +318,11 @@ compatibility data under `packages/ai/src/providers/data/zai.json`. Go evidence:
 the full gate now passes 307 tests, race, vet, and diff checks. Other
 model-specific OpenAI-compatible thinking formats remain open.
 
+Context, skill, and prompt-template loaders now strip a UTF-8 BOM before
+parsing or displaying resource content, matching the oracle's `stripBom`
+boundary. Go evidence: `internal/codingagent/prompt.go`,
+`internal/codingagent/prompt_templates.go`, and the BOM regression tests.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 
