@@ -39,6 +39,16 @@ the full command, output, exit code, cancellation, truncation, and
 `internal/codingagent/working_note_test.go`. The full 261-test race/vet/diff
 gate passes.
 
+Provider configuration now recognizes the oracle's OpenCode Zen and OpenCode
+Go provider IDs and their dedicated `OPENCODE_API_KEY` environment boundary,
+using the pinned OpenAI-compatible endpoints. TypeScript authority:
+`packages/ai/src/providers/opencode.ts`,
+`packages/ai/src/providers/opencode-go.ts`, and their generated model catalogs.
+Go evidence: `internal/provider/config.go` and
+`internal/provider/config_test.go`; the full 263-test race/vet/diff gate
+passes. Model-specific Anthropic/Google/Responses catalog metadata remains
+open.
+
 Since the original pilot report, these open surfaces now have working Go
 implementations and committed tests:
 

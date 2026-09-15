@@ -63,6 +63,8 @@ func TestNewConfiguredSupportsPinnedOpenAICompatibleProviders(t *testing.T) {
 		{"kimi-coding", "YEN_KIMI_API_KEY"},
 		{"moonshotai-cn", "YEN_MOONSHOT_API_KEY"},
 		{"nvidia", "YEN_NVIDIA_API_KEY"},
+		{"opencode", "YEN_OPENCODE_API_KEY"},
+		{"opencode-go", "YEN_OPENCODE_API_KEY"},
 		{"qwen-token-plan", "YEN_QWEN_TOKEN_PLAN_API_KEY"},
 		{"qwen-token-plan-cn", "YEN_QWEN_TOKEN_PLAN_CN_API_KEY"},
 		{"together", "YEN_TOGETHER_API_KEY"},

@@ -510,6 +510,12 @@ The implementation is in `internal/tools/bash.go`,
 success/failure coverage is in `internal/codingagent/working_note_test.go`.
 The full test, race, vet, and diff gates pass (261 tests).
 
+Provider configuration also now recognizes the oracle's `opencode` and
+`opencode-go` IDs with Yen-owned `YEN_OPENCODE_API_KEY` credentials and their
+pinned OpenAI-compatible endpoints. Focused provider tests and the full gate
+pass (263 tests). The model-specific API/catalog metadata is still not claimed
+as complete parity.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
