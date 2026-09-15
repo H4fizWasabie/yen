@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -101,6 +102,23 @@ func TestDashboardHistoryIncludesMessageImages(t *testing.T) {
 	toolSegments := history[1]["segments"].([]map[string]any)
 	if userSegments[1]["type"] != "image" || toolSegments[2]["type"] != "image" {
 		t.Fatalf("history=%#v", history)
+	}
+}
+
+func TestDashboardHistoryIncludesAssistantThinking(t *testing.T) {
+	history := dashboardHistory([]session.Message{{Role: "assistant", Content: []session.ContentPart{
+		{Type: "thinking", Text: "plan first"},
+		{Type: "text", Text: "answer"},
+	}}})
+	segments := history[0]["segments"].([]map[string]any)
+	if len(segments) != 2 || segments[0]["type"] != "thinking" || segments[0]["text"] != "plan first" {
+		t.Fatalf("history=%#v", history)
+	}
+}
+
+func TestDashboardShellRendersThinkingSegments(t *testing.T) {
+	if !strings.Contains(dashboardHTML, "s.type==='thinking'") {
+		t.Fatal("dashboard shell does not render thinking segments")
 	}
 }
 
