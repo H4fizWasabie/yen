@@ -121,18 +121,19 @@ func TestEngineConsolidateRejectsInvalidResultWithoutCheckpoint(t *testing.T) {
 	}
 }
 
-func TestEngineConsolidateRequiresEpisodeTimestamps(t *testing.T) {
+func TestEngineConsolidateDefaultsMissingEpisodeTimestamps(t *testing.T) {
 	engine, err := OpenEngine(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer engine.Close()
 	err = engine.Consolidate(context.Background(), consolidationProvider{text: `{"episode":{"summary":"missing times"}}`}, "turn-time", "conv-time", "work", "cli", []ConsolidationTurn{{Role: "user", Content: "hello"}})
-	if err == nil || !strings.Contains(err.Error(), "timestamps are required") {
-		t.Fatalf("err=%v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := engine.Checkpoints.Get("conv-time").LastEntryID; got != "" {
-		t.Fatalf("checkpoint advanced to %q", got)
+	episodes, err := engine.Episodic.Recent("conv-time", 1)
+	if err != nil || len(episodes) != 1 || episodes[0].StartedAt == "" || episodes[0].EndedAt == "" {
+		t.Fatalf("episodes=%#v err=%v", episodes, err)
 	}
 }
 
@@ -141,7 +142,7 @@ func TestParseConsolidationResponseFiltersMalformedMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed.Facts) != 1 || parsed.Facts[0].ID != "f1" {
+	if len(parsed.Facts) != 2 || parsed.Facts[0].ID != "f1" || parsed.Facts[1].Subject != "missing id" {
 		t.Fatalf("facts=%#v", parsed.Facts)
 	}
 	if len(parsed.Edges) != 1 || parsed.Edges[0].Rel != "prefers" {
