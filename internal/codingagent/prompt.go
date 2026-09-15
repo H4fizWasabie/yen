@@ -23,6 +23,10 @@ func WorkingNoteMessage(note string) agent.Message {
 	}
 }
 
+func ArtifactCatalogMessage(catalog string) agent.Message {
+	return agent.Message{Role: "system", Content: "<document_artifacts>\n" + strings.TrimSpace(catalog) + "\nUse convert_doc on a document path when you need its contents.\n</document_artifacts>"}
+}
+
 const contextPromptPrefix = "<project_context>\nThe following project guidance was loaded from context files; follow it unless current evidence requires otherwise.\n"
 
 func stripUTF8BOM(content string) string { return strings.TrimPrefix(content, "\ufeff") }

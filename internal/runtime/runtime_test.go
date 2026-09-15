@@ -193,6 +193,32 @@ func TestRunnerInjectsPersistedWorkingNoteIntoProviderContext(t *testing.T) {
 	}
 }
 
+func TestRunnerInjectsArtifactCatalogIntoProviderContext(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "conv-artifact.jsonl")
+	s := session.New(path, session.Header{ID: "conv-artifact", ConversationID: "conv-artifact", WorkspaceID: dir, CWD: dir})
+	if _, err := s.StoreArtifact("source document", "source.md", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	provider := &contextCaptureProvider{}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(conversation.Turn) string { return path }
+	link := conversation.Link{Adapter: "cli", AdapterKey: "cwd", ConversationID: "conv-artifact", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "use the document"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunNext(context.Background(), link.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.messages) == 0 || !strings.Contains(provider.messages[0].Content, "<document_artifacts>") || !strings.Contains(provider.messages[0].Content, "source document") {
+		t.Fatalf("messages=%#v", provider.messages)
+	}
+}
+
 type summaryProvider struct {
 	response agent.Response
 	seen     []agent.Message
