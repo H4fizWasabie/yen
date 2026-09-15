@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -69,6 +70,23 @@ func TestDashboardHTTPRequiresAndAcceptsBearerToken(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("authorized status=%d", response.StatusCode)
+	}
+}
+
+func TestDashboardSessionsSortsMostRecentlyModifiedFirst(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "links.jsonl")
+	if err := os.WriteFile(path, []byte(
+		`{"adapter":"telegram","adapterKey":"old","conversationId":"conv-old","createdAt":"2026-01-01T00:00:00Z"}`+"\n"+
+			`{"adapter":"dashboard","adapterKey":"new","conversationId":"conv-new","createdAt":"2026-01-02T00:00:00Z"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := conversation.OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := dashboardSessions(registry, nil)
+	if len(sessions) != 2 || sessions[0]["id"] != "conv-new" || sessions[1]["id"] != "conv-old" {
+		t.Fatalf("sessions=%#v", sessions)
 	}
 }
 

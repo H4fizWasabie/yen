@@ -244,6 +244,7 @@ Its composer now consumes the existing SSE endpoint for incremental text and
 tool progress before refreshing the persisted session.
 Session-list metadata now reads the actual shared JSONL session for message
 count and last-entry timestamp instead of placeholder values.
+Visible dashboard sessions are sorted newest-first like the TypeScript dashboard.
 Consolidation timestamped messages now follow the active parent-linked branch,
 excluding inactive sibling entries.
 When the configured provider supports it, consolidation also requests the

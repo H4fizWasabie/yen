@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -77,6 +78,9 @@ func dashboardSessions(registry *conversation.Registry, runner *runtime.Runner) 
 			"modified": modified, "messageCount": messageCount, "path": "",
 		})
 	}
+	sort.SliceStable(sessions, func(i, j int) bool {
+		return sessions[i]["modified"].(string) > sessions[j]["modified"].(string)
+	})
 	return sessions
 }
 
