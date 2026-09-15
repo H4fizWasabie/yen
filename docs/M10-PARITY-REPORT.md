@@ -29,6 +29,12 @@ deferred below.
 
 ## Checkpoint update: 2026-09-15
 
+Bedrock image conversion now accepts the oracle-supported GIF and WEBP data
+formats in addition to PNG and JPEG/JPG, using the AWS SDK's native enum
+values. TypeScript authority:
+`packages/ai/src/api/bedrock-converse-stream.ts:1270-1285`; Go evidence:
+`TestBedrockInputAcceptsGIFAndWEBPImages`.
+
 Bedrock image conversion now maps the oracle-supported `image/jpg` MIME alias
 to the AWS JPEG format, matching
 `packages/ai/src/api/bedrock-converse-stream.ts:1270-1278`. Go evidence:

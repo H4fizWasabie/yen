@@ -104,7 +104,7 @@ func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
 
 func TestBedrockInputRejectsUnsupportedOrInvalidImages(t *testing.T) {
 	for _, image := range []string{
-		"data:image/gif;base64,AQ==",
+		"data:image/bmp;base64,AQ==",
 		"data:image/png;base64,not-base64",
 		"not-an-image",
 	} {
@@ -112,6 +112,27 @@ func TestBedrockInputRejectsUnsupportedOrInvalidImages(t *testing.T) {
 			_, err := bedrockInput([]agent.Message{{Role: "user", Content: "look", Images: []string{image}}}, nil, "model-1")
 			if err == nil {
 				t.Fatalf("bedrockInput accepted invalid image %q", image)
+			}
+		})
+	}
+}
+
+func TestBedrockInputAcceptsGIFAndWEBPImages(t *testing.T) {
+	for _, image := range []string{"data:image/gif;base64,AQ==", "data:image/webp;base64,Ag=="} {
+		t.Run(image, func(t *testing.T) {
+			input, err := bedrockInput([]agent.Message{{Role: "user", Content: "look", Images: []string{image}}}, nil, "model-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			block, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberImage)
+			if !ok {
+				t.Fatalf("image block=%#v", input.Messages[0].Content)
+			}
+			if image == "data:image/gif;base64,AQ==" && block.Value.Format != bedrocktypes.ImageFormatGif {
+				t.Fatalf("format=%q, want gif", block.Value.Format)
+			}
+			if image == "data:image/webp;base64,Ag==" && block.Value.Format != bedrocktypes.ImageFormatWebp {
+				t.Fatalf("format=%q, want webp", block.Value.Format)
 			}
 		})
 	}
