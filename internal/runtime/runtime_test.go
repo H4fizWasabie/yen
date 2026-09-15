@@ -435,6 +435,57 @@ func TestRunnerCompactsSessionWithProviderSummary(t *testing.T) {
 	}
 }
 
+type distillationCompactionProvider struct{}
+
+func (distillationCompactionProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	if len(messages) > 0 && strings.Contains(messages[0].Content, "Extract durable memory") {
+		return agent.Response{Text: `[{"fact":"compaction preference","confidence":0.95},{"episode":"Compaction captured memory"}]`, StopReason: "stop"}, nil
+	}
+	return agent.Response{Text: "compaction summary", StopReason: "stop"}, nil
+}
+
+func TestRunnerCompactionDistillsDroppedMemoryWithoutBlocking(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-distill.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-distill", ConversationID: "conv-distill", CWD: dir})
+	for _, message := range []session.Message{{Role: "user", Content: "old preference"}, {Role: "assistant", Content: "old reply"}, {Role: "user", Content: "keep"}, {Role: "assistant", Content: "keep reply"}} {
+		if _, err := saved.Append(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine, err := memory.OpenEngine(filepath.Join(dir, "memory"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := New(queue, distillationCompactionProvider{}, nil)
+	runner.Memory = engine
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	if err := runner.Compact(context.Background(), "conv-distill", 1); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		hits, err := engine.Remember("compaction preference", memory.Context{ConversationID: "conv-distill"})
+		if err == nil {
+			foundFact, foundEpisode := false, false
+			for _, hit := range hits {
+				foundFact = foundFact || hit.Subject == "compaction preference"
+				foundEpisode = foundEpisode || hit.Subject == "Episode: Compaction captured memory"
+			}
+			if foundFact && foundEpisode {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("dropped memory was not distilled")
+}
+
 func TestRunnerCompactionDoesNotPersistInvalidSummary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conv-invalid.jsonl")

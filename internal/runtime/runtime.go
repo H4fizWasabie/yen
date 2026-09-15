@@ -329,7 +329,25 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		Input: response.Usage.Input, Output: response.Usage.Output, Reasoning: response.Usage.Reasoning,
 		CacheRead: response.Usage.CacheRead, CacheWrite: response.Usage.CacheWrite, TotalTokens: response.Usage.TotalTokens,
 	})
+	if err == nil && r.Memory != nil && len(plan.Messages) > 0 {
+		turns := toDistillationTurns(plan.Messages)
+		go r.distillDroppedMemory(ctx, conversationID, turns)
+	}
 	return err
+}
+
+func (r *Runner) distillDroppedMemory(ctx context.Context, conversationID string, turns []memory.ConsolidationTurn) {
+	result, err := memory.DistillMemory(ctx, r.Provider, turns)
+	if err != nil || r.Memory == nil {
+		return
+	}
+	context := memory.Context{ConversationID: conversationID, ConversationScoped: r.Memory.ConversationScoped}
+	for _, fact := range result.Facts {
+		_, _ = r.Memory.SaveNote(fact.Fact, context)
+	}
+	if result.Episode != "" {
+		_, _ = r.Memory.SaveNote("Episode: "+result.Episode, context)
+	}
 }
 
 func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
@@ -469,6 +487,18 @@ func toConsolidationTurns(messages []session.TimedMessage) []memory.Consolidatio
 			role = "tool"
 		}
 		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message), Timestamp: timed.Timestamp})
+	}
+	return turns
+}
+
+func toDistillationTurns(messages []session.Message) []memory.ConsolidationTurn {
+	turns := make([]memory.ConsolidationTurn, 0, len(messages))
+	for _, message := range messages {
+		role := message.Role
+		if role == "toolResult" {
+			role = "tool"
+		}
+		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message)})
 	}
 	return turns
 }
