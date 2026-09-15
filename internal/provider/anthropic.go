@@ -18,6 +18,7 @@ import (
 type AnthropicMessages struct {
 	BaseURL       string
 	APIKey        string
+	ProviderName  string
 	Model         string
 	ThinkingLevel string
 	Client        *http.Client

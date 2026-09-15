@@ -84,6 +84,28 @@ func TestNewConfiguredSupportsPinnedOpenAICompatibleProviders(t *testing.T) {
 	}
 }
 
+func TestNewConfiguredSupportsMiniMaxAnthropicProviders(t *testing.T) {
+	for _, test := range []struct {
+		id  string
+		env string
+	}{
+		{"minimax", "YEN_MINIMAX_API_KEY"},
+		{"minimax-cn", "YEN_MINIMAX_CN_API_KEY"},
+	} {
+		t.Run(test.id, func(t *testing.T) {
+			t.Setenv(test.env, "provider-key")
+			configured, err := NewConfigured(test.id, "fixture-model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, ok := configured.(AnthropicMessages)
+			if !ok || client.ProviderName != test.id || client.BaseURL != providerDefaults[test.id] || client.APIKey != "provider-key" || client.Model != "fixture-model" {
+				t.Fatalf("provider=%#v", configured)
+			}
+		})
+	}
+}
+
 func TestNewConfiguredReadsOnlyExplicitYenAuthFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	if _, err := auth.Open(path).Modify("openrouter", func(*auth.Credential) (*auth.Credential, error) {

@@ -23,6 +23,8 @@ var providerDefaults = map[string]string{
 	"moonshotai":                 "https://api.moonshot.ai/v1",
 	"moonshotai-cn":              "https://api.moonshot.cn/v1",
 	"mistral":                    "https://api.mistral.ai/v1",
+	"minimax":                    "https://api.minimax.io/anthropic",
+	"minimax-cn":                 "https://api.minimaxi.com/anthropic",
 	"nvidia":                     "https://integrate.api.nvidia.com/v1",
 	"openai":                     "https://api.openai.com/v1",
 	"openrouter":                 "https://openrouter.ai/api/v1",
@@ -49,6 +51,8 @@ var providerKeyEnvs = map[string]string{
 	"huggingface":                "YEN_HF_TOKEN",
 	"kimi-coding":                "YEN_KIMI_API_KEY",
 	"mistral":                    "YEN_MISTRAL_API_KEY",
+	"minimax":                    "YEN_MINIMAX_API_KEY",
+	"minimax-cn":                 "YEN_MINIMAX_CN_API_KEY",
 	"moonshotai":                 "YEN_MOONSHOT_API_KEY",
 	"moonshotai-cn":              "YEN_MOONSHOT_API_KEY",
 	"nvidia":                     "YEN_NVIDIA_API_KEY",
@@ -146,6 +150,20 @@ func ConfiguredFromEnv() agent.Provider {
 		}
 		return NewGoogleGenerativeAI(baseURL, key, model)
 	}
+	if providerID == "minimax" || providerID == "minimax-cn" {
+		baseURL := providerDefaults[providerID]
+		model := os.Getenv("YEN_MODEL")
+		if model == "" {
+			model = "MiniMax-M2.5"
+		}
+		key := os.Getenv(providerKeyEnvs[providerID])
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
+		client := NewAnthropicMessages(baseURL, key, model)
+		client.ProviderName = providerID
+		return client
+	}
 	if providerID != "anthropic" {
 		return NewFromEnv()
 	}
@@ -204,6 +222,18 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		}
 		return NewGoogleGenerativeAI(baseURL, key, model), nil
 	}
+	if providerID == "minimax" || providerID == "minimax-cn" {
+		if model == "" {
+			model = "MiniMax-M2.5"
+		}
+		key := os.Getenv(providerKeyEnvs[providerID])
+		if key == "" {
+			key = storedCredentialKey(providerID)
+		}
+		client := NewAnthropicMessages(providerDefaults[providerID], key, model)
+		client.ProviderName = providerID
+		return client, nil
+	}
 	if providerID == "anthropic" {
 		if model == "" {
 			model = "claude-sonnet-4-20250514"
@@ -261,7 +291,11 @@ func Describe(p agent.Provider) (string, string) {
 	case OpenAICompletions:
 		return client.ProviderName, client.Model
 	case AnthropicMessages:
-		return "anthropic", client.Model
+		name := client.ProviderName
+		if name == "" {
+			name = "anthropic"
+		}
+		return name, client.Model
 	case GoogleGenerativeAI:
 		return "google", client.Model
 	case OpenAIResponses:

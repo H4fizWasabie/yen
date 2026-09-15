@@ -429,6 +429,14 @@ entire read-modify-write mutation, so separate Yen processes sharing
 test passes; the full gate is now 245 tests plus race/vet/diff. The lock is
 per-file by design; split per-provider only if contention is measured.
 
+## Latest pickup: MiniMax provider mappings
+
+The provider registry now includes `minimax` and `minimax-cn`, using the
+pinned native Anthropic Messages endpoints and Yen-owned API-key variables.
+`AnthropicMessages.ProviderName` preserves the provider identity for model
+controls and diagnostics. Configuration tests cover both mappings; the full
+gate is now 248 tests plus race/vet/diff.
+
 ## Important deferred product change
 
 The requested later direction is that CLI, Telegram, dashboard, and future
