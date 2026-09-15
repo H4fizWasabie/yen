@@ -619,3 +619,24 @@ func TestToConsolidationTurnsCondensesToolPayloads(t *testing.T) {
 		t.Fatalf("tool result transcript was not bounded: len=%d", len([]rune(turns[1].Content)))
 	}
 }
+
+func TestToConsolidationTurnsFormatsSpecialEntries(t *testing.T) {
+	exitCode := 2
+	turns := toConsolidationTurns([]session.Message{
+		{Role: "bashExecution", Command: "go test ./...", Output: "failed", ExitCode: &exitCode},
+		{Role: "bashExecution", Command: "sleep 10", Cancelled: true},
+		{Role: "branchSummary", Summary: "The branch chose the safer path."},
+		{Role: "compactionSummary", Summary: "Earlier context was compacted."},
+	})
+	want := []string{
+		"ran `go test ./...` — exit 2: failed",
+		"ran `sleep 10` — cancelled",
+		"The branch chose the safer path.",
+		"Earlier context was compacted.",
+	}
+	for i := range want {
+		if turns[i].Content != want[i] {
+			t.Fatalf("turn %d = %q, want %q", i, turns[i].Content, want[i])
+		}
+	}
+}

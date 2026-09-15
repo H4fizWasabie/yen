@@ -358,6 +358,19 @@ const (
 )
 
 func consolidationContent(message session.Message) string {
+	switch message.Role {
+	case "bashExecution":
+		if message.Cancelled {
+			return fmt.Sprintf("ran `%s` — cancelled", truncateConsolidation(message.Command, consolidationToolArgsChars))
+		}
+		exitCode := "?"
+		if message.ExitCode != nil {
+			exitCode = fmt.Sprint(*message.ExitCode)
+		}
+		return fmt.Sprintf("ran `%s` — exit %s: %s", truncateConsolidation(message.Command, consolidationToolArgsChars), exitCode, truncateConsolidation(message.Output, consolidationToolResultChars))
+	case "branchSummary", "compactionSummary":
+		return message.Summary
+	}
 	if text, ok := message.Content.(string); ok {
 		return text
 	}
