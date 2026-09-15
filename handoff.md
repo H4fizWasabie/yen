@@ -219,6 +219,9 @@ does not overwrite durable turn checkpoints. Its transcript is also capped at
 100,000 characters from the tail, matching the pinned memory-consolidation
 ceiling, and its provider call retries up to three times with exponential
 2-second-base delays without changing ordinary agent-turn retry behavior.
+Assistant tool calls and tool results are condensed to bounded transcript
+summaries matching the pinned TypeScript formatter; bash/summary entry variants
+remain open.
 When the configured provider supports it, consolidation also requests the
 OpenAI-compatible `response_format: {type: "json_object"}` wire mode; generic
 test providers retain the prompt-only fallback.

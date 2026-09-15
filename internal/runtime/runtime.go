@@ -347,9 +347,54 @@ func toConsolidationTurns(messages []session.Message) []memory.ConsolidationTurn
 		if role == "toolResult" {
 			role = "tool"
 		}
-		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: fmt.Sprint(message.Content)})
+		turns = append(turns, memory.ConsolidationTurn{Role: role, Content: consolidationContent(message)})
 	}
 	return turns
+}
+
+const (
+	consolidationToolArgsChars   = 200
+	consolidationToolResultChars = 500
+)
+
+func consolidationContent(message session.Message) string {
+	if text, ok := message.Content.(string); ok {
+		return text
+	}
+	data, err := json.Marshal(message.Content)
+	if err != nil {
+		return ""
+	}
+	var parts []session.ContentPart
+	if err := json.Unmarshal(data, &parts); err != nil {
+		return ""
+	}
+	var content strings.Builder
+	for _, part := range parts {
+		switch part.Type {
+		case "text":
+			if message.Role == "toolResult" {
+				fmt.Fprintf(&content, "OK — %s", truncateConsolidation(part.Text, consolidationToolResultChars))
+			} else {
+				content.WriteString(part.Text)
+			}
+		case "toolCall":
+			args, _ := json.Marshal(part.Arguments)
+			fmt.Fprintf(&content, "called %s(%s)", part.Name, truncateConsolidation(string(args), consolidationToolArgsChars))
+		}
+		if content.Len() > 0 {
+			content.WriteByte('\n')
+		}
+	}
+	return strings.TrimSpace(content.String())
+}
+
+func truncateConsolidation(text string, max int) string {
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	return string(runes[:max]) + "…"
 }
 
 func (r *Runner) pathFor(turn conversation.Turn) string {

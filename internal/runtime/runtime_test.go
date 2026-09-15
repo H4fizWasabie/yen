@@ -605,3 +605,17 @@ func TestRunnerSteersActiveTurnThroughAgentQueue(t *testing.T) {
 		t.Fatalf("provider messages=%#v", provider.seen)
 	}
 }
+
+func TestToConsolidationTurnsCondensesToolPayloads(t *testing.T) {
+	toolResult := strings.Repeat("r", consolidationToolResultChars+10)
+	turns := toConsolidationTurns([]session.Message{
+		{Role: "assistant", Content: []session.ContentPart{{Type: "toolCall", Name: "read", Arguments: map[string]any{"path": "README.md"}}}},
+		{Role: "toolResult", Content: []session.ContentPart{{Type: "text", Text: toolResult}}},
+	})
+	if turns[0].Content != `called read({"path":"README.md"})` {
+		t.Fatalf("tool call transcript=%q", turns[0].Content)
+	}
+	if !strings.HasPrefix(turns[1].Content, "OK — "+strings.Repeat("r", consolidationToolResultChars)) || !strings.HasSuffix(turns[1].Content, "…") {
+		t.Fatalf("tool result transcript was not bounded: len=%d", len([]rune(turns[1].Content)))
+	}
+}
