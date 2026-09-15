@@ -239,6 +239,20 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		stats := session.Stats(current)
 		_, err := fmt.Fprintf(stdout, "Session Info\n\nName: %s\nFile: %s\nID: %s\nMessages: %v\n", current.SessionName(), current.Path(), current.Header().ID, stats["totalMessages"])
 		return true, err
+	case text == "/tree":
+		data, err := json.Marshal(current.Tree())
+		if err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintf(stdout, "%s\n", data)
+		return true, err
+	case text == "/artifacts":
+		catalog := current.ArtifactCatalog(16 * 1024)
+		if catalog == "" {
+			catalog = "No artifacts"
+		}
+		_, err := fmt.Fprintln(stdout, catalog)
+		return true, err
 	case text == "/working-note":
 		note := current.WorkingNote()
 		if note == "" {

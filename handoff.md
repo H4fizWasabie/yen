@@ -361,9 +361,13 @@ next gap.
 
 The interactive CLI now also exposes `/model`, `/thinking`, `/retry`, and
 `/trust`, backed by the same provider/settings helpers used by RPC. Tests cover
-the mutations and the trust-file override; the full gate is 237 tests plus
+the mutations and the trust-file override; the full gate is 239 tests plus
 race/vet/diff. Full TUI selectors, OAuth commands, and session-picker flows
 remain open.
+
+CLI inspection now also exposes `/tree` and `/artifacts`, backed by the
+durable session tree and artifact catalog. Full TUI rendering, selectors, and
+session-picker flows remain open.
 
 The authorized side-by-side VPS deployment now runs `/opt/yen/releases/45b246e`.
 `yen-telegram-pilot.service`, `yen-dashboard-pilot.service`,

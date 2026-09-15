@@ -149,6 +149,17 @@ func TestInteractiveSessionCommands(t *testing.T) {
 	if err != nil || !handled || !strings.Contains(output.String(), "Working Note is empty") {
 		t.Fatalf("working note command handled=%v err=%v output=%q", handled, err, output.String())
 	}
+	if _, err := current.StoreArtifact("fixture", "result.txt", []byte("artifact")); err != nil {
+		t.Fatal(err)
+	}
+	handled, err = handleInteractiveCommand("/tree", current, runner, link, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "session-1") {
+		t.Fatalf("tree command handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	handled, err = handleInteractiveCommand("/artifacts", current, runner, link, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "fixture") {
+		t.Fatalf("artifacts command handled=%v err=%v output=%q", handled, err, output.String())
+	}
 }
 
 func TestInteractiveProviderAndTrustCommands(t *testing.T) {
