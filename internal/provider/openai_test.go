@@ -133,6 +133,30 @@ func TestOpenAICompletionsSendsReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Reasoning       map[string]string `json:"reasoning"`
+			ReasoningEffort string            `json:"reasoning_effort"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.ReasoningEffort != "high" || payload.Reasoning != nil {
+			t.Fatalf("reasoning=%#v effort=%q", payload.Reasoning, payload.ReasoningEffort)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "", "mistral-model")
+	client.ProviderName = "mistral"
+	client.ReasoningEffort = "high"
+	if _, err := client.Next(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompletionsReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provider failed", http.StatusBadGateway)

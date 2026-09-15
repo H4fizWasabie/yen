@@ -442,6 +442,11 @@ Vercel AI Gateway is now mapped to the native Anthropic Messages client with
 plus the MiniMax keys, through its isolated service environment. Configuration
 and shell syntax checks pass; the full gate is now 249 tests plus race/vet/diff.
 
+The shared provider client now emits Mistral's native `reasoning_effort` field
+when `ProviderName` is `mistral`, while preserving the existing `reasoning`
+shape for other OpenAI-compatible providers. A wire regression test covers the
+distinction; the full gate is now 250 tests plus race/vet/diff.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to

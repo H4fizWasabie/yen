@@ -106,15 +106,20 @@ func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Messag
 
 func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
 	payload := struct {
-		Model          string            `json:"model"`
-		Messages       []openAIMessage   `json:"messages"`
-		Tools          []map[string]any  `json:"tools,omitempty"`
-		Stream         bool              `json:"stream"`
-		ResponseFormat map[string]string `json:"response_format,omitempty"`
-		Reasoning      map[string]string `json:"reasoning,omitempty"`
+		Model           string            `json:"model"`
+		Messages        []openAIMessage   `json:"messages"`
+		Tools           []map[string]any  `json:"tools,omitempty"`
+		Stream          bool              `json:"stream"`
+		ResponseFormat  map[string]string `json:"response_format,omitempty"`
+		Reasoning       map[string]string `json:"reasoning,omitempty"`
+		ReasoningEffort string            `json:"reasoning_effort,omitempty"`
 	}{Model: p.Model, Messages: convertMessages(messages), Stream: true}
 	if p.ReasoningEffort != "" {
-		payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
+		if p.ProviderName == "mistral" {
+			payload.ReasoningEffort = p.ReasoningEffort
+		} else {
+			payload.Reasoning = map[string]string{"effort": p.ReasoningEffort}
+		}
 	}
 	if jsonMode {
 		payload.ResponseFormat = map[string]string{"type": "json_object"}
