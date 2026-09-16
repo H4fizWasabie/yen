@@ -725,6 +725,16 @@ persists the oracle's bearer-token, AWS-profile, or existing credential-chain
 choice, covered by `TestInteractiveBedrockLoginStoresSelectedCredential`.
 Static model metadata and live AWS acceptance remain open.
 
+## Goal 1 provider audit: 2026-09-16
+
+The pinned local oracle has no tracked `packages/ai/src/providers/data/*.json`
+files, only generated-model imports. Static model metadata therefore remains
+open rather than being guessed. Tested provider seams cover Anthropic OAuth,
+Copilot variants, Codex browser OAuth/catalog read-back, Vertex ADC/
+service-account discovery/login choices, Bedrock credential-chain/login choices,
+and Cloudflare native protocol paths. Real-account acceptance remains an
+explicit manual gate.
+
 ## Latest operations evidence
 
 ## Checkpoint: RPC command matrix and extension UI
