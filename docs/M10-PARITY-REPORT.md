@@ -89,6 +89,12 @@ and `packages/coding-agent/src/modes/interactive/components/footer.ts:232-240`.
 Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
 `TestHandleExtensionUIKeepsExtensionStatusesByKey`.
 
+Extension widgets now cap string lines at the oracle's ten-line limit and add
+the oracle truncation marker. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2024-2053,2112`.
+Go evidence is `internal/tui/ui.go` and
+`TestHandleExtensionUITruncatesLongWidgets`.
+
 Interactive tool execution now updates the status region through the existing
 runtime event stream, including a bounded argument preview, and resumes normal
 streaming status after the tool result. Oracle authority is

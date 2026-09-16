@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bufio"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -59,6 +60,23 @@ func TestHandleExtensionUIKeepsExtensionStatusesByKey(t *testing.T) {
 	}
 	if _, ok := screen.ExtensionStatuses["a"]; ok {
 		t.Fatalf("cleared extension status remains: %#v", screen.ExtensionStatuses)
+	}
+}
+
+func TestHandleExtensionUITruncatesLongWidgets(t *testing.T) {
+	screen := &Screen{}
+	lines := make([]any, 11)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line-%d", i)
+	}
+	if _, err := HandleExtensionUIWithScreen(nil, map[string]any{
+		"method": "setWidget", "widgetKey": "hint", "widgetLines": lines, "widgetPlacement": "aboveEditor",
+	}, bufio.NewReader(strings.NewReader("")), &strings.Builder{}, screen); err != nil {
+		t.Fatal(err)
+	}
+	got := screen.WidgetsAbove["hint"]
+	if len(got) != 11 || got[9] != "line-9" || got[10] != "... (widget truncated)" {
+		t.Fatalf("widget lines=%#v", got)
 	}
 }
 
