@@ -300,7 +300,9 @@ context. HTTP providers call it after receiving each response and before
 consuming the body, with status and copied headers. Oracle evidence is
 `packages/coding-agent/src/core/sdk.ts:426-435` and
 `packages/coding-agent/src/core/extensions/types.ts:709-714`; the focused
-helper test and full gates pass. Bedrock SDK response metadata remains open.
+helper test and full gates pass. Bedrock Converse now reads the SDK raw
+response metadata and error response boundary too; the remaining gap is the
+dynamic TypeScript extension loader and registries.
 
 The provider, read, CLI error-boundary, fixed-capacity, canonical identity, and
 queue slices are now implemented and locally verified. Work in this order:

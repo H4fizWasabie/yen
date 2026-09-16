@@ -35,8 +35,9 @@ This matches `after_provider_response` in the pinned TypeScript adapter at
 Go evidence is `internal/agent/loop.go`, `internal/provider/hooks.go`, the
 OpenAI-compatible, Anthropic, Gemini, Responses, and Radius request paths,
 and `TestApplyProviderResponseHookCopiesStatusAndHeaders`; the focused and
-full 430-test gates, race, vet, build, and diff checks pass. Bedrock SDK
-response metadata remains open.
+full 430-test gates, race, vet, build, and diff checks pass. Bedrock Converse
+responses now use the SDK raw-response metadata and error response boundary as
+well; its focused provider test suite passes.
 
 ## Evidence ledger
 

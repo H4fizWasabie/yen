@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
@@ -23,6 +24,7 @@ import (
 	bedrockdocument "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	smithybearer "github.com/aws/smithy-go/auth/bearer"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 )
@@ -108,7 +110,14 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	}
 	out, err := client.ConverseStream(ctx, in)
 	if err != nil {
+		var responseErr *smithyhttp.ResponseError
+		if errors.As(err, &responseErr) && responseErr.Response != nil {
+			applyProviderResponseHook(ctx, responseErr.Response.Response)
+		}
 		return agent.Response{}, err
+	}
+	if raw, ok := awsmiddleware.GetRawResponse(out.ResultMetadata).(*smithyhttp.Response); ok && raw != nil {
+		applyProviderResponseHook(ctx, raw.Response)
 	}
 	providerName := p.ProviderName
 	if providerName == "" {
