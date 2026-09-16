@@ -167,6 +167,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		if err != nil {
 			return agent.Response{}, err
 		}
+		applyProviderResponseHook(ctx, response)
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
 			break
 		}

@@ -26,3 +26,15 @@ func applyProviderHeaderHook(ctx context.Context, headers http.Header) {
 		}
 	}
 }
+
+func applyProviderResponseHook(ctx context.Context, response *http.Response) {
+	hook := agent.ProviderResponseHookFromContext(ctx)
+	if hook == nil || response == nil {
+		return
+	}
+	headers := make(map[string][]string, len(response.Header))
+	for name, values := range response.Header {
+		headers[name] = append([]string(nil), values...)
+	}
+	hook(ctx, response.StatusCode, headers)
+}

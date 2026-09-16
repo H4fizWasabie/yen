@@ -97,6 +97,7 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		if err != nil {
 			return agent.Response{}, err
 		}
+		applyProviderResponseHook(ctx, response)
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
 			break
 		}
