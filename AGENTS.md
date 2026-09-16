@@ -39,6 +39,10 @@ for the source boundary. The full Theo Bible stays upstream.
 6. For compatibility work, update the parity ledger only after evidence
    exists. Update [handoff.md](handoff.md) when the pickup point changes.
 
+CodeGraph (`.codegraph/`) stays fresh automatically via its own file watcher —
+no manual update step. Use its MCP tools to look up callers/callees before
+large refactors instead of re-reading the whole tree.
+
 Done means the requested slice is tested, its evidence is recorded, and the
 next unresolved contract is visible. Do not broaden the slice to make a demo
 look complete.
