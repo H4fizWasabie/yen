@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -55,13 +56,22 @@ type Compaction struct {
 	FirstKeptEntryID string `json:"firstKeptEntryId"`
 	TokensBefore     int    `json:"tokensBefore"`
 	Usage            *Usage `json:"usage,omitempty"`
+	Details          any    `json:"details,omitempty"`
+}
+
+type CompactionFileOps struct {
+	ReadFiles     []string `json:"readFiles,omitempty"`
+	ModifiedFiles []string `json:"modifiedFiles,omitempty"`
 }
 
 type CompactionPlan struct {
-	FirstKeptEntryID string
-	Messages         []Message
-	TokensBefore     int
-	PreviousSummary  string
+	FirstKeptEntryID   string
+	Messages           []Message
+	TokensBefore       int
+	PreviousSummary    string
+	FileOps            CompactionFileOps
+	TurnPrefixMessages []Message
+	IsSplitTurn        bool
 }
 
 type Message struct {
@@ -903,7 +913,7 @@ func (s *Session) PrepareCompaction(keepRecentTurns int) (CompactionPlan, error)
 		return CompactionPlan{}, ErrNothingToCompact
 	}
 	cut := userEntries[len(userEntries)-keepRecentTurns]
-	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary}
+	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary, FileOps: s.fileOps(start, cut)}
 	for i := start; i < cut; i++ {
 		if s.entries[i].Message != nil {
 			plan.Messages = append(plan.Messages, *s.entries[i].Message)
@@ -960,17 +970,119 @@ func (s *Session) PrepareCompactionByTokens(keepRecentTokens int) (CompactionPla
 	if accumulated < keepRecentTokens {
 		return CompactionPlan{}, ErrNothingToCompact
 	}
-	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary}
-	for i := start; i < cut; i++ {
+	summaryEnd := cut
+	turnStart := -1
+	if message := s.entries[cut].Message; message != nil && message.Role != "user" {
+		for i := cut; i >= start; i-- {
+			if s.entries[i].Message != nil && s.entries[i].Message.Role == "user" {
+				turnStart = i
+				break
+			}
+		}
+		if turnStart >= start {
+			summaryEnd = turnStart
+		}
+	}
+	plan := CompactionPlan{FirstKeptEntryID: s.entries[cut].ID, PreviousSummary: previousSummary, FileOps: s.fileOps(start, cut), IsSplitTurn: turnStart >= start}
+	for i := start; i < summaryEnd; i++ {
 		if s.entries[i].Message != nil {
 			plan.Messages = append(plan.Messages, *s.entries[i].Message)
 			plan.TokensBefore += estimateMessageTokens(*s.entries[i].Message)
 		}
 	}
-	if len(plan.Messages) == 0 {
+	if turnStart >= start {
+		for i := turnStart; i < cut; i++ {
+			if s.entries[i].Message != nil {
+				plan.TurnPrefixMessages = append(plan.TurnPrefixMessages, *s.entries[i].Message)
+				plan.TokensBefore += estimateMessageTokens(*s.entries[i].Message)
+			}
+		}
+	}
+	if len(plan.Messages) == 0 && len(plan.TurnPrefixMessages) == 0 {
 		return CompactionPlan{}, ErrNothingToCompact
 	}
 	return plan, nil
+}
+
+func (s *Session) fileOps(start, end int) CompactionFileOps {
+	read, modified := map[string]bool{}, map[string]bool{}
+	for i := start - 1; i >= 0; i-- {
+		if c := s.entries[i].Compaction; c != nil {
+			if details, ok := c.Details.(CompactionFileOps); ok {
+				for _, path := range details.ReadFiles {
+					read[path] = true
+				}
+				for _, path := range details.ModifiedFiles {
+					modified[path] = true
+				}
+			}
+			if details, ok := c.Details.(map[string]any); ok {
+				if values, ok := details["readFiles"].([]any); ok {
+					for _, value := range values {
+						if path, ok := value.(string); ok {
+							read[path] = true
+						}
+					}
+				}
+				if values, ok := details["modifiedFiles"].([]any); ok {
+					for _, value := range values {
+						if path, ok := value.(string); ok {
+							modified[path] = true
+						}
+					}
+				}
+			}
+			break
+		}
+	}
+	for i := start; i < end; i++ {
+		entry := s.entries[i]
+		if entry.Message == nil || entry.Message.Role != "assistant" {
+			continue
+		}
+		data, err := json.Marshal(entry.Message.Content)
+		if err != nil {
+			continue
+		}
+		var parts []ContentPart
+		if json.Unmarshal(data, &parts) != nil {
+			continue
+		}
+		for _, part := range parts {
+			args, ok := part.Arguments.(map[string]any)
+			if !ok || part.Name == "" {
+				continue
+			}
+			path, _ := args["path"].(string)
+			if path == "" {
+				continue
+			}
+			switch part.Name {
+			case "read":
+				read[path] = true
+			case "write", "edit":
+				modified[path] = true
+			}
+		}
+	}
+	result := CompactionFileOps{}
+	for path := range read {
+		if !modified[path] {
+			result.ReadFiles = append(result.ReadFiles, path)
+		}
+	}
+	for path := range modified {
+		result.ModifiedFiles = append(result.ModifiedFiles, path)
+	}
+	sort.Strings(result.ReadFiles)
+	sort.Strings(result.ModifiedFiles)
+	if len(result.ReadFiles) > 40 {
+		result.ReadFiles = result.ReadFiles[len(result.ReadFiles)-40:]
+	}
+	if len(result.ModifiedFiles) > 40 {
+		result.ModifiedFiles = result.ModifiedFiles[len(result.ModifiedFiles)-40:]
+	}
+	return result
 }
 
 func (s *Session) compactionStart() (int, string) {
@@ -1057,6 +1169,10 @@ func estimateContextMessageTokens(message Message) int {
 }
 
 func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, usage *Usage) (string, error) {
+	return s.AppendCompactionWithDetails(summary, firstKeptEntryID, tokensBefore, usage, nil)
+}
+
+func (s *Session) AppendCompactionWithDetails(summary, firstKeptEntryID string, tokensBefore int, usage *Usage, details any) (string, error) {
 	if summary == "" || firstKeptEntryID == "" {
 		return "", fmt.Errorf("compaction summary and first kept entry are required")
 	}
@@ -1064,7 +1180,7 @@ func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefor
 	parentID := s.currentParentID()
 	entry := sessionEntry{
 		Type: "compaction", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID,
-		Compaction: &Compaction{Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Usage: usage},
+		Compaction: &Compaction{Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Usage: usage, Details: details},
 	}
 	s.entries = append(s.entries, entry)
 	s.leafID = id

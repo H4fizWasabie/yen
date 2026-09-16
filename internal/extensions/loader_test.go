@@ -23,7 +23,7 @@ func TestDiscoverAndLoadTypeScriptExtensionsIntoRegistry(t *testing.T) {
 		}
 	}
 	good := filepath.Join(local, "good.ts")
-	write(good, `export default (api: any) => { api.on("before_provider_request", (event: any) => ({ messages: [...event.messages, { Role: "system", Content: "extension" }] })); api.on("tool_call", (event: any) => event.toolCall.Name === "blocked" ? ({ block: true, reason: "blocked by extension" }) : undefined); api.registerCommand("hello", { description: "hello", handler: async () => { await api.confirm("Continue?", "yes"); } }); api.registerMessageRenderer("text", (value: any) => "rendered:" + value); };`)
+	write(good, `export default (api: any) => { api.on("before_provider_request", (event: any) => ({ messages: [...event.messages, { Role: "system", Content: "extension" }] })); api.on("tool_call", (event: any) => event.toolCall.Name === "blocked" ? ({ block: true, reason: "blocked by extension" }) : undefined); api.registerCommand("hello", { description: "hello", handler: async () => { await api.confirm("Continue?", "yes"); } }); api.registerMessageRenderer("text", (value: any) => "rendered:" + value); api.registerTool("echo", { description: "echo", parameters: {type: "object"}, execute: async (args: any) => "echo:" + args.value }); };`)
 	write(filepath.Join(local, "broken.js"), `module.exports = () => { throw new Error("broken"); };`)
 	global := filepath.Join(globalRoot, "extensions")
 	if err := os.MkdirAll(global, 0o755); err != nil {
@@ -40,6 +40,12 @@ func TestDiscoverAndLoadTypeScriptExtensionsIntoRegistry(t *testing.T) {
 	}
 	if len(loaded.Registry.Commands()) != 1 || loaded.Registry.Commands()[0].Name != "hello" {
 		t.Fatalf("commands=%#v", loaded.Registry.Commands())
+	}
+	if tools := loaded.Registry.Tools(); len(tools) != 1 || tools[0].Name() != "echo" {
+		t.Fatalf("tools=%#v", tools)
+	}
+	if value, err := loaded.Registry.Tools()[0].Execute(context.Background(), map[string]any{"value": "ok"}); err != nil || value != "echo:ok" {
+		t.Fatalf("tool result=%q err=%v", value, err)
 	}
 	hooks := loaded.Registry.AgentHooks(nil)
 	messages, err := hooks.ProviderBefore(context.Background(), []agent.Message{}, []string{})

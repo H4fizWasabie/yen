@@ -46,6 +46,26 @@ type Registry struct {
 	entryRenderers       map[string]Renderer
 	markdownTransformers []MarkdownTransformer
 	hooks                []Hooks
+	tools                []agent.Tool
+}
+
+func (r *Registry) RegisterTool(tool agent.Tool) error {
+	if r == nil || tool == nil || strings.TrimSpace(tool.Name()) == "" {
+		return errors.New("extension tool requires a name")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tools = append(r.tools, tool)
+	return nil
+}
+
+func (r *Registry) Tools() []agent.Tool {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]agent.Tool(nil), r.tools...)
 }
 
 func New() *Registry {
