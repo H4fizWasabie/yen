@@ -104,6 +104,25 @@ func TestInteractiveModelSelectorChangesProviderFromScriptedInput(t *testing.T) 
 	}
 }
 
+func TestInteractiveRemainingOracleCommandsAreHandled(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte("# What's New\n\n- selector support\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "current", CWD: dir})
+	activePath := current.Path()
+	var output bytes.Buffer
+	for _, command := range []string{"/changelog", "/hotkeys", "/debug", "/arminsayshi", "/dementedelves"} {
+		handled, err := handleInteractiveCommand(command, current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+		if err != nil || !handled {
+			t.Fatalf("command=%s handled=%v err=%v", command, handled, err)
+		}
+	}
+	if !strings.Contains(output.String(), "selector support") || !strings.Contains(output.String(), "Keyboard Shortcuts") {
+		t.Fatalf("output=%q", output.String())
+	}
+}
+
 func TestRunMigrationIsExplicit(t *testing.T) {
 	dir := t.TempDir()
 	source, target := filepath.Join(dir, "source"), filepath.Join(dir, "target")

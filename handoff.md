@@ -35,6 +35,15 @@ Go evidence is `cmd/theoses/main.go` and
 `TestInteractiveRunRendersProviderStatusUpdates`. Tool-specific progress,
 extension UI component rendering, and remaining slash commands remain open.
 
+The command-audit increment is implemented: `/changelog`, `/hotkeys`,
+`/debug`, `/arminsayshi`, and `/dementedelves` are handled by the interactive
+CLI. Changelog uses the workspace `CHANGELOG.md` when present; the other
+commands provide text fallbacks for the current Go surface. Oracle authority
+is `packages/coding-agent/src/modes/interactive/interactive-mode.ts:2848-2925,5983-6060,6150-6190`;
+Go evidence is `cmd/theoses/main.go` and
+`TestInteractiveRemainingOracleCommandsAreHandled`. Native image/UI parity
+for the named components remains open.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:

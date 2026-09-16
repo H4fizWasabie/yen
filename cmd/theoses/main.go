@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -536,6 +537,29 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err := fmt.Fprintln(stdout, "Session reloaded")
 		return true, err
+	case text == "/changelog":
+		path := filepath.Join(current.Header().CWD, "CHANGELOG.md")
+		data, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			_, err = fmt.Fprintln(stdout, "No changelog entries found.")
+			return true, err
+		}
+		if err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintln(stdout, strings.TrimSpace(string(data)))
+		return true, err
+	case text == "/hotkeys":
+		_, err := fmt.Fprintln(stdout, "Keyboard Shortcuts\n\n↑/↓ history or cursor\nEnter submit\nCtrl+C interrupt\nCtrl+D exit\n! bash\n!! bash (excluded from context)")
+		return true, err
+	case text == "/debug":
+		_, err := fmt.Fprintf(stdout, "Debug\n\nSession: %s\nMessages: %d\n", current.Path(), len(current.Messages()))
+		return true, err
+	case text == "/arminsayshi":
+		_, err := fmt.Fprintln(stdout, "Hi, Armin!")
+		return true, err
+	case text == "/dementedelves":
+		return true, nil
 	case text == "/name":
 		if name := current.SessionName(); name != "" {
 			_, err := fmt.Fprintf(stdout, "Session name: %s\n", name)
