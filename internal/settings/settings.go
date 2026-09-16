@@ -22,6 +22,7 @@ type Settings struct {
 	ContextFiles          []string            `json:"contextFiles,omitempty"`
 	SkillDirs             []string            `json:"skillDirs,omitempty"`
 	PromptDirs            []string            `json:"promptDirs,omitempty"`
+	Extensions            []string            `json:"extensions,omitempty"`
 	Trusted               *bool               `json:"trusted,omitempty"`
 	AutoCompaction        *bool               `json:"autoCompaction,omitempty"`
 	Compaction            *CompactionSettings `json:"compaction,omitempty"`
@@ -181,6 +182,9 @@ func merge(target *Settings, source Settings) {
 	}
 	if source.PromptDirs != nil {
 		target.PromptDirs = source.PromptDirs
+	}
+	if source.Extensions != nil {
+		target.Extensions = source.Extensions
 	}
 	if source.Trusted != nil {
 		target.Trusted = source.Trusted

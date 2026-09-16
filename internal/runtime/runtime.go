@@ -558,8 +558,23 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	tools = append(tools, recallTurnsTool{history: history})
 	history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
 	hooks := r.ToolHooks
-	if r.ExtensionRegistry != nil {
-		hooks = r.ExtensionRegistry.AgentHooks(hooks)
+	registry := r.ExtensionRegistry
+	if registry == nil {
+		agentDir := ""
+		if configDir, configErr := os.UserConfigDir(); configErr == nil {
+			agentDir = filepath.Join(configDir, "yen")
+		}
+		currentSettings, _ := settings.Load(turn.WorkspaceID)
+		configured := append([]string(nil), currentSettings.Extensions...)
+		operatorConfigured := strings.FieldsFunc(os.Getenv("YEN_EXTENSIONS"), func(r rune) bool { return r == os.PathListSeparator || r == ',' })
+		loaded, _ := extensions.DiscoverAndLoadWithOperatorPaths(turn.WorkspaceID, agentDir, configured, operatorConfigured)
+		if loaded != nil {
+			registry = loaded.Registry
+			defer loaded.Close()
+		}
+	}
+	if registry != nil {
+		hooks = registry.AgentHooks(hooks)
 	}
 	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, hooks)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && (recoverableLengthStop(result) || silentContextOverflow(result, r.AutoCompactContextWindow))) {

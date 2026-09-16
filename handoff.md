@@ -591,6 +591,25 @@ Skill discovery and explicit skill expansion now use the containing directory
 name when `SKILL.md` omits frontmatter `name`, matching the oracle fallback.
 Focused resource coverage and the full 270-test race/vet/diff gate pass.
 
+## Latest extension-system increment
+
+The existing Go `internal/extensions/registry.go` is now populated from disk
+by `internal/extensions/loader.go`. It follows the pinned loader's
+project/global/explicit discovery and one-level package/index rules from
+`packages/coding-agent/src/core/extensions/loader.ts:687-803`, gates project
+extensions using the existing trust boundary from
+`packages/coding-agent/src/core/resource-loader.ts:110-142,477-560`, and runs
+TypeScript/JavaScript factories through a small Node bridge. Loaded extensions
+can register commands, message/entry renderers, tool-call/tool-result hooks,
+provider request/response hooks, and provider-header hooks; load failures are
+reported without aborting the runtime. Runtime turns lazily load configured
+extensions and compose them with existing hooks.
+
+Evidence: `internal/extensions/loader_test.go` and
+`internal/runtime/runtime_test.go`. Full extension context/actions, native
+registered tools/providers, resource-discovery events, and CLI/RPC invocation
+of extension commands/renderers remain open.
+
 ## Latest provider increment: Anthropic OAuth
 
 Anthropic Console OAuth is implemented in `internal/auth/anthropic.go` with

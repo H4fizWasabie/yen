@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -50,6 +51,40 @@ type hookTool struct{}
 func (hookTool) Name() string { return "hooked" }
 
 func (hookTool) Execute(context.Context, map[string]any) (string, error) { return "tool result", nil }
+
+type extensionProvider struct{ messages []agent.Message }
+
+func (p *extensionProvider) Next(_ context.Context, messages []agent.Message, _ []string) (agent.Response, error) {
+	p.messages = append([]agent.Message(nil), messages...)
+	return agent.Response{Text: "extension done", StopReason: "stop"}, nil
+}
+
+func TestRunnerLoadsConfiguredTypeScriptExtensions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "extension.ts")
+	if err := os.WriteFile(path, []byte(`export default (api: any) => api.on("before_provider_request", (event: any) => ({ messages: [...event.messages, { Role: "system", Content: "extension" }] }));`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_TRUST_PROJECT", "1")
+	t.Setenv("YEN_EXTENSIONS", path)
+	provider := &extensionProvider{}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	turn, err := runner.Submit(conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "extension", WorkspaceID: dir}, "prompt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunSubmitted(context.Background(), turn); err != nil || result.FinalText != "extension done" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(provider.messages) == 0 || provider.messages[len(provider.messages)-1].Content != "extension" {
+		t.Fatalf("messages=%#v", provider.messages)
+	}
+}
 
 func TestRunnerKeepsPersistentToolsOpenAcrossTurns(t *testing.T) {
 	dir := t.TempDir()
