@@ -30,6 +30,7 @@ type Runner struct {
 	SessionToolFactory             func(workspace string, current *session.Session) []agent.Tool
 	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
 	PersistentTools                []agent.Tool
+	ToolHooks                      *agent.ToolHooks
 	SessionPath                    func(turn conversation.Turn) string
 	Checkpoints                    *memory.Checkpoints
 	Memory                         *memory.Engine
@@ -554,7 +555,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	}
 	tools = append(tools, recallTurnsTool{history: history})
 	history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
-	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
+	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, r.ToolHooks)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && (recoverableLengthStop(result) || silentContextOverflow(result, r.AutoCompactContextWindow))) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
@@ -578,7 +579,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 				history = append([]agent.Message{codingagent.ArtifactCatalogMessage(catalog)}, history...)
 			}
 			history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
-			result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent)
+			result, runErr = agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, r.ToolHooks)
 		}
 	}
 	outcome := "completed"
@@ -628,8 +629,8 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	return result, runErr
 }
 
-func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider, tools []agent.Tool, history []agent.Message, prompt string, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
-	result, runErr := agent.RunFromWithQueuesAndEventsAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent)
+func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider, tools []agent.Tool, history []agent.Message, prompt string, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc, hooks *agent.ToolHooks) (agent.Result, error) {
+	result, runErr := agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent, hooks)
 	started := false
 	lastRetryAttempt := 0
 	for attempt := 1; runErr != nil && r.AutoRetryEnabled && attempt <= r.AutoRetryMaxRetries && ctx.Err() == nil; attempt++ {
@@ -662,7 +663,7 @@ func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider,
 				return result, ctx.Err()
 			}
 		}
-		result, runErr = agent.RunFromWithQueuesAndEventsAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent)
+		result, runErr = agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent, hooks)
 		if onEvent != nil && runErr == nil {
 			onEvent(agent.Event{Type: "auto_retry_end", Attempt: attempt, Success: true})
 		}

@@ -35,6 +35,22 @@ func (t closeTrackingTool) Close() error {
 	return nil
 }
 
+type hookProvider struct{ calls int }
+
+func (p *hookProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{ToolCalls: []agent.ToolCall{{ID: "hook-1", Name: "hooked", Args: map[string]any{"value": "input"}}}, StopReason: "toolUse"}, nil
+	}
+	return agent.Response{Text: "done", StopReason: "stop"}, nil
+}
+
+type hookTool struct{}
+
+func (hookTool) Name() string { return "hooked" }
+
+func (hookTool) Execute(context.Context, map[string]any) (string, error) { return "tool result", nil }
+
 func TestRunnerKeepsPersistentToolsOpenAcrossTurns(t *testing.T) {
 	dir := t.TempDir()
 	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
@@ -57,6 +73,36 @@ func TestRunnerKeepsPersistentToolsOpenAcrossTurns(t *testing.T) {
 		if closed {
 			t.Fatal("persistent tool was closed between turns")
 		}
+	}
+}
+
+func TestRunnerPassesToolHooksToAgentLoop(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := New(queue, &hookProvider{}, func(string) []agent.Tool { return []agent.Tool{hookTool{}} })
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	var before, after bool
+	runner.ToolHooks = &agent.ToolHooks{
+		Before: func(_ context.Context, _ agent.Message, call agent.ToolCall) (bool, string, error) {
+			before = call.Name == "hooked"
+			return false, "", nil
+		},
+		After: func(_ context.Context, _ agent.Message, call agent.ToolCall, result agent.ToolResult, isError bool) (agent.ToolResult, bool, error) {
+			after = call.Name == "hooked" && result.Text == "tool result" && !isError
+			return result, false, nil
+		},
+	}
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "tool-hooks", WorkspaceID: dir}
+	turn, err := runner.Submit(link, "use the hook")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, result, err := runner.RunSubmitted(context.Background(), turn)
+	if err != nil || result.FinalText != "done" || !before || !after {
+		t.Fatalf("result=%#v err=%v before=%v after=%v", result, err, before, after)
 	}
 }
 
