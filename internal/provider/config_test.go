@@ -52,6 +52,29 @@ func TestCloudflareProvidersUseYenCredentialsAndRouting(t *testing.T) {
 	}
 }
 
+func TestCloudflareAIGatewaySelectsConfiguredProtocol(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		api  string
+		want string
+	}{
+		{name: "completions", api: "openai-completions", want: "provider.OpenAICompletions"},
+		{name: "responses", api: "openai-responses", want: "provider.OpenAIResponses"},
+		{name: "anthropic", api: "anthropic-messages", want: "provider.AnthropicMessages"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("YEN_CLOUDFLARE_API", test.api)
+			configured, err := NewConfigured("cloudflare-ai-gateway", "fixture-model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := fmt.Sprintf("%T", configured); got != test.want {
+				t.Fatalf("configured=%s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
 func TestGitHubCopilotUsesStoredYenCredential(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	if _, err := auth.Open(path).Modify("github-copilot", func(*auth.Credential) (*auth.Credential, error) {
