@@ -146,12 +146,12 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	runPrompt := func(prompt string, out io.Writer, onUpdate func(string)) (string, error) {
+	runPrompt := func(prompt string, out io.Writer, onUpdate func(string), onEvent agent.EventFunc) (string, error) {
 		turn, err := runner.Submit(link, prompt)
 		if err != nil {
 			return "", err
 		}
-		_, result, err := runner.RunSubmittedWithUpdates(context.Background(), turn, onUpdate)
+		_, result, err := runner.RunSubmittedWithEvents(context.Background(), turn, onUpdate, onEvent)
 		if err != nil {
 			return "", err
 		}
@@ -207,6 +207,18 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				if renderErr == nil {
 					renderErr = screen.Render(stdout)
 				}
+			}, func(event agent.Event) {
+				switch event.Type {
+				case "tool_execution_start":
+					screen.Status = interactiveToolStatus(event)
+				case "tool_execution_end", "tool_result":
+					screen.Status = "Streaming"
+				default:
+					return
+				}
+				if renderErr == nil {
+					renderErr = screen.Render(stdout)
+				}
 			})
 			if err != nil {
 				return reportError(stderr, err)
@@ -237,10 +249,28 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		}
 		return 0
 	}
-	if _, err := runPrompt(*prompt, stdout, nil); err != nil {
+	if _, err := runPrompt(*prompt, stdout, nil, nil); err != nil {
 		return reportError(stderr, err)
 	}
 	return 0
+}
+
+func interactiveToolStatus(event agent.Event) string {
+	preview := ""
+	for _, key := range []string{"command", "path", "query", "note"} {
+		if value, ok := event.Args[key].(string); ok {
+			preview = strings.Join(strings.Fields(value), " ")
+			break
+		}
+	}
+	if preview == "" {
+		preview = "tool call"
+	}
+	runes := []rune(preview)
+	if len(runes) > 140 {
+		preview = string(runes[:137]) + "..."
+	}
+	return "Running " + event.Name + ": " + preview
 }
 
 func handleInteractiveSelector(input string, reader *bufio.Reader, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
