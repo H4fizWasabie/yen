@@ -132,6 +132,12 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		"stream": true,
 		"store":  false,
 	}
+	if cacheKey, retention := promptCacheSettings(ctx); cacheKey != "" && supportsPromptCaching(p.ProviderName, p.BaseURL) {
+		payload["prompt_cache_key"] = cacheKey
+		if retention != "" {
+			payload["prompt_cache_retention"] = retention
+		}
+	}
 	if p.ProviderName == "openai-codex" {
 		if responseID, delta := codexContinuation(messages); responseID != "" {
 			payload["previous_response_id"] = responseID

@@ -176,20 +176,25 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		converted = convertMistralMessages(messages)
 	}
 	payload := struct {
-		Model               string            `json:"model"`
-		Messages            []openAIMessage   `json:"messages"`
-		Tools               []map[string]any  `json:"tools,omitempty"`
-		Stream              bool              `json:"stream"`
-		ResponseFormat      map[string]string `json:"response_format,omitempty"`
-		Reasoning           map[string]any    `json:"reasoning,omitempty"`
-		Thinking            map[string]any    `json:"thinking,omitempty"`
-		EnableThinking      *bool             `json:"enable_thinking,omitempty"`
-		ToolStream          bool              `json:"tool_stream,omitempty"`
-		ChatTemplateArgs    map[string]any    `json:"chat_template_args,omitempty"`
-		ReasoningEffort     string            `json:"reasoning_effort,omitempty"`
-		ProviderRouting     map[string]any    `json:"provider,omitempty"`
-		MaxCompletionTokens int               `json:"max_completion_tokens,omitempty"`
+		Model                string            `json:"model"`
+		Messages             []openAIMessage   `json:"messages"`
+		Tools                []map[string]any  `json:"tools,omitempty"`
+		Stream               bool              `json:"stream"`
+		ResponseFormat       map[string]string `json:"response_format,omitempty"`
+		Reasoning            map[string]any    `json:"reasoning,omitempty"`
+		Thinking             map[string]any    `json:"thinking,omitempty"`
+		EnableThinking       *bool             `json:"enable_thinking,omitempty"`
+		ToolStream           bool              `json:"tool_stream,omitempty"`
+		ChatTemplateArgs     map[string]any    `json:"chat_template_args,omitempty"`
+		ReasoningEffort      string            `json:"reasoning_effort,omitempty"`
+		ProviderRouting      map[string]any    `json:"provider,omitempty"`
+		PromptCacheKey       string            `json:"prompt_cache_key,omitempty"`
+		PromptCacheRetention string            `json:"prompt_cache_retention,omitempty"`
+		MaxCompletionTokens  int               `json:"max_completion_tokens,omitempty"`
 	}{Model: p.Model, Messages: converted, Stream: true}
+	if supportsPromptCaching(p.ProviderName, p.BaseURL) {
+		payload.PromptCacheKey, payload.PromptCacheRetention = promptCacheSettings(ctx)
+	}
 	payload.ProviderRouting = p.ProviderRouting
 	payload.MaxCompletionTokens = p.MaxTokens
 	if p.ReasoningEffort != "" {

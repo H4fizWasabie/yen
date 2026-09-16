@@ -236,6 +236,49 @@ func TestOpenAICompletionsSendsProviderRouting(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsSendsPromptCacheSettings(t *testing.T) {
+	var payloads []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		payloads = append(payloads, payload)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompletions(server.URL, "key", "model")
+	client.ProviderName = "openrouter"
+	ctx := WithSessionID(context.Background(), "conversation-123")
+	if _, err := client.Next(ctx, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if payloads[0]["prompt_cache_key"] != "conversation-123" || payloads[0]["prompt_cache_retention"] != nil {
+		t.Fatalf("short cache payload=%#v", payloads[0])
+	}
+
+	t.Setenv("YEN_CACHE_RETENTION", "long")
+	if _, err := client.Next(ctx, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if payloads[1]["prompt_cache_key"] != "conversation-123" || payloads[1]["prompt_cache_retention"] != "24h" {
+		t.Fatalf("long cache payload=%#v", payloads[1])
+	}
+
+	t.Setenv("YEN_CACHE_RETENTION", "none")
+	if _, err := client.Next(ctx, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payloads[2]["prompt_cache_key"]; ok {
+		t.Fatalf("none cache payload has key=%#v", payloads[2])
+	}
+	if _, ok := payloads[2]["prompt_cache_retention"]; ok {
+		t.Fatalf("none cache payload has retention=%#v", payloads[2])
+	}
+}
+
 func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
