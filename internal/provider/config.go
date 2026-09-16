@@ -300,7 +300,7 @@ func storedCodexAccessToken() string {
 	return credential.Access
 }
 
-func copilotConfigured(model string) OpenAICompletions {
+func copilotConfigured(model string) agent.Provider {
 	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_COPILOT_BASE_URL")), "/")
 	key := strings.TrimSpace(os.Getenv("YEN_COPILOT_GITHUB_TOKEN"))
 	if key == "" {
@@ -316,10 +316,24 @@ func copilotConfigured(model string) OpenAICompletions {
 	if baseURL == "" {
 		baseURL = providerDefaults["github-copilot"]
 	}
-	client := NewOpenAICompletions(baseURL, key, model)
-	client.ProviderName = "github-copilot"
-	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
-	return client
+	protocol := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_COPILOT_API")))
+	switch protocol {
+	case "openai-responses":
+		client := NewOpenAIResponses(baseURL, key, model)
+		client.ProviderName = "github-copilot"
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client
+	case "anthropic-messages":
+		client := NewAnthropicMessages(baseURL, key, model)
+		client.ProviderName = "github-copilot"
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client
+	default:
+		client := NewOpenAICompletions(baseURL, key, model)
+		client.ProviderName = "github-copilot"
+		client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
+		return client
+	}
 }
 
 func storedCopilotCredential() auth.Credential {

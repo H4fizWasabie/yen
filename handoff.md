@@ -623,6 +623,13 @@ Oracle evidence: `packages/ai/src/auth/oauth/openai-codex.ts:26-38,300-311,320-3
 `cmd/theoses/main_test.go` covers the CLI auth-file boundary. Real-account
 login and live Codex acceptance remain manual and open.
 
+GitHub Copilot now preserves the default OpenAI Completions route and accepts
+explicit `YEN_COPILOT_API` values `openai-completions`, `openai-responses`, or
+`anthropic-messages`; dynamic Copilot headers are applied to all three. The
+seam test is `TestGitHubCopilotSelectsConfiguredProtocol`. Automatic per-model
+routing remains open because the pinned oracle's generated model data is not
+present in its tree.
+
 ## Latest operations evidence
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response

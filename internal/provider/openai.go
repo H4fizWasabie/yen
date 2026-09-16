@@ -247,11 +247,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		}
 		request.Header.Set("Content-Type", "application/json")
 		if p.ProviderName == "github-copilot" {
-			request.Header.Set("X-Initiator", copilotInitiator(messages))
-			request.Header.Set("Openai-Intent", "conversation-edits")
-			if hasMessageImages(messages) {
-				request.Header.Set("Copilot-Vision-Request", "true")
-			}
+			applyCopilotHeaders(request.Header, messages)
 		}
 		if p.APIKey != "" {
 			request.Header.Set("Authorization", "Bearer "+p.APIKey)
@@ -552,6 +548,14 @@ func hasMessageImages(messages []agent.Message) bool {
 		}
 	}
 	return false
+}
+
+func applyCopilotHeaders(headers http.Header, messages []agent.Message) {
+	headers.Set("X-Initiator", copilotInitiator(messages))
+	headers.Set("Openai-Intent", "conversation-edits")
+	if hasMessageImages(messages) {
+		headers.Set("Copilot-Vision-Request", "true")
+	}
 }
 
 func isQwenTokenPlan(provider string) bool {

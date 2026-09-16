@@ -72,6 +72,40 @@ func TestGitHubCopilotUsesStoredYenCredential(t *testing.T) {
 	}
 }
 
+func TestGitHubCopilotSelectsConfiguredProtocol(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		api  string
+		want any
+	}{
+		{name: "completions", api: "openai-completions", want: OpenAICompletions{}},
+		{name: "responses", api: "openai-responses", want: OpenAIResponses{}},
+		{name: "anthropic", api: "anthropic-messages", want: AnthropicMessages{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("YEN_COPILOT_API", test.api)
+			configured, err := NewConfigured("github-copilot", "fixture-model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch test.want.(type) {
+			case OpenAICompletions:
+				if _, ok := configured.(OpenAICompletions); !ok {
+					t.Fatalf("configured=%T", configured)
+				}
+			case OpenAIResponses:
+				if _, ok := configured.(OpenAIResponses); !ok {
+					t.Fatalf("configured=%T", configured)
+				}
+			case AnthropicMessages:
+				if _, ok := configured.(AnthropicMessages); !ok {
+					t.Fatalf("configured=%T", configured)
+				}
+			}
+		})
+	}
+}
+
 func TestGoogleVertexUsesProjectEndpointAndYenAPIKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/projects/project/locations/asia-southeast1/publishers/google/models/fixture-model:streamGenerateContent" {
