@@ -111,3 +111,20 @@ func TestExploreStopsAfterBudgetedToolTurn(t *testing.T) {
 		t.Fatalf("provider calls=%d, want 1", provider.calls)
 	}
 }
+
+func TestExploreAddsFooterWhenBudgetFooterIsMalformed(t *testing.T) {
+	provider := malformedFooterExploreProvider{}
+	answer, err := newExploreTool(t.TempDir(), provider).Execute(context.Background(), map[string]any{"question": "map it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(answer, "nope/8 turns") || !strings.HasSuffix(answer, "1/8 turns") {
+		t.Fatalf("answer=%q", answer)
+	}
+}
+
+type malformedFooterExploreProvider struct{}
+
+func (malformedFooterExploreProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	return agent.Response{Text: "answer\n~1K in, ~nope/8 turns", StopReason: "stop"}, nil
+}

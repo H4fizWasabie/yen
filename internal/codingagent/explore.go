@@ -45,12 +45,7 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 	}
 	history := []agent.Message{{Role: "system", Content: explorerPrompt(tier, lines, turns, maxInputTokens)}}
 	limited := &turnLimitedProvider{provider: t.provider, limit: turns, maxInputTokens: maxInputTokens, tier: tier}
-	result, err := agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, limited, []agent.Tool{
-		tools.NewReadTool(t.cwd),
-		tools.NewGrepTool(t.cwd),
-		tools.NewFindTool(t.cwd),
-		tools.NewListTool(t.cwd),
-	}, history, question, nil, nil, nil, nil, t.hooks)
+	result, err := agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, limited, explorerToolCatalog(t.cwd), history, question, nil, nil, nil, nil, t.hooks)
 	if err != nil {
 		return "", err
 	}
@@ -62,10 +57,24 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 		return answer + fmt.Sprintf("\n~%dK in, %d/%d turns", (limited.inputTokens+500)/1000, limited.calls, turns), nil
 	}
 	answer = capExplorerAnswer(answer, lines)
-	if !strings.HasSuffix(answer, " turns") || !strings.Contains(answer[strings.LastIndex(answer, "\n")+1:], "/") {
+	if !explorerFooter(answer) {
 		answer += fmt.Sprintf("\n~%dK in, %d/%d turns", (limited.inputTokens+500)/1000, limited.calls, turns)
 	}
 	return answer, nil
+}
+
+func explorerToolCatalog(cwd string) []agent.Tool {
+	return []agent.Tool{tools.NewReadTool(cwd), tools.NewGrepTool(cwd), tools.NewFindTool(cwd), tools.NewListTool(cwd)}
+}
+
+func explorerFooter(answer string) bool {
+	line := answer[strings.LastIndex(answer, "\n")+1:]
+	if !strings.HasSuffix(line, " turns") {
+		return false
+	}
+	var input, used, max int
+	_, err := fmt.Sscanf(line, "~%dK in, %d/%d turns", &input, &used, &max)
+	return err == nil && input >= 0 && used >= 0 && max > 0 && used <= max
 }
 
 func explorerPrompt(tier string, lines, turns, maxInputTokens int) string {
