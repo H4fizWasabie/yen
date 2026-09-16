@@ -21,25 +21,32 @@ type Screen struct {
 }
 
 func (s Screen) Render(w io.Writer) error {
+	width, height := terminalSize(w)
+	return s.RenderAt(w, width, height)
+}
+
+// RenderAt draws the screen within the supplied terminal viewport.
+func (s Screen) RenderAt(w io.Writer, width, height int) error {
+	if width < 1 {
+		width = 80
+	}
+	if height < 1 {
+		height = 24
+	}
+	lines := s.layout(width, height)
 	if _, err := io.WriteString(w, "\x1b[2J\x1b[H"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "Scrollback"); err != nil {
-		return err
-	}
-	for _, entry := range s.Scrollback {
-		if _, err := fmt.Fprintln(w, entry); err != nil {
-			return err
-		}
-	}
+	_, err := fmt.Fprintln(w, strings.Join(lines, "\n"))
+	return err
+}
+
+func (s Screen) layout(width, height int) []string {
+	footer := make([]string, 0)
 	if s.Title != "" {
-		if _, err := fmt.Fprintf(w, "\n%s", s.Title); err != nil {
-			return err
-		}
+		footer = appendWrapped(footer, s.Title, width)
 	}
-	if _, err := fmt.Fprintf(w, "\nStatus: %s\n", s.Status); err != nil {
-		return err
-	}
+	footer = appendWrapped(footer, "Status: "+s.Status, width)
 	if len(s.ExtensionStatuses) > 0 {
 		keys := make([]string, 0, len(s.ExtensionStatuses))
 		for key := range s.ExtensionStatuses {
@@ -50,24 +57,31 @@ func (s Screen) Render(w io.Writer) error {
 		for _, key := range keys {
 			statuses = append(statuses, s.ExtensionStatuses[key])
 		}
-		if _, err := fmt.Fprintln(w, strings.Join(statuses, " ")); err != nil {
-			return err
-		}
+		footer = appendWrapped(footer, strings.Join(statuses, " "), width)
 	}
-	if err := renderWidgets(w, s.WidgetsAbove); err != nil {
-		return err
+	footer = appendWidgetLines(footer, s.WidgetsAbove, width)
+	footer = appendWrapped(footer, "Input", width)
+	footer = appendWrapped(footer, "> "+strings.ReplaceAll(s.Input, "\n", " "), width)
+	footer = appendWidgetLines(footer, s.WidgetsBelow, width)
+	if len(footer) > height {
+		footer = footer[len(footer)-height:]
 	}
-	if _, err := fmt.Fprintf(w, "Input\n> %s", strings.ReplaceAll(s.Input, "\n", " ")); err != nil {
-		return err
+
+	available := height - len(footer) - 1
+	if available < 0 {
+		available = 0
 	}
-	if err := renderWidgets(w, s.WidgetsBelow); err != nil {
-		return err
+	scrollback := []string{"Scrollback"}
+	for _, entry := range s.Scrollback {
+		scrollback = appendWrapped(scrollback, entry, width)
 	}
-	_, err := fmt.Fprintln(w)
-	return err
+	if len(scrollback) > available {
+		scrollback = scrollback[len(scrollback)-available:]
+	}
+	return append(scrollback, footer...)
 }
 
-func renderWidgets(w io.Writer, widgets map[string][]string) error {
+func appendWidgetLines(lines []string, widgets map[string][]string, width int) []string {
 	keys := make([]string, 0, len(widgets))
 	for key := range widgets {
 		keys = append(keys, key)
@@ -75,12 +89,27 @@ func renderWidgets(w io.Writer, widgets map[string][]string) error {
 	sort.Strings(keys)
 	for _, key := range keys {
 		for _, line := range widgets[key] {
-			if _, err := fmt.Fprintln(w, line); err != nil {
-				return err
-			}
+			lines = appendWrapped(lines, line, width)
 		}
 	}
-	return nil
+	return lines
+}
+
+func appendWrapped(lines []string, value string, width int) []string {
+	value = strings.ReplaceAll(value, "\r", "")
+	for _, part := range strings.Split(value, "\n") {
+		runes := []rune(part)
+		if len(runes) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+		for len(runes) > width {
+			lines = append(lines, string(runes[:width]))
+			runes = runes[width:]
+		}
+		lines = append(lines, string(runes))
+	}
+	return lines
 }
 
 // Select presents numbered options and accepts a number, j/k, or arrow keys.

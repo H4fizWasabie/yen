@@ -2,6 +2,18 @@
 
 Date: 2026-09-15
 
+## Checkpoint: Goal 4 bounded terminal viewport
+
+The dependency-free TUI screen now uses the real terminal writer dimensions,
+wraps content to the viewport width, trims scrollback to preserve the status,
+widget, and input regions, and keeps scripted non-terminal output unbounded.
+Oracle authority is `packages/tui/src/tui-main-screen.ts:182-250` and
+`packages/tui/src/tui.ts:23-29`. Go evidence is `internal/tui/tui.go`,
+`internal/tui/terminal_size_linux.go`, and
+`TestScreenRenderAtKeepsViewportAndRegions`. Native component-specific layout,
+interactive text editing, and live terminal acceptance remain open. The PR is
+open for Claude review and must not be merged by this agent.
+
 ## Checkpoint: Goal 6 built-in tool edges
 
 On `feat/goal-6-tool-edges`, convert_doc now includes markitdown stderr for

@@ -36,6 +36,18 @@ func TestHandleExtensionUIUpdatesScreenPresentation(t *testing.T) {
 	}
 }
 
+func TestScreenRenderAtKeepsViewportAndRegions(t *testing.T) {
+	screen := Screen{Scrollback: []string{"one", "two", "three"}, Status: "Ready", Input: "draft"}
+	var output strings.Builder
+	if err := screen.RenderAt(&output, 20, 6); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if strings.Contains(got, "one") || !strings.Contains(got, "two") || !strings.Contains(got, "three") || !strings.Contains(got, "Status: Ready") || !strings.Contains(got, "> draft") {
+		t.Fatalf("viewport output=%q", got)
+	}
+}
+
 func TestHandleExtensionUIKeepsExtensionStatusesByKey(t *testing.T) {
 	screen := &Screen{Status: "Ready"}
 	var output strings.Builder
