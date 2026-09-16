@@ -23,7 +23,7 @@ func TestDiscoverAndLoadTypeScriptExtensionsIntoRegistry(t *testing.T) {
 		}
 	}
 	good := filepath.Join(local, "good.ts")
-	write(good, `export default (api: any) => { api.on("before_provider_request", (event: any) => ({ messages: [...event.messages, { Role: "system", Content: "extension" }] })); api.on("tool_call", (event: any) => event.toolCall.Name === "blocked" ? ({ block: true, reason: "blocked by extension" }) : undefined); api.registerCommand("hello", { description: "hello", handler: async () => {} }); api.registerMessageRenderer("text", (value: any) => "rendered:" + value); };`)
+	write(good, `export default (api: any) => { api.on("before_provider_request", (event: any) => ({ messages: [...event.messages, { Role: "system", Content: "extension" }] })); api.on("tool_call", (event: any) => event.toolCall.Name === "blocked" ? ({ block: true, reason: "blocked by extension" }) : undefined); api.registerCommand("hello", { description: "hello", handler: async () => { await api.confirm("Continue?", "yes"); } }); api.registerMessageRenderer("text", (value: any) => "rendered:" + value); };`)
 	write(filepath.Join(local, "broken.js"), `module.exports = () => { throw new Error("broken"); };`)
 	global := filepath.Join(globalRoot, "extensions")
 	if err := os.MkdirAll(global, 0o755); err != nil {
@@ -57,6 +57,14 @@ func TestDiscoverAndLoadTypeScriptExtensionsIntoRegistry(t *testing.T) {
 	value, ok := renderer("hello", RenderOptions{})
 	if !ok || value != "rendered:hello" {
 		t.Fatalf("rendered=%#v ok=%v", value, ok)
+	}
+	uiCalled := false
+	loaded.SetUIRequester(func(_ context.Context, request map[string]any) (map[string]any, error) {
+		uiCalled = request["method"] == "confirm"
+		return map[string]any{"id": request["id"], "confirmed": true}, nil
+	})
+	if err := loaded.Registry.Commands()[0].Handler(context.Background(), ""); err != nil || !uiCalled {
+		t.Fatalf("extension command UI err=%v called=%v", err, uiCalled)
 	}
 	loaded.Close()
 	t.Setenv("YEN_TRUST_PROJECT", "0")

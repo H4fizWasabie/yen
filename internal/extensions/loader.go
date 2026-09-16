@@ -37,6 +37,12 @@ func (r *LoadResult) Close() error {
 	return first
 }
 
+func (r *LoadResult) SetUIRequester(requester func(context.Context, map[string]any) (map[string]any, error)) {
+	for _, b := range r.bridges {
+		b.ui = requester
+	}
+}
+
 func DiscoverAndLoad(workspace, agentDir string, configured []string) (*LoadResult, error) {
 	return discoverAndLoad(workspace, agentDir, configured, nil)
 }
@@ -250,6 +256,7 @@ type bridge struct {
 	out                              *bufio.Reader
 	cmd                              *exec.Cmd
 	mu                               sync.Mutex
+	ui                               func(context.Context, map[string]any) (map[string]any, error)
 }
 
 func startBridge(path string) (*bridge, error) {
@@ -305,18 +312,40 @@ func (b *bridge) call(ctx context.Context, kind, name string, payload, result an
 	}
 	done := make(chan error, 1)
 	go func() {
-		var response struct {
-			Error  string          `json:"error"`
-			Result json.RawMessage `json:"result"`
-		}
-		if err := b.read(&response); err != nil {
-			done <- err
-		} else if response.Error != "" {
-			done <- errors.New(response.Error)
-		} else if result != nil {
-			done <- json.Unmarshal(response.Result, result)
-		} else {
-			done <- nil
+		for {
+			var response map[string]any
+			if err := b.read(&response); err != nil {
+				done <- err
+				return
+			}
+			if response["type"] == "extension_ui_request" && b.ui != nil {
+				uiResponse, err := b.ui(ctx, response)
+				if err != nil {
+					done <- err
+					return
+				}
+				if uiResponse == nil {
+					uiResponse = map[string]any{}
+				}
+				uiResponse["kind"] = "ui_response"
+				data, _ := json.Marshal(uiResponse)
+				if _, err := b.in.Write(append(data, '\n')); err != nil {
+					done <- err
+					return
+				}
+				continue
+			}
+			if message, _ := response["error"].(string); message != "" {
+				done <- errors.New(message)
+				return
+			}
+			if result != nil {
+				data, _ := json.Marshal(response["result"])
+				done <- json.Unmarshal(data, result)
+			} else {
+				done <- nil
+			}
+			return
 		}
 	}()
 	select {
@@ -333,8 +362,8 @@ func (b *bridge) close() error {
 	return b.cmd.Wait()
 }
 
-const bridgeScript = `import readline from "node:readline"; import { pathToFileURL } from "node:url";
+const bridgeScript = `import readline from "node:readline"; import crypto from "node:crypto"; import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.argv[1]).href); const factory = mod.default ?? mod;
-const handlers = new Map(), commands = [], commandHandlers = new Map(), renderers = new Map(); const api = { on: (name, fn) => { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); }, registerCommand: (name, opts) => { commands.push({name, description: opts?.description ?? ""}); commandHandlers.set(name, opts?.handler); }, registerMessageRenderer: (name, fn) => renderers.set("message:" + name, fn), registerEntryRenderer: (name, fn) => renderers.set("entry:" + name, fn), registerTool: () => {} };
+const handlers = new Map(), commands = [], commandHandlers = new Map(), renderers = new Map(), uiPending = new Map(); const requestUI = (method, fields = {}) => new Promise(resolve => { const id = crypto.randomUUID(); uiPending.set(id, resolve); console.log(JSON.stringify({type:"extension_ui_request", id, method, ...fields})); }); const api = { on: (name, fn) => { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); }, registerCommand: (name, opts) => { commands.push({name, description: opts?.description ?? ""}); commandHandlers.set(name, opts?.handler); }, registerMessageRenderer: (name, fn) => renderers.set("message:" + name, fn), registerEntryRenderer: (name, fn) => renderers.set("entry:" + name, fn), registerTool: () => {}, select: (title, options, opts) => requestUI("select", {title, options, timeout: opts?.timeout}), confirm: (title, message, opts) => requestUI("confirm", {title, message, timeout: opts?.timeout}), input: (title, placeholder, opts) => requestUI("input", {title, placeholder, timeout: opts?.timeout}), notify: (message, type) => { requestUI("notify", {message, notifyType:type}); }, setStatus: (key, text) => { requestUI("setStatus", {statusKey:key, statusText:text}); }, setWidget: (key, lines, opts) => { requestUI("setWidget", {widgetKey:key, widgetLines:lines, widgetPlacement:opts?.placement}); }, setTitle: title => { requestUI("setTitle", {title}); }, setEditorText: text => { requestUI("set_editor_text", {text}); } };
 await factory(api); console.log(JSON.stringify({name: process.argv[1], commands, messageRenderers: [...renderers.keys()].filter(k => k.startsWith("message:")).map(k => k.slice(8)), entryRenderers: [...renderers.keys()].filter(k => k.startsWith("entry:")).map(k => k.slice(6))}));
-const rl = readline.createInterface({input: process.stdin}); for await (const line of rl) { try { const req = JSON.parse(line); let value = req.payload; if (req.kind === "render") { const fn = renderers.get(req.name === "entry:" + req.name ? req.name : "message:" + req.name) ?? renderers.get(req.name); value = fn ? await fn(value, {}) : value; } else if (req.kind === "command") { const fn = commandHandlers.get(req.name); value = fn ? await fn(value, {}) : ""; } else { for (const fn of handlers.get(req.name) ?? []) { const next = await fn({type:req.name, ...value}); if (next !== undefined) value = next; } if (req.name === "before_provider_headers") value = value.headers; } console.log(JSON.stringify({result:value})); } catch (e) { console.log(JSON.stringify({error:String(e?.message ?? e)})); } }`
+const rl = readline.createInterface({input: process.stdin}); rl.on("line", line => { void (async () => { try { const req = JSON.parse(line); if (req.kind === "ui_response") { uiPending.get(req.id)?.(req); uiPending.delete(req.id); return; } let value = req.payload; if (req.kind === "render") { const fn = renderers.get(req.name === "entry:" + req.name ? req.name : "message:" + req.name) ?? renderers.get(req.name); value = fn ? await fn(value, {}) : value; } else if (req.kind === "command") { const fn = commandHandlers.get(req.name); value = fn ? await fn(value, {}) : ""; } else { for (const fn of handlers.get(req.name) ?? []) { const next = await fn({type:req.name, ...value}); if (next !== undefined) value = next; } if (req.name === "before_provider_headers") value = value.headers; } console.log(JSON.stringify({result:value})); } catch (e) { console.log(JSON.stringify({error:String(e?.message ?? e)})); } })(); }); await new Promise(() => {});`
