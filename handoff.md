@@ -906,6 +906,20 @@ queue slices are now implemented and locally verified. Work in this order:
    user-namespace installer acceptance has already passed with both binaries,
    wrappers, units, mode `600` channel env, and no service start.
 
+With explicit authorization, a separate non-fresh VPS experiment was completed
+on 2026-09-16 without changing the existing Yen installation. The installer
+release was isolated under `/opt/yen-goal7-experiment-20260916/root`, using
+dashboard port `30147` and units `yen-goal7-telegram-20260916.service` and
+`yen-goal7-dashboard-20260916.service`; both were active and health passed.
+The experimental Telegram wrapper used a localhost stub. Backup/restore and a
+release rollback/return passed; the retained archive is
+`/var/backups/yen-goal7-vps-isolated-20260916.tgz`, mode `600`, SHA-256
+`cf989dbed5a6e054fa7da8d98482224d5484cbf6b397b9887d5d5ef8cdb0fecf`.
+Cleanup left both original Yen pilot units active and healthy. This is not
+fresh-host evidence, so item 7 remains unresolved. An archived source lacked
+`.git`, requiring explicit `YEN_RELEASE_ID=103487d`; normal Git checkouts do
+not need that override.
+
 The dashboard token boundary has also passed isolated local acceptance: health
 200, unauthenticated API 401, `/api/login` 200, cookie 200, and Bearer 200.
 The 2026-09-15 VPS read-back found both Go pilot units and both existing

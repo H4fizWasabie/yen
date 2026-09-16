@@ -59,3 +59,30 @@ On 2026-09-15 the current side-by-side pilot data was archived and verified at
 `/var/backups/yen-20260915T093942Z.tgz` (11,333 bytes, mode `600`). Archive
 listing validation succeeded; all Yen and Theoses2 units remained active and
 Yen `/healthz` returned `{"ok":true}`.
+
+## 2026-09-16 isolated VPS experiment (not fresh-host evidence)
+
+With explicit authorization, a disposable release was installed on the pilot
+VPS under `/opt/yen-goal7-experiment-20260916/root`, with separate data and
+secret paths, dashboard port `30147`, and units
+`yen-goal7-telegram-20260916.service` and
+`yen-goal7-dashboard-20260916.service`. The existing `/opt/yen`, `/etc/yen`,
+`/var/lib/yen`, and `yen-*-pilot.service` units were not modified. The
+experimental Telegram wrapper used a localhost stub and did not poll the real
+bot API.
+
+`YEN_START=0` produced no experimental processes before the units were
+started. Both experimental units then reached `active`, and
+`http://127.0.0.1:30147/healthz` returned `{"ok":true}`. The isolated data
+archive was `/var/backups/yen-goal7-vps-isolated-20260916.tgz` (567 bytes,
+mode `600`, SHA-256
+`cf989dbed5a6e054fa7da8d98482224d5484cbf6b397b9887d5d5ef8cdb0fecf`); its
+listing validated, extraction was byte-for-byte verified for
+`memory/episodes.db`, and the release switch/return rollback both passed
+health checks. After cleanup, both original pilot units remained active and
+`30146/healthz` still returned `{"ok":true}`.
+
+This was an isolated existing-host experiment, not a genuinely fresh host;
+the Goal 7 fresh-host gate therefore remains open. An archived source transfer
+also required explicit `YEN_RELEASE_ID=103487d` because `git archive` omits
+the `.git` directory; a normal checkout does not require that override.
