@@ -116,6 +116,7 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 	request.Header.Set("Authorization", "Bearer "+p.APIKey)
 	request.Header.Set("Accept", "text/event-stream")
 	request.Header.Set("Content-Type", "application/json")
+	applyProviderHeaderHook(ctx, request.Header)
 	response, err := client.Do(request)
 	if err != nil {
 		return agent.Response{}, err

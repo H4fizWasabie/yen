@@ -193,6 +193,7 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 		if bearer != "" {
 			request.Header.Set("Authorization", "Bearer "+bearer)
 		}
+		applyProviderHeaderHook(ctx, request.Header)
 		response, err = client.Do(request)
 		if err != nil {
 			return agent.Response{}, err

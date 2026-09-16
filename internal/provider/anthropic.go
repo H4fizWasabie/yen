@@ -80,6 +80,7 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 	if p.APIKey != "" {
 		request.Header.Set("x-api-key", p.APIKey)
 	}
+	applyProviderHeaderHook(ctx, request.Header)
 	client := p.Client
 	if client == nil {
 		client = http.DefaultClient

@@ -106,6 +106,21 @@ type ToolHooks struct {
 	ProviderBefore func(context.Context, []Message, []string) ([]Message, error)
 	// ProviderAfter runs after a provider response is received.
 	ProviderAfter func(context.Context, Response) error
+	// ProviderHeaders lets an extension mutate request headers before transport.
+	ProviderHeaders ProviderHeaderHook
+}
+
+type ProviderHeaderHook func(context.Context, map[string][]string)
+
+type providerHeaderHookKey struct{}
+
+func WithProviderHeaderHook(ctx context.Context, hook ProviderHeaderHook) context.Context {
+	return context.WithValue(ctx, providerHeaderHookKey{}, hook)
+}
+
+func ProviderHeaderHookFromContext(ctx context.Context) ProviderHeaderHook {
+	hook, _ := ctx.Value(providerHeaderHookKey{}).(ProviderHeaderHook)
+	return hook
 }
 
 type RichTool interface {
@@ -281,13 +296,17 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		emitEvent(onEvent, Event{Type: "message_start", Message: &Message{Role: "assistant"}})
 		var response Response
 		var err error
+		providerContext := ctx
+		if hooks != nil && hooks.ProviderHeaders != nil {
+			providerContext = WithProviderHeaderHook(providerContext, hooks.ProviderHeaders)
+		}
 		providerMessages := result.Messages
 		if hooks != nil && hooks.ProviderBefore != nil {
 			providerMessages, err = hooks.ProviderBefore(ctx, providerMessages, toolNames)
 		}
 		if err == nil {
 			if streaming, ok := provider.(StreamingProviderWithEvents); ok {
-				response, err = streaming.NextWithEvents(ctx, providerMessages, toolNames, func(event StreamEvent) {
+				response, err = streaming.NextWithEvents(providerContext, providerMessages, toolNames, func(event StreamEvent) {
 					if event.Type == "text_delta" && event.Delta != "" {
 						result.Events = append(result.Events, "message_update")
 						if onUpdate != nil {
@@ -299,7 +318,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 					}
 				})
 			} else if streaming, ok := provider.(StreamingProvider); ok {
-				response, err = streaming.NextWithUpdates(ctx, providerMessages, toolNames, func(text string) {
+				response, err = streaming.NextWithUpdates(providerContext, providerMessages, toolNames, func(text string) {
 					if text != "" {
 						result.Events = append(result.Events, "message_update")
 						if onUpdate != nil {
@@ -308,7 +327,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 					}
 				})
 			} else {
-				response, err = provider.Next(ctx, providerMessages, toolNames)
+				response, err = provider.Next(providerContext, providerMessages, toolNames)
 			}
 		}
 		if err == nil && hooks != nil && hooks.ProviderAfter != nil {
