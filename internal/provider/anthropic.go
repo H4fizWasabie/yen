@@ -23,6 +23,7 @@ type AnthropicMessages struct {
 	ThinkingLevel string
 	Client        *http.Client
 	MaxRetries    int
+	Headers       map[string]string
 }
 
 func NewAnthropicMessages(baseURL, apiKey, model string) AnthropicMessages {
@@ -79,6 +80,9 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 	request.Header.Set("anthropic-version", "2023-06-01")
 	if p.APIKey != "" {
 		request.Header.Set("x-api-key", p.APIKey)
+	}
+	for name, value := range p.Headers {
+		request.Header.Set(name, value)
 	}
 	if p.ProviderName == "github-copilot" {
 		applyCopilotHeaders(request.Header, messages)

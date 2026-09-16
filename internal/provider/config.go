@@ -414,6 +414,33 @@ func cloudflareConfigured(providerID, model string) OpenAICompletions {
 	return client
 }
 
+func cloudflareGatewayConfigured(model string) agent.Provider {
+	baseURL := os.Getenv("YEN_CLOUDFLARE_BASE_URL")
+	if baseURL == "" {
+		baseURL = providerDefaults["cloudflare-ai-gateway"]
+	}
+	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_ACCOUNT_ID}", os.Getenv("YEN_CLOUDFLARE_ACCOUNT_ID"))
+	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_GATEWAY_ID}", os.Getenv("YEN_CLOUDFLARE_GATEWAY_ID"))
+	key := os.Getenv("YEN_CLOUDFLARE_API_KEY")
+	protocol := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_CLOUDFLARE_API")))
+	switch protocol {
+	case "openai-responses":
+		client := NewOpenAIResponses(baseURL, "", model)
+		client.ProviderName = "cloudflare-ai-gateway"
+		client.Headers = map[string]string{"cf-aig-authorization": "Bearer " + key}
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client
+	case "anthropic-messages":
+		client := NewAnthropicMessages(baseURL, "", model)
+		client.ProviderName = "cloudflare-ai-gateway"
+		client.Headers = map[string]string{"cf-aig-authorization": "Bearer " + key}
+		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
+		return client
+	default:
+		return cloudflareConfigured("cloudflare-ai-gateway", model)
+	}
+}
+
 func NewFromEnv() OpenAICompletions {
 	providerID := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_PROVIDER")))
 	model := os.Getenv("YEN_MODEL")
@@ -639,6 +666,9 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 	if providerID == "cloudflare-workers-ai" || providerID == "cloudflare-ai-gateway" {
 		if model == "" {
 			model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+		}
+		if providerID == "cloudflare-ai-gateway" {
+			return cloudflareGatewayConfigured(model), nil
 		}
 		return cloudflareConfigured(providerID, model), nil
 	}

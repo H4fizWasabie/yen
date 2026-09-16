@@ -630,6 +630,12 @@ seam test is `TestGitHubCopilotSelectsConfiguredProtocol`. Automatic per-model
 routing remains open because the pinned oracle's generated model data is not
 present in its tree.
 
+Cloudflare AI Gateway now has the same explicit three-protocol selection via
+`YEN_CLOUDFLARE_API`, with `cf-aig-authorization` preserved for Responses and
+Anthropic routes. `TestCloudflareAIGatewaySelectsConfiguredProtocol` covers the
+registration seam. The pinned oracle's generated Cloudflare catalogs and live
+native image/API acceptance remain open.
+
 ## Latest operations evidence
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response
