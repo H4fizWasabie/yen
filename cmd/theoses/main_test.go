@@ -198,7 +198,7 @@ func TestInteractiveModelSelectorChangesProviderFromScriptedInput(t *testing.T) 
 	runner := &runtime.Runner{Provider: provider.OpenAICompletions{BaseURL: server.URL, Model: "one", ProviderName: "test"}}
 	var output bytes.Buffer
 	activePath := current.Path()
-	handled, err := handleInteractiveSelector("/model", bufio.NewReader(strings.NewReader("2\n")), current, runner, conversation.Link{}, &activePath, &output)
+	handled, err := handleInteractiveSelector("/model", bufio.NewReader(strings.NewReader("2\n")), false, current, runner, conversation.Link{}, &activePath, &output)
 	if err != nil || !handled || providerModel(runner.Provider) != "two" {
 		t.Fatalf("handled=%v err=%v model=%q output=%q", handled, err, providerModel(runner.Provider), output.String())
 	}

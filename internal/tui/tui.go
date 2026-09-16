@@ -178,3 +178,107 @@ func Select(r *bufio.Reader, w io.Writer, title string, options []string) (int, 
 		}
 	}
 }
+
+// SelectRaw presents the same selector while reading individual terminal
+// bytes. It is used after the caller has enabled raw input.
+func SelectRaw(r *bufio.Reader, w io.Writer, title string, options []string) (int, error) {
+	if _, err := fmt.Fprintln(w, title); err != nil {
+		return -1, err
+	}
+	if len(options) == 0 {
+		return -1, nil
+	}
+	selected := 0
+	rendered := false
+	render := func() error {
+		if rendered {
+			if _, err := fmt.Fprintf(w, "\x1b[%dA", len(options)); err != nil {
+				return err
+			}
+		}
+		for i, option := range options {
+			marker := "  "
+			if i == selected {
+				marker = "> "
+			}
+			if rendered {
+				if _, err := io.WriteString(w, "\r\x1b[2K"); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintf(w, "%s%d) %s\n", marker, i+1, option); err != nil {
+				return err
+			}
+		}
+		rendered = true
+		return nil
+	}
+	if err := render(); err != nil {
+		return -1, err
+	}
+	var number strings.Builder
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return -1, err
+		}
+		switch b {
+		case '\r', '\n':
+			if number.Len() == 0 {
+				return selected, nil
+			}
+			n, parseErr := strconv.Atoi(number.String())
+			if parseErr == nil && n >= 1 && n <= len(options) {
+				return n - 1, nil
+			}
+			number.Reset()
+		case 'q', 'Q':
+			return -1, nil
+		case 'j':
+			number.Reset()
+			if selected < len(options)-1 {
+				selected++
+			}
+			if err := render(); err != nil {
+				return -1, err
+			}
+		case 'k':
+			number.Reset()
+			if selected > 0 {
+				selected--
+			}
+			if err := render(); err != nil {
+				return -1, err
+			}
+		case '\x1b':
+			next, err := r.ReadByte()
+			if err != nil {
+				return -1, err
+			}
+			if next != '[' {
+				return -1, nil
+			}
+			direction, err := r.ReadByte()
+			if err != nil {
+				return -1, err
+			}
+			number.Reset()
+			if direction == 'B' && selected < len(options)-1 {
+				selected++
+			} else if direction == 'A' && selected > 0 {
+				selected--
+			} else {
+				continue
+			}
+			if err := render(); err != nil {
+				return -1, err
+			}
+		default:
+			if b >= '0' && b <= '9' {
+				number.WriteByte(b)
+			} else {
+				number.Reset()
+			}
+		}
+	}
+}

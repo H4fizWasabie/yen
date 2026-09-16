@@ -35,6 +35,18 @@ the unchanged `-p` path. Oracle authority is
 `TestReadLineWithHistoryNavigatesPreviousEntries`. Full repository gates pass.
 Raw-terminal history redraw remains coupled to the pending raw-input slice.
 
+## Checkpoint update: 2026-09-16
+
+Raw tty `/resume` and `/model` selectors now consume individual bytes, making
+j/k and arrow navigation immediately actionable; Enter confirms the highlighted
+row, and numeric selection, q, and Escape remain supported. Scripted and piped
+input continues using the line-buffered selector. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4281-4305,4736-4770`
+and `packages/tui/src/components/editor.ts:464-476`. Go evidence is
+`internal/tui/tui.go`, `cmd/theoses/main.go`, and
+`TestSelectRawJThenEnterReturnsHighlightedOption`. Full repository gates pass.
+The selector is stacked on PR #190 and remains pending Claude review.
+
 ## Decision
 
 Do not cut over from TypeScript yet. Keep the Go Telegram and dashboard

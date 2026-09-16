@@ -37,6 +37,20 @@ handling. Go evidence is `internal/tui/editor.go`, `cmd/theoses/main.go`, and
 increment is independent of PR #190 and must remain open for review; it must
 not be merged by this agent.
 
+## Checkpoint: Goal 4 raw selector input
+
+Raw tty `/resume` and `/model` selectors now consume individual bytes through
+`internal/tui.SelectRaw`, so j/k and arrow navigation works without waiting for
+a newline; Enter confirms the highlighted row, while numeric selection, q, and
+Escape retain their behavior. The line-buffered `Select` path remains for
+scripted and piped input. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4281-4305,4736-4770`
+and `packages/tui/src/components/editor.ts:464-476`. Go evidence is
+`internal/tui/tui.go`, `cmd/theoses/main.go`, and
+`TestSelectRawJThenEnterReturnsHighlightedOption`. Full gates pass. This
+increment is stacked on PR #190 and must remain open for Claude review; it
+must not be merged by this agent.
+
 ## Checkpoint: Goal 4 native tree component layout
 
 On `feat/tui-component-layout`, `/tree` now renders a git-log-style ASCII

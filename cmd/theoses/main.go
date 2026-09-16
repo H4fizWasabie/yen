@@ -195,7 +195,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			var response strings.Builder
 			handled, err := handleInteractiveTree(prompt, reader, currentSession, &response)
 			if !handled && err == nil {
-				handled, err = handleInteractiveSelector(prompt, reader, currentSession, runner, link, &sessionPath, &response)
+				handled, err = handleInteractiveSelector(prompt, reader, rawInput, currentSession, runner, link, &sessionPath, &response)
 			}
 			if !handled && err == nil {
 				handled, err = handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, &response)
@@ -323,7 +323,7 @@ func handleInteractiveTree(input string, reader *bufio.Reader, current *session.
 	return true, err
 }
 
-func handleInteractiveSelector(input string, reader *bufio.Reader, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
+func handleInteractiveSelector(input string, reader *bufio.Reader, rawInput bool, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
 	switch strings.TrimSpace(input) {
 	case "/model":
 		models, err := provider.AvailableModels(context.Background(), runner.Provider)
@@ -334,7 +334,11 @@ func handleInteractiveSelector(input string, reader *bufio.Reader, current *sess
 		for i, model := range models {
 			options[i] = model.Provider + "/" + model.ID
 		}
-		selected, err := tui.Select(reader, stdout, "Select model", options)
+		selectFn := tui.Select
+		if rawInput {
+			selectFn = tui.SelectRaw
+		}
+		selected, err := selectFn(reader, stdout, "Select model", options)
 		if err != nil || selected < 0 {
 			return true, err
 		}
@@ -362,7 +366,11 @@ func handleInteractiveSelector(input string, reader *bufio.Reader, current *sess
 		for i, path := range paths {
 			options[i] = filepath.Base(path)
 		}
-		selected, err := tui.Select(reader, stdout, "Select session", options)
+		selectFn := tui.Select
+		if rawInput {
+			selectFn = tui.SelectRaw
+		}
+		selected, err := selectFn(reader, stdout, "Select session", options)
 		if err != nil || selected < 0 {
 			return true, err
 		}

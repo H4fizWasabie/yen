@@ -121,6 +121,20 @@ func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
 	}
 }
 
+func TestSelectRawJThenEnterReturnsHighlightedOption(t *testing.T) {
+	var output strings.Builder
+	selected, err := SelectRaw(bufio.NewReader(strings.NewReader("j\n")), &output, "Pick", []string{"first", "second"})
+	if err != nil || selected != 1 {
+		t.Fatalf("selected=%d err=%v", selected, err)
+	}
+	if !strings.Contains(output.String(), "> 2) second") {
+		t.Fatalf("highlighted option missing from output: %q", output.String())
+	}
+	if !strings.Contains(output.String(), "\x1b[2A") {
+		t.Fatalf("selector did not redraw in place: %q", output.String())
+	}
+}
+
 func TestSelectWithNoOptionsCancels(t *testing.T) {
 	selected, err := Select(bufio.NewReader(strings.NewReader("\n")), &strings.Builder{}, "Pick", nil)
 	if err != nil || selected != -1 {
