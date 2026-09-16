@@ -71,6 +71,13 @@ func TestInteractiveToolStatusIncludesBoundedCallPreview(t *testing.T) {
 	}
 }
 
+func TestInteractiveToolResultFormatsOutput(t *testing.T) {
+	result := interactiveToolResult(agent.Event{Name: "read", Result: "fixture README\n"})
+	if result != "Tool read: fixture README" {
+		t.Fatalf("result=%q", result)
+	}
+}
+
 func TestInteractiveRunRendersToolProgress(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("fixture README\n"), 0o644); err != nil {
@@ -106,6 +113,9 @@ func TestInteractiveRunRendersToolProgress(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Status: Running read: README.md") {
 		t.Fatalf("tool progress missing: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Tool read: fixture README") {
+		t.Fatalf("tool result missing: %q", stdout.String())
 	}
 }
 

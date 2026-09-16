@@ -211,7 +211,12 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				switch event.Type {
 				case "tool_execution_start":
 					screen.Status = interactiveToolStatus(event)
-				case "tool_execution_end", "tool_result":
+				case "tool_execution_end":
+					if result := interactiveToolResult(event); result != "" {
+						screen.Scrollback = append(screen.Scrollback, result)
+					}
+					screen.Status = "Streaming"
+				case "tool_result":
 					screen.Status = "Streaming"
 				default:
 					return
@@ -271,6 +276,18 @@ func interactiveToolStatus(event agent.Event) string {
 		preview = string(runes[:137]) + "..."
 	}
 	return "Running " + event.Name + ": " + preview
+}
+
+func interactiveToolResult(event agent.Event) string {
+	result := strings.Join(strings.Fields(event.Result), " ")
+	if result == "" {
+		return ""
+	}
+	runes := []rune(result)
+	if len(runes) > 140 {
+		result = string(runes[:137]) + "..."
+	}
+	return "Tool " + event.Name + ": " + result
 }
 
 func handleInteractiveSelector(input string, reader *bufio.Reader, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {

@@ -114,6 +114,13 @@ Oracle authority is
 Go evidence is `cmd/theoses/main.go` and
 `TestInteractiveRunRendersToolProgress`. Native tool components remain open.
 
+Completed tool results now also enter interactive scrollback as bounded text
+fallbacks (`Tool <name>: <output>`); native tool components remain deferred.
+Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:1984-2003`;
+Go evidence is `cmd/theoses/main.go`, `interactiveToolResult`, and the
+extended `TestInteractiveRunRendersToolProgress` acceptance.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:
