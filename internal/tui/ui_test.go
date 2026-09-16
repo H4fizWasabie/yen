@@ -19,6 +19,15 @@ func TestHandleExtensionUISelectReturnsProtocolResponse(t *testing.T) {
 	}
 }
 
+func TestHandleExtensionUIRawSelectConfirmsHighlightedOption(t *testing.T) {
+	response, err := HandleExtensionUIWithScreenMode(nil, map[string]any{
+		"id": "ui-raw-1", "method": "select", "title": "Pick", "options": []any{"first", "second"},
+	}, bufio.NewReader(strings.NewReader("j\n")), &strings.Builder{}, nil, true)
+	if err != nil || response["id"] != "ui-raw-1" || response["value"] != "second" {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+}
+
 func TestHandleExtensionUIUpdatesScreenPresentation(t *testing.T) {
 	screen := &Screen{Status: "Ready"}
 	var output strings.Builder
