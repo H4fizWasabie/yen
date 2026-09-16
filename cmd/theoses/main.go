@@ -99,6 +99,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		runner.ApplySettings(current)
 	}
 	var interactiveReader *bufio.Reader
+	var screen *tui.Screen
 	agentDir, _ := os.UserConfigDir()
 	configured := []string(nil)
 	if current, err := settings.Load(cwd); err == nil {
@@ -113,7 +114,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			if interactiveReader == nil {
 				return nil, errors.New("interactive extension UI is unavailable")
 			}
-			return tui.HandleExtensionUI(ctx, request, interactiveReader, stdout)
+			return tui.HandleExtensionUIWithScreen(ctx, request, interactiveReader, stdout, screen)
 		})
 	}
 	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
@@ -158,7 +159,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return result.FinalText, err
 	}
 	if *interactive {
-		screen := tui.Screen{Status: "Ready"}
+		screen = &tui.Screen{Status: "Ready"}
 		if err := screen.Render(stdout); err != nil {
 			return reportError(stderr, err)
 		}

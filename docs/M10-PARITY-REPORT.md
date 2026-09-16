@@ -71,6 +71,15 @@ Go evidence is `internal/tui/render.go`, `cmd/theoses/main.go`, and
 `TestInteractiveRunRendersExtensionMessage`. Full native component layout and
 interactive widgets remain open.
 
+Extension presentation requests now update the interactive screen model:
+status, title, above/below-editor widgets, notifications, and editor text are
+stored and redrawn instead of being emitted only as protocol labels. Oracle
+authority is `packages/coding-agent/src/modes/rpc/rpc-types.ts:229-283` and
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2022-2069`.
+Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
+`TestHandleExtensionUIUpdatesScreenPresentation`. Native component layout and
+interactive widget behavior remain open.
+
 The agent loop now exposes pre-loop and per-provider context interception
 boundaries. Hooks receive cloned message context and may replace it; tool turns
 therefore apply the per-call hook independently to each LLM call without
