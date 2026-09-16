@@ -213,6 +213,27 @@ func TestOpenAIResponsesListsAllCatalogPages(t *testing.T) {
 	}
 }
 
+func TestCloudflareAIGatewayResponsesUsesGatewayAuthorization(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" || r.Header.Get("cf-aig-authorization") != "Bearer gateway-key" || r.Header.Get("Authorization") != "" {
+			t.Fatalf("path=%q gateway=%q authorization=%q", r.URL.Path, r.Header.Get("cf-aig-authorization"), r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"type":"response.completed","response":{"id":"cf-response","model":"fixture-model","status":"completed"}}
+
+`)
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "", "fixture-model")
+	provider.ProviderName = "cloudflare-ai-gateway"
+	provider.Headers = map[string]string{"cf-aig-authorization": "Bearer gateway-key"}
+	result, err := provider.Next(context.Background(), nil, nil)
+	if err != nil || result.ResponseID != "cf-response" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestOpenAICodexListsPaginatedCatalogWithAccountHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer codex-token" || r.Header.Get("chatgpt-account-id") != "acct-1" {
