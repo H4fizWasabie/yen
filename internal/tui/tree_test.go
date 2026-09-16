@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bufio"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -112,5 +113,60 @@ func TestSelectTreeLineBufferedFoldAndUnfold(t *testing.T) {
 	selected, err := SelectTree(bufio.NewReader(strings.NewReader("f\nj\n\n")), &out, "Tree", entries, false)
 	if err != nil || selected != root {
 		t.Fatalf("selected=%q err=%v output=%q", selected, err, out.String())
+	}
+}
+
+func numberedEntries(count int) []session.TreeEntry {
+	entries := make([]session.TreeEntry, count)
+	for i := range entries {
+		entries[i] = session.TreeEntry{ID: fmt.Sprintf("n%d", i), Name: fmt.Sprintf("n%d", i)}
+	}
+	return entries
+}
+
+func TestSelectTreeRawPageDownAdvancesByViewportHeight(t *testing.T) {
+	entries := numberedEntries(10)
+	// PageDown (\x1b[6~) with a 3-row viewport should move three rows down.
+	selected, err := SelectTreeAt(bufio.NewReader(strings.NewReader("\x1b[6~\r")), &strings.Builder{}, "Tree", entries, true, 3)
+	if err != nil || selected != "n3" {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+}
+
+func TestSelectTreeRawPageUpRetreatsByViewportHeight(t *testing.T) {
+	entries := numberedEntries(10)
+	// Two PageDowns then one PageUp, each moving three rows, should land on n3.
+	selected, err := SelectTreeAt(bufio.NewReader(strings.NewReader("\x1b[6~\x1b[6~\x1b[5~\r")), &strings.Builder{}, "Tree", entries, true, 3)
+	if err != nil || selected != "n3" {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+}
+
+func TestSelectTreeLineBufferedPaging(t *testing.T) {
+	entries := numberedEntries(10)
+	selected, err := SelectTreeAt(bufio.NewReader(strings.NewReader("pgdn\npgdn\npgup\n\n")), &strings.Builder{}, "Tree", entries, false, 3)
+	if err != nil || selected != "n3" {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+}
+
+func TestSelectTreeRawWindowedNumericSelectionUsesVisibleOffset(t *testing.T) {
+	entries := numberedEntries(5)
+	// With a 2-row viewport, moving down three times (j x3) scrolls the
+	// window so index 2 becomes the first visible row; typing "1" then
+	// Enter must select that windowed row (n2), not the global first entry.
+	selected, err := SelectTreeAt(bufio.NewReader(strings.NewReader("jjj1\r")), &strings.Builder{}, "Tree", entries, true, 2)
+	if err != nil || selected != "n2" {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+}
+
+func TestSelectTreeDefaultsToRealTerminalViewportHeight(t *testing.T) {
+	entries := numberedEntries(3)
+	// A non-*os.File writer (like strings.Builder) reports an effectively
+	// unbounded viewport, so plain SelectTree must not window/truncate.
+	selected, err := SelectTree(bufio.NewReader(strings.NewReader("\r")), &strings.Builder{}, "Tree", entries, true)
+	if err != nil || selected != "n0" {
+		t.Fatalf("selected=%q err=%v", selected, err)
 	}
 }
