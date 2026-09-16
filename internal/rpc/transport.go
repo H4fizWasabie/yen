@@ -38,6 +38,22 @@ func ServeUnix(ctx context.Context, path string, server *Server) error {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return err
 	}
+	return serveListener(ctx, listener, server)
+}
+
+// ServeTCP provides the RPC transport for platforms without Unix sockets.
+func ServeTCP(ctx context.Context, address string, server *Server) error {
+	if server == nil {
+		return errors.New("rpc server is required")
+	}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return err
+	}
+	return serveListener(ctx, listener, server)
+}
+
+func serveListener(ctx context.Context, listener net.Listener, server *Server) error {
 	var connections sync.WaitGroup
 	var activeMu sync.Mutex
 	active := make(map[net.Conn]struct{})
@@ -83,7 +99,15 @@ type Client struct {
 }
 
 func DialUnix(path string) (*Client, error) {
-	connection, err := net.Dial("unix", path)
+	return dialNetwork("unix", path)
+}
+
+func DialTCP(address string) (*Client, error) {
+	return dialNetwork("tcp", address)
+}
+
+func dialNetwork(network, address string) (*Client, error) {
+	connection, err := net.Dial(network, address)
 	if err != nil {
 		return nil, err
 	}

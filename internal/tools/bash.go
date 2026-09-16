@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -65,21 +66,30 @@ func (t BashTool) ExecuteResult(ctx context.Context, args map[string]any) (BashR
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(seconds*float64(time.Second)))
 		defer cancel()
 	}
-	shell, flag := t.shellPath, "-lc"
-	if shell == "" {
-		shell = "bash"
-	}
-	if t.name == "powershell" {
-		shell, flag = "powershell", "-Command"
-	}
+	shell, flag := resolveShell(t.name, t.shellPath)
 	if t.commandPrefix != "" {
 		command = t.commandPrefix + "\n" + command
 	}
 	capture := newBashCapture()
-	cmd := exec.CommandContext(ctx, shell, flag, command)
+	// Start explicitly so the cancellation watcher only reads Process after the
+	// process has been created; Command.Run would race that read under -race.
+	cmd := exec.Command(shell, flag, command)
+	prepareCommand(cmd)
 	cmd.Dir = t.cwd
 	cmd.Stdout, cmd.Stderr = capture, capture
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return BashResult{}, err
+	}
+	stopped := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			terminateCommand(cmd)
+		case <-stopped:
+		}
+	}()
+	err := cmd.Wait()
+	close(stopped)
 	result := capture.result()
 	if ctx.Err() != nil {
 		result.Cancelled = true
@@ -99,6 +109,37 @@ func (t BashTool) ExecuteResult(ctx context.Context, args map[string]any) (BashR
 	code := 0
 	result.ExitCode = &code
 	return result, nil
+}
+
+func resolveShell(name, configured string) (string, string) {
+	if configured != "" {
+		if name == "powershell" {
+			return configured, "-Command"
+		}
+		return configured, "-lc"
+	}
+	if name == "powershell" {
+		candidates := []string{"pwsh", "powershell"}
+		if runtime.GOOS != "windows" {
+			candidates = []string{"pwsh"}
+		}
+		for _, candidate := range candidates {
+			if path, err := exec.LookPath(candidate); err == nil {
+				return path, "-Command"
+			}
+		}
+		return candidates[0], "-Command"
+	}
+	candidates := []string{"bash", "sh"}
+	if runtime.GOOS == "windows" {
+		candidates = []string{"bash.exe", "sh.exe"}
+	}
+	for _, candidate := range candidates {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, "-lc"
+		}
+	}
+	return candidates[0], "-lc"
 }
 
 type bashCapture struct {

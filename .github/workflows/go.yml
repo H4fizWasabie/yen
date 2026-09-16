@@ -35,3 +35,17 @@ jobs:
           else
             git diff --check HEAD^...HEAD
           fi
+
+  cross-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [darwin, windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - name: Build ${{ matrix.goos }}
+        run: GOOS=${{ matrix.goos }} GOARCH=amd64 go build ./...

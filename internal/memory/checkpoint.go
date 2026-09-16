@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 )
 
 type Checkpoint struct {
@@ -53,10 +52,10 @@ func (c *Checkpoints) Set(conversationID string, checkpoint Checkpoint) error {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(lock); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlockFile(lock)
 	if err := c.reload(); err != nil {
 		return err
 	}
