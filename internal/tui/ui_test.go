@@ -166,3 +166,18 @@ func TestRenderMessageFormatsSerializedTextComponent(t *testing.T) {
 		t.Fatalf("rendered=%q ok=%v", rendered, ok)
 	}
 }
+
+func TestRenderMessagePreservesSerializedTextComponentPadding(t *testing.T) {
+	registry := extensions.New()
+	if err := registry.RegisterMessageRenderer("custom", func(any, extensions.RenderOptions) (any, bool) {
+		return map[string]any{
+			"text": "hello\nworld", "paddingX": float64(1), "paddingY": float64(1),
+		}, true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rendered, ok := RenderMessage(registry, session.Message{Role: "custom"})
+	if !ok || rendered != "\n hello \n world \n" {
+		t.Fatalf("rendered=%q ok=%v", rendered, ok)
+	}
+}
