@@ -36,6 +36,40 @@ rendering, status-indicator spinner behavior, ctrl/alt modifier-key
 parsing, and live terminal acceptance remain open Goal 4 slices, each
 requiring its own failing seam test and PR.
 
+## Checkpoint: Goal 4 status-indicator spinner behavior
+
+On `feat/goal-4-status-spinner` (branched from `origin/main`), a new
+`internal/tui.Spinner` reproduces the oracle's `Loader` frame-cycling state
+machine (default ten-frame braille animation, 80ms interval, wraparound
+cycling, no-op advance at one frame or fewer) plus `FormatStatusLine`'s
+indicator+message composition. Oracle authority is
+`packages/tui/src/components/loader.ts:11-12,72-91` and
+`packages/coding-agent/src/modes/interactive/components/status-indicator.ts:7-114`.
+Go evidence is `internal/tui/spinner.go`,
+`TestSpinnerAdvanceCyclesThroughDefaultFrames`,
+`TestSpinnerWithSingleFrameNeverAdvances`,
+`TestSpinnerWithNoFramesRendersEmpty`,
+`TestFormatStatusLinePrefixesNonEmptyFrame`, and
+`TestFormatStatusLineOmitsFrameWhenEmpty`. All required gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass locally.
+
+Documented scope narrowing: this is the tested frame/state-machine core
+only, not a live-animating spinner. The oracle drives `Loader` with a real
+interval timer that calls `ui.requestRender()` on every tick; this Go
+interactive CLI's loop only redraws in response to prompt reads and agent
+events (not a wall-clock timer), so wiring an actually-animating spinner
+into the interactive loop — via a goroutine ticking `Spinner.Advance()` and
+triggering a `Screen.Render` — is a separate, larger change to that loop's
+structure, deliberately deferred to keep this slice small and testable
+without timing-dependent tests. This increment is opened as a PR against
+`main`, CI checked, and self-merged once green per the user's standing
+instruction. Live timer-driven redraw integration, a container/section
+model for dynamic borders, color/theme support, Mermaid rendering
+(deferred per user direction), ctrl/alt modifier-key parsing, and live
+terminal acceptance remain open Goal 4 slices, each requiring its own
+failing seam test and PR.
+
 ## Checkpoint: Goal 4 branch-summary prompt/navigation
 
 On `feat/goal-4-branch-summary-prompt` (branched from `origin/main` after
