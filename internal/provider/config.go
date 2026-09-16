@@ -237,6 +237,7 @@ func codexConfigured(model string) (OpenAIResponses, error) {
 	}
 	client := NewOpenAIResponses(baseURL, token, model)
 	client.ProviderName = "openai-codex"
+	client.Transport = "websocket"
 	client.Headers = map[string]string{
 		"chatgpt-account-id": accountID,
 		"originator":         "theoses",

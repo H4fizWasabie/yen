@@ -254,6 +254,10 @@ func TestGitHubCopilotUsesStoredAPIKeyCredential(t *testing.T) {
 
 func TestOpenAICodexUsesAccountAndExperimentalHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Upgrade") == "websocket" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		if r.URL.Path != "/codex/responses" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer header.") || r.Header.Get("chatgpt-account-id") != "acct-1" || r.Header.Get("originator") != "theoses" || r.Header.Get("OpenAI-Beta") != "responses=experimental" {
 			t.Fatalf("path=%q auth=%q account=%q originator=%q beta=%q", r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("chatgpt-account-id"), r.Header.Get("originator"), r.Header.Get("OpenAI-Beta"))
 		}
@@ -271,6 +275,9 @@ func TestOpenAICodexUsesAccountAndExperimentalHeaders(t *testing.T) {
 	}
 	client := configured.(OpenAIResponses)
 	client.Client = server.Client()
+	if client.Transport != "websocket" {
+		t.Fatalf("transport=%q", client.Transport)
+	}
 	result, err := client.Next(context.Background(), []agent.Message{{Role: "user", Content: "hello"}}, nil)
 	if err != nil || result.Provider != "openai-codex" || result.Text != "ok" {
 		t.Fatalf("result=%#v err=%v", result, err)
