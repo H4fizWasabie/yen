@@ -121,18 +121,18 @@ func TestEngineConsolidateRejectsInvalidResultWithoutCheckpoint(t *testing.T) {
 	}
 }
 
-func TestEngineConsolidateDefaultsMissingEpisodeTimestamps(t *testing.T) {
+func TestEngineConsolidateRejectsMissingEpisodeTimestamps(t *testing.T) {
 	engine, err := OpenEngine(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer engine.Close()
 	err = engine.Consolidate(context.Background(), consolidationProvider{text: `{"episode":{"summary":"missing times"}}`}, "turn-time", "conv-time", "work", "cli", []ConsolidationTurn{{Role: "user", Content: "hello"}})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), "episode is missing required fields") {
+		t.Fatalf("err=%v", err)
 	}
 	episodes, err := engine.Episodic.Recent("conv-time", 1)
-	if err != nil || len(episodes) != 1 || episodes[0].StartedAt == "" || episodes[0].EndedAt == "" {
+	if err != nil || len(episodes) != 0 {
 		t.Fatalf("episodes=%#v err=%v", episodes, err)
 	}
 }
@@ -156,6 +156,13 @@ func TestParseConsolidationResponseFiltersMalformedMembers(t *testing.T) {
 func TestParseConsolidationResponseRequiresEpisodeObject(t *testing.T) {
 	_, err := parseConsolidationResponse(`{"facts":[],"episode":"not an object"}`)
 	if err == nil || !strings.Contains(err.Error(), "missing an episode") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestParseConsolidationResponseRequiresEpisodeFields(t *testing.T) {
+	_, err := parseConsolidationResponse(`{"facts":[],"episode":{"summary":"window","startedAt":"2026-01-01T00:00:00Z"}}`)
+	if err == nil || !strings.Contains(err.Error(), "episode is missing required fields") {
 		t.Fatalf("err=%v", err)
 	}
 }

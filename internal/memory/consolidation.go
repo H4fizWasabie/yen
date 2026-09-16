@@ -233,6 +233,25 @@ func parseConsolidationResponse(raw string) (struct {
 			Episode ConsolidatedEpisode
 		}{}, errors.New("consolidation response is missing an episode")
 	}
+	var episodeFields map[string]json.RawMessage
+	if err := json.Unmarshal(envelope.Episode, &episodeFields); err != nil {
+		return struct {
+			Facts   []ConsolidatedFact
+			Edges   []ConsolidatedEdge
+			Episode ConsolidatedEpisode
+		}{}, errors.New("consolidation response's episode is missing required fields")
+	}
+	for _, field := range []string{"summary", "startedAt", "endedAt"} {
+		value, ok := episodeFields[field]
+		var text string
+		if !ok || json.Unmarshal(value, &text) != nil {
+			return struct {
+				Facts   []ConsolidatedFact
+				Edges   []ConsolidatedEdge
+				Episode ConsolidatedEpisode
+			}{}, errors.New("consolidation response's episode is missing required fields")
+		}
+	}
 	var facts []ConsolidatedFact
 	for _, rawFact := range envelope.Facts {
 		var fact struct {
