@@ -26,6 +26,63 @@ func (longTelegramProvider) Next(context.Context, []agent.Message, []string) (ag
 	return agent.Response{Text: strings.Repeat("界", 5000), StopReason: "stop"}, nil
 }
 
+type generatedImageTelegramProvider struct{ calls int }
+
+func (p *generatedImageTelegramProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return agent.Response{ToolCalls: []agent.ToolCall{{ID: "image-1", Name: "image"}}, StopReason: "toolUse"}, nil
+	}
+	return agent.Response{Text: "done", StopReason: "stop"}, nil
+}
+
+type generatedImageTelegramTool struct{}
+
+func (generatedImageTelegramTool) Name() string { return "image" }
+
+func (generatedImageTelegramTool) Execute(context.Context, map[string]any) (string, error) {
+	return "generated", nil
+}
+
+func (generatedImageTelegramTool) ExecuteRich(context.Context, map[string]any) (agent.ToolResult, error) {
+	return agent.ToolResult{Text: "generated", Images: []string{"data:image/png;base64,cG5n"}}, nil
+}
+
+func TestTelegramBotDoesNotResendHistoricalResultImages(t *testing.T) {
+	dir := t.TempDir()
+	registry, err := conversation.OpenRegistry(filepath.Join(dir, "links.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := runtime.New(queue, &generatedImageTelegramProvider{}, func(string) []agent.Tool {
+		return []agent.Tool{generatedImageTelegramTool{}}
+	})
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	var photos atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bottoken/sendPhoto" {
+			photos.Add(1)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	bot := &TelegramBot{Adapter: Telegram{Service: Service{Registry: registry, Runner: runner}, Workspace: dir}, Token: "token", OwnerChatID: "42", APIBase: server.URL}
+	for _, text := range []string{"generate", "hello"} {
+		message := &telegramMessage{Text: text}
+		message.Chat.ID = 42
+		if err := bot.HandleUpdate(context.Background(), telegramUpdate{Message: message}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := photos.Load(); got != 1 {
+		t.Fatalf("sendPhoto calls=%d, want one image only from the first turn", got)
+	}
+}
+
 type blockingTelegramProvider struct {
 	started chan struct{}
 	release chan struct{}
@@ -119,11 +176,11 @@ func TestTelegramBotGroupsMultipleResultImages(t *testing.T) {
 	}))
 	defer server.Close()
 	bot := &TelegramBot{Token: "token", APIBase: server.URL}
-	result := agent.Result{Messages: []agent.Message{{Role: "tool", Images: []string{
+	images := []string{
 		"data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png")),
 		"data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte("jpeg")),
-	}}}}
-	if err := bot.sendResultImages(context.Background(), "42", result, nil); err != nil {
+	}
+	if err := bot.sendResultImages(context.Background(), "42", images, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(media) != 2 || files != 2 || media[0]["media"] != "attach://file0" || media[1]["media"] != "attach://file1" {
