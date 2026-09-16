@@ -24,4 +24,17 @@ This note intentionally excludes memory and channel/session behavior.
 2. Serialize same-file mutations.
 3. Add Anthropic cache controls.
 
-No implementation was made as part of this audit.
+## Implementation evidence
+
+Implemented on the feature-parity branch:
+
+- retries continue from the accumulated agent messages;
+- explicit zero compaction values survive settings merge and runtime apply;
+- nested provider timeout/retry/delay settings are modeled and applied;
+- Anthropic cache-control markers are supported for system, final content, and last tool;
+- write/edit mutations are serialized;
+- task descriptors and boundary markers are persisted through an opt-in boundary provider;
+- loop context, API-key, next-turn, and stop-after-turn hooks are available and chained through extensions;
+- the core prompt includes planning, efficiency, non-blocking, recheck, and destructive-action guidance.
+
+Evidence: `go test ./...`, `go test -race ./...`, and `go vet ./...` pass on the branch. Task-boundary detection remains opt-in because enabling it by default would add an extra provider call to every existing runtime turn; production wiring occurs when a summarization provider is configured.

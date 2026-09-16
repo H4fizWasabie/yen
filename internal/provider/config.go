@@ -1135,6 +1135,60 @@ func SetRetryMax(p agent.Provider, retries int) (agent.Provider, error) {
 	}
 }
 
+func SetProviderRetrySettings(p agent.Provider, timeoutMs, retries, maxDelayMs int) (agent.Provider, error) {
+	if timeoutMs < -1 || retries < -1 || maxDelayMs < -1 {
+		return nil, errors.New("provider retry settings cannot be negative")
+	}
+	switch client := p.(type) {
+	case OpenAICompletions:
+		if timeoutMs >= 0 {
+			client.Timeout = time.Duration(timeoutMs) * time.Millisecond
+		}
+		if retries >= 0 {
+			client.MaxRetries = retries
+		}
+		if maxDelayMs >= 0 {
+			client.MaxRetryDelay = time.Duration(maxDelayMs) * time.Millisecond
+		}
+		return client, nil
+	case AnthropicMessages:
+		if timeoutMs >= 0 {
+			client.Timeout = time.Duration(timeoutMs) * time.Millisecond
+		}
+		if retries >= 0 {
+			client.MaxRetries = retries
+		}
+		if maxDelayMs >= 0 {
+			client.MaxRetryDelay = time.Duration(maxDelayMs) * time.Millisecond
+		}
+		return client, nil
+	case GoogleGenerativeAI:
+		if timeoutMs >= 0 {
+			client.Timeout = time.Duration(timeoutMs) * time.Millisecond
+		}
+		if retries >= 0 {
+			client.MaxRetries = retries
+		}
+		if maxDelayMs >= 0 {
+			client.MaxRetryDelay = time.Duration(maxDelayMs) * time.Millisecond
+		}
+		return client, nil
+	case OpenAIResponses:
+		if timeoutMs >= 0 {
+			client.Timeout = time.Duration(timeoutMs) * time.Millisecond
+		}
+		if retries >= 0 {
+			client.MaxRetries = retries
+		}
+		if maxDelayMs >= 0 {
+			client.MaxRetryDelay = time.Duration(maxDelayMs) * time.Millisecond
+		}
+		return client, nil
+	default:
+		return nil, errors.New("provider does not support nested retry settings")
+	}
+}
+
 func RetryEnabled(p agent.Provider) bool {
 	switch client := p.(type) {
 	case OpenAICompletions:

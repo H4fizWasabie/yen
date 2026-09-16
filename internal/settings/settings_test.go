@@ -52,6 +52,19 @@ func TestLoadDeepMergesNestedSettings(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesExplicitZeroSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	t.Setenv("YEN_SETTINGS_FILE", path)
+	if err := os.WriteFile(path, []byte(`{"compaction":{"maxHistoryTurns":0},"retry":{"provider":{"timeoutMs":0,"maxRetries":0,"maxRetryDelayMs":0}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir)
+	if err != nil || got.Compaction == nil || got.Compaction.MaxHistoryTurns != 0 || got.Retry == nil || got.Retry.Provider == nil || !got.Retry.Provider.Has("timeoutMs") || !got.Retry.Provider.Has("maxRetries") || !got.Retry.Provider.Has("maxRetryDelayMs") {
+		t.Fatalf("settings=%#v err=%v", got, err)
+	}
+}
+
 func TestQueueModesDefaultAndValidation(t *testing.T) {
 	steering, followUp := QueueModes(Settings{SteeringMode: "invalid", FollowUpMode: "all"})
 	if steering != "one-at-a-time" || followUp != "all" {

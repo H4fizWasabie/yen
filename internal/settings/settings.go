@@ -36,12 +36,57 @@ type CompactionSettings struct {
 	ReserveTokens    int   `json:"reserveTokens,omitempty"`
 	KeepRecentTokens int   `json:"keepRecentTokens,omitempty"`
 	MaxHistoryTurns  int   `json:"maxHistoryTurns,omitempty"`
+	present          map[string]bool
 }
 
 type RetrySettings struct {
-	Enabled     *bool `json:"enabled,omitempty"`
-	MaxRetries  int   `json:"maxRetries,omitempty"`
-	BaseDelayMs int   `json:"baseDelayMs,omitempty"`
+	Enabled     *bool                  `json:"enabled,omitempty"`
+	MaxRetries  int                    `json:"maxRetries,omitempty"`
+	BaseDelayMs int                    `json:"baseDelayMs,omitempty"`
+	Provider    *ProviderRetrySettings `json:"provider,omitempty"`
+}
+
+type ProviderRetrySettings struct {
+	TimeoutMs, MaxRetries, MaxRetryDelayMs int
+	present                                map[string]bool
+}
+
+func (s *ProviderRetrySettings) Has(name string) bool { return s != nil && s.present[name] }
+
+func (s *CompactionSettings) UnmarshalJSON(data []byte) error {
+	type plain CompactionSettings
+	var v plain
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	*s = CompactionSettings(v)
+	var keys map[string]json.RawMessage
+	_ = json.Unmarshal(data, &keys)
+	s.present = map[string]bool{}
+	for k := range keys {
+		s.present[k] = true
+	}
+	return nil
+}
+func (s *ProviderRetrySettings) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if b := raw["timeoutMs"]; b != nil {
+		_ = json.Unmarshal(b, &s.TimeoutMs)
+	}
+	if b := raw["maxRetries"]; b != nil {
+		_ = json.Unmarshal(b, &s.MaxRetries)
+	}
+	if b := raw["maxRetryDelayMs"]; b != nil {
+		_ = json.Unmarshal(b, &s.MaxRetryDelayMs)
+	}
+	s.present = map[string]bool{}
+	for k := range raw {
+		s.present[k] = true
+	}
+	return nil
 }
 
 func Load(workspace string) (Settings, error) {
@@ -196,16 +241,22 @@ func merge(target *Settings, source Settings) {
 		if target.Compaction == nil {
 			target.Compaction = &CompactionSettings{}
 		}
+		if target.Compaction.present == nil {
+			target.Compaction.present = map[string]bool{}
+		}
+		for key := range source.Compaction.present {
+			target.Compaction.present[key] = true
+		}
 		if source.Compaction.Enabled != nil {
 			target.Compaction.Enabled = source.Compaction.Enabled
 		}
-		if source.Compaction.ReserveTokens != 0 {
+		if source.Compaction.ReserveTokens != 0 || source.Compaction.present["reserveTokens"] {
 			target.Compaction.ReserveTokens = source.Compaction.ReserveTokens
 		}
-		if source.Compaction.KeepRecentTokens != 0 {
+		if source.Compaction.KeepRecentTokens != 0 || source.Compaction.present["keepRecentTokens"] {
 			target.Compaction.KeepRecentTokens = source.Compaction.KeepRecentTokens
 		}
-		if source.Compaction.MaxHistoryTurns != 0 {
+		if source.Compaction.MaxHistoryTurns != 0 || source.Compaction.present["maxHistoryTurns"] {
 			target.Compaction.MaxHistoryTurns = source.Compaction.MaxHistoryTurns
 		}
 	}
@@ -221,6 +272,27 @@ func merge(target *Settings, source Settings) {
 		}
 		if source.Retry.BaseDelayMs != 0 {
 			target.Retry.BaseDelayMs = source.Retry.BaseDelayMs
+		}
+		if source.Retry.Provider != nil {
+			if target.Retry.Provider == nil {
+				target.Retry.Provider = &ProviderRetrySettings{}
+			}
+			p, q := source.Retry.Provider, target.Retry.Provider
+			if q.present == nil {
+				q.present = map[string]bool{}
+			}
+			for key := range p.present {
+				q.present[key] = true
+			}
+			if p.present["timeoutMs"] {
+				q.TimeoutMs = p.TimeoutMs
+			}
+			if p.present["maxRetries"] {
+				q.MaxRetries = p.MaxRetries
+			}
+			if p.present["maxRetryDelayMs"] {
+				q.MaxRetryDelayMs = p.MaxRetryDelayMs
+			}
 		}
 	}
 	if source.SteeringMode == "all" || source.SteeringMode == "one-at-a-time" {

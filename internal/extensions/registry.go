@@ -25,14 +25,18 @@ type MarkdownTransformer func(string) string
 
 // Hooks is the extension-facing form of the agent interception events.
 type Hooks struct {
-	BeforeTool       func(context.Context, agent.Message, agent.ToolCall) (bool, string, error)
-	AfterTool        func(context.Context, agent.Message, agent.ToolCall, agent.ToolResult, bool) (agent.ToolResult, bool, error)
-	BeforeAgent      func(context.Context, []agent.Message) ([]agent.Message, error)
-	Context          func(context.Context, []agent.Message) ([]agent.Message, error)
-	BeforeProvider   func(context.Context, []agent.Message, []string) ([]agent.Message, error)
-	AfterProvider    func(context.Context, agent.Response) error
-	ProviderHeaders  agent.ProviderHeaderHook
-	ProviderResponse agent.ProviderResponseHook
+	BeforeTool          func(context.Context, agent.Message, agent.ToolCall) (bool, string, error)
+	AfterTool           func(context.Context, agent.Message, agent.ToolCall, agent.ToolResult, bool) (agent.ToolResult, bool, error)
+	BeforeAgent         func(context.Context, []agent.Message) ([]agent.Message, error)
+	Context             func(context.Context, []agent.Message) ([]agent.Message, error)
+	BeforeProvider      func(context.Context, []agent.Message, []string) ([]agent.Message, error)
+	AfterProvider       func(context.Context, agent.Response) error
+	ProviderHeaders     agent.ProviderHeaderHook
+	ProviderResponse    agent.ProviderResponseHook
+	TransformContext    func(context.Context, []agent.Message) ([]agent.Message, error)
+	GetAPIKey           func(context.Context, string) string
+	PrepareNextTurn     func(context.Context, agent.Response, []agent.Message, []agent.Message) error
+	ShouldStopAfterTurn func(context.Context, agent.Response, []agent.Message, []agent.Message) bool
 }
 
 type Registry struct {
@@ -145,7 +149,7 @@ func (r *Registry) AgentHooks(base *agent.ToolHooks) *agent.ToolHooks {
 	}
 	all := append([]Hooks(nil), registered...)
 	if base != nil {
-		all = append(all, Hooks{BeforeTool: base.Before, AfterTool: base.After, BeforeAgent: base.BeforeAgentStart, Context: base.Context, BeforeProvider: base.ProviderBefore, AfterProvider: base.ProviderAfter, ProviderHeaders: base.ProviderHeaders, ProviderResponse: base.ProviderResponse})
+		all = append(all, Hooks{BeforeTool: base.Before, AfterTool: base.After, BeforeAgent: base.BeforeAgentStart, Context: base.Context, BeforeProvider: base.ProviderBefore, AfterProvider: base.ProviderAfter, ProviderHeaders: base.ProviderHeaders, ProviderResponse: base.ProviderResponse, TransformContext: base.TransformContext, GetAPIKey: base.GetAPIKey, PrepareNextTurn: base.PrepareNextTurn, ShouldStopAfterTurn: base.ShouldStopAfterTurn})
 	}
 	result := &agent.ToolHooks{}
 	result.Before = func(ctx context.Context, message agent.Message, call agent.ToolCall) (bool, string, error) {
@@ -197,6 +201,37 @@ func (r *Registry) AgentHooks(base *agent.ToolHooks) *agent.ToolHooks {
 				hook.ProviderResponse(ctx, status, headers)
 			}
 		}
+	}
+	result.TransformContext = chainMessages(all, func(h Hooks) func(context.Context, []agent.Message) ([]agent.Message, error) {
+		return h.TransformContext
+	})
+	result.GetAPIKey = func(ctx context.Context, provider string) string {
+		for _, h := range all {
+			if h.GetAPIKey != nil {
+				if key := h.GetAPIKey(ctx, provider); key != "" {
+					return key
+				}
+			}
+		}
+		return ""
+	}
+	result.PrepareNextTurn = func(ctx context.Context, response agent.Response, results, messages []agent.Message) error {
+		for _, h := range all {
+			if h.PrepareNextTurn != nil {
+				if err := h.PrepareNextTurn(ctx, response, results, messages); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	result.ShouldStopAfterTurn = func(ctx context.Context, response agent.Response, results, messages []agent.Message) bool {
+		for _, h := range all {
+			if h.ShouldStopAfterTurn != nil && h.ShouldStopAfterTurn(ctx, response, results, messages) {
+				return true
+			}
+		}
+		return false
 	}
 	return result
 }

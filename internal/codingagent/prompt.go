@@ -26,7 +26,7 @@ func SystemPromptMessage(workspace string, available []agent.Tool) agent.Message
 		seen[tool.Name()] = true
 		fmt.Fprintf(&builder, "- %s\n", tool.Name())
 	}
-	builder.WriteString("\nGuidelines:\n- Be concise in your responses\n- Show file paths clearly when working with files\n\nCurrent working directory: ")
+	builder.WriteString("\nGuidelines:\n- Be concise in your responses\n- Show file paths clearly when working with files\n- Plan briefly before multi-step work and use tools efficiently\n- Do not wait or block indefinitely; report blockers and continue with evidence\n- Recheck important results after mutations\n- Ask before destructive or irreversible actions\n\nCurrent working directory: ")
 	builder.WriteString(filepath.ToSlash(workspace))
 	return agent.Message{Role: "system", Content: builder.String()}
 }
@@ -80,13 +80,6 @@ func appendContextFilesWithDiagnostics(sections []string, dir string) ([]string,
 			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
 		}
 		break
-	}
-	path := filepath.Join(dir, "YEN.md")
-	if data, err := os.ReadFile(path); err == nil {
-		content := stripUTF8BOM(string(data))
-		if strings.TrimSpace(content) != "" {
-			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
-		}
 	}
 	if selected != "" {
 		for _, name := range contextFileNames {
@@ -194,12 +187,21 @@ func ContextMessageWithDiagnostics(workspace string) (agent.Message, bool, []Con
 	var diagnostics []ContextDiagnostic
 	if agentDir := contextAgentDir(); agentDir != "" {
 		sections, diagnostics = appendContextFilesWithDiagnostics(sections, agentDir)
+		if data, readErr := os.ReadFile(filepath.Join(agentDir, "YEN.md")); readErr == nil && strings.TrimSpace(string(data)) != "" {
+			sections = append(sections, "["+filepath.Join(agentDir, "YEN.md")+"]\n"+strings.TrimSpace(stripUTF8BOM(string(data))))
+		}
 	}
 	shadowed := shadowedWorktreeContextFile(workspace)
 	for i := len(dirs) - 1; i >= 0; i-- {
 		var current []ContextDiagnostic
 		sections, current = appendContextFilesWithDiagnostics(sections, dirs[i])
 		diagnostics = append(diagnostics, current...)
+	}
+	if data, readErr := os.ReadFile(filepath.Join(workspace, "YEN.md")); readErr == nil {
+		content := stripUTF8BOM(string(data))
+		if strings.TrimSpace(content) != "" {
+			sections = append(sections, "["+filepath.Join(workspace, "YEN.md")+"]\n"+strings.TrimSpace(content))
+		}
 	}
 	if shadowed != "" {
 		prefix := "[" + shadowed + "]\n"

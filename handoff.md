@@ -2,6 +2,17 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Yen feature-parity gaps v1
+
+On `feat/feature-parity-gap-v1` for umbrella issue #209, the eight gaps in
+`feature-parity-gap-v1.md` have implementation and tests: retry continuation,
+zero-valued compaction settings, nested provider retry controls, Anthropic
+cache markers, serialized write/edit mutations, opt-in task-boundary entries,
+general loop hooks, and expanded core prompt guidance. Required local gates
+pass (`go test ./...`, `go test -race ./...`, `go vet ./...`). The branch is
+not yet published; next step is diff review, commit, push, PR, CI, and exact
+head/mergeability verification. No release or deployment is in scope.
+
 ## Checkpoint: Pin OpenRouter manual provider order for GLM and consolidation
 
 On `feat/pin-openrouter-provider-routing` (branched from `main`), following

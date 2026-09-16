@@ -16,14 +16,18 @@ import (
 )
 
 type AnthropicMessages struct {
-	BaseURL       string
-	APIKey        string
-	ProviderName  string
-	Model         string
-	ThinkingLevel string
-	Client        *http.Client
-	MaxRetries    int
-	Headers       map[string]string
+	BaseURL        string
+	APIKey         string
+	ProviderName   string
+	Model          string
+	ThinkingLevel  string
+	Client         *http.Client
+	MaxRetries     int
+	Timeout        time.Duration
+	MaxRetryDelay  time.Duration
+	CacheControl   bool
+	CacheRetention string
+	Headers        map[string]string
 }
 
 func NewAnthropicMessages(baseURL, apiKey, model string) AnthropicMessages {
@@ -43,6 +47,14 @@ func (p AnthropicMessages) NextWithEvents(ctx context.Context, messages []agent.
 }
 
 func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent)) (agent.Response, error) {
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	if key, ok := agent.APIKeyFromContext(ctx); ok {
+		p.APIKey = key
+	}
 	system, converted := convertAnthropicMessages(messages)
 	payload := map[string]any{"model": p.Model, "max_tokens": 8192, "stream": true, "messages": converted}
 	if p.ThinkingLevel != "" && p.ThinkingLevel != "off" {
@@ -54,12 +66,38 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		payload["max_tokens"] = budget + 1024
 	}
 	if system != "" {
-		payload["system"] = system
+		if p.CacheControl {
+			block := map[string]any{"type": "text", "text": system, "cache_control": map[string]any{"type": "ephemeral"}}
+			if p.CacheRetention == "long" {
+				block["cache_control"] = map[string]any{"type": "ephemeral", "ttl": "1h"}
+			}
+			payload["system"] = []any{block}
+		} else {
+			payload["system"] = system
+		}
+	}
+	if p.CacheControl && len(converted) > 0 {
+		i := len(converted) - 1
+		content := converted[i]["content"]
+		switch value := content.(type) {
+		case string:
+			converted[i]["content"] = []any{map[string]any{"type": "text", "text": value, "cache_control": map[string]any{"type": "ephemeral"}}}
+		case []any:
+			if len(value) > 0 {
+				if block, ok := value[len(value)-1].(map[string]any); ok {
+					block["cache_control"] = map[string]any{"type": "ephemeral"}
+				}
+			}
+		}
 	}
 	if len(toolNames) > 0 {
 		tools := make([]map[string]any, 0, len(toolNames))
 		for _, name := range toolNames {
-			tools = append(tools, map[string]any{"name": name, "description": name, "input_schema": map[string]any{"type": "object"}})
+			tool := map[string]any{"name": name, "description": name, "input_schema": map[string]any{"type": "object"}}
+			if p.CacheControl && len(toolNames) == len(tools)+1 {
+				tool["cache_control"] = map[string]any{"type": "ephemeral"}
+			}
+			tools = append(tools, tool)
 		}
 		payload["tools"] = tools
 	}
@@ -116,6 +154,9 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		}
 		response.Body.Close()
 		delay := 200 * time.Millisecond * time.Duration(1<<attempt)
+		if p.MaxRetryDelay > 0 && delay > p.MaxRetryDelay {
+			delay = p.MaxRetryDelay
+		}
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -341,3 +382,10 @@ func parseDataImage(value string) (string, string, bool) {
 }
 
 var _ agent.Provider = AnthropicMessages{}
+
+func (p AnthropicMessages) ProviderID() string {
+	if p.ProviderName != "" {
+		return p.ProviderName
+	}
+	return "anthropic"
+}
