@@ -4,6 +4,46 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+Every prior "raw terminal input" slice (raw `/model`/`/resume`/extension
+selectors, raw tree fold/unfold and paging, raw history-aware line editing)
+was previously tested only by calling `SelectRaw`/`ReadLineWithOutputAndHistory`/etc.
+directly with a `strings.Reader`/`bufio.Reader`, never through
+`internal/tui.EnableRawInput`'s actual terminal-detection path: it only
+engages raw mode for an `*os.File` whose termios ioctls succeed, which a
+piped test reader never satisfies. A new `internal/tui/pty_linux.go`
+`openPTY()` opens a genuine pseudo-terminal pair (`/dev/ptmx` ->
+`TIOCSPTLCK` unlock -> `TIOCGPTN` -> `/dev/pts/N`, via direct
+`unix.Syscall` calls since the higher-level `unix.IoctlSetInt` helper did
+not work for `TIOCSPTLCK` in local testing), and two acceptance tests,
+gated behind `YEN_LIVE_TERMINAL_ACCEPTANCE=1` (skipped by default,
+mirroring the existing `YEN_DASHBOARD_BROWSER`-gated
+`TestDashboardBrowserAcceptance` pattern), confirm `EnableRawInput` engages
+raw mode on a real PTY and that `SelectRaw` responds correctly to
+keystrokes delivered through the kernel's real PTY line discipline (a
+master-side write of `"j\r"`, read back as a highlighted-option confirm on
+the slave side), rather than calling `SelectRaw`'s byte handling directly.
+A new CI step (`.github/workflows/go.yml`) runs these with the env var set,
+separately from the default `go test ./...`/`-race` gates so a PTY-specific
+failure can't destabilize those. Go evidence is
+`internal/tui/pty_linux.go`, `internal/tui/pty_other.go` (non-Linux stub),
+`internal/tui/live_acceptance_test.go`,
+`TestLiveTerminalEnablesRawInputOnRealPTY`, and
+`TestLiveTerminalSelectRawRespondsToRealKeystrokes`; both pass locally with
+`YEN_LIVE_TERMINAL_ACCEPTANCE=1` under `go test` and `go test -race`,
+repeated five times with no flakes observed. Full repository gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass with the env var unset (the default). This
+exercises the raw-terminal detection/enable path end-to-end for the first
+time in this rewrite; it does not exercise the full interactive CLI binary
+(`cmd/theoses`) over a PTY, nor cover every raw code path added across
+Goal 4 (e.g. raw tree fold/unfold specifically) — extending PTY coverage to
+more of those paths remains open. A container/section model for dynamic
+borders, color/theme support, Mermaid rendering (deferred per user
+direction), ctrl/alt modifier-key parsing, and live-animating spinner
+redraw integration remain open and are not claimed here.
+
+## Checkpoint update: 2026-09-16
+
 A new `internal/tui.RenderDynamicBorder(width int) string` reproduces the
 oracle's `DynamicBorder` full-width horizontal rule line ("─" repeated,
 clamped to at least one rune). Oracle authority is
