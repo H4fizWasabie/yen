@@ -103,6 +103,8 @@ type ToolHooks struct {
 	Before func(context.Context, Message, ToolCall) (block bool, reason string, err error)
 	After  func(context.Context, Message, ToolCall, ToolResult, bool) (ToolResult, bool, error)
 
+	// BeforeAgentStart may replace the initial context before the first turn.
+	BeforeAgentStart func(context.Context, []Message) ([]Message, error)
 	// Context runs before every provider call and may replace the context
 	// messages, matching the extension context event boundary.
 	Context func(context.Context, []Message) ([]Message, error)
@@ -272,6 +274,13 @@ func runFromWithQueues(ctx context.Context, provider Provider, tools []Tool, his
 }
 
 func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc, hooks *ToolHooks) (Result, error) {
+	if hooks != nil && hooks.BeforeAgentStart != nil {
+		var err error
+		history, err = hooks.BeforeAgentStart(ctx, cloneMessages(history))
+		if err != nil {
+			return Result{}, err
+		}
+	}
 	result := Result{Messages: append([]Message(nil), history...), Events: []string{"agent_start"}}
 	emitEvent(onEvent, Event{Type: "agent_start"})
 	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt, Images: images})

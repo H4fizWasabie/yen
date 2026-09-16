@@ -133,6 +133,32 @@ func TestRunAppliesContextHookBeforeEveryProviderCall(t *testing.T) {
 	}
 }
 
+func TestRunAppliesBeforeAgentStartHookOnce(t *testing.T) {
+	provider := &scriptedProvider{responses: []Response{{Text: "done", StopReason: "stop"}}}
+	history := []Message{{Role: "system", Content: "base"}}
+	calls := 0
+	result, err := RunFromWithQueuesAndEventsAndImagesAndHooks(
+		context.Background(), provider, nil, history, "hello", nil, nil, nil, nil,
+		&ToolHooks{BeforeAgentStart: func(_ context.Context, messages []Message) ([]Message, error) {
+			calls++
+			messages = append(messages, Message{Role: "system", Content: "startup-hook"})
+			return messages, nil
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(result.Messages) != 4 {
+		t.Fatalf("before-agent-start calls=%d messages=%#v", calls, result.Messages)
+	}
+	if result.Messages[1].Content != "startup-hook" || provider.seen[0][1].Content != "startup-hook" {
+		t.Fatalf("hook message missing from result/provider: result=%#v provider=%#v", result.Messages, provider.seen[0])
+	}
+	if history[0].Content != "base" {
+		t.Fatalf("hook mutated caller history: %#v", history)
+	}
+}
+
 type readTool struct{}
 
 func (readTool) Name() string { return "read" }

@@ -13,16 +13,19 @@ deferred below.
 
 ## Checkpoint update: 2026-09-16
 
-The agent loop now exposes a context interception boundary before every
-provider call. The hook receives a cloned message context and may replace it;
-tool turns therefore apply the hook independently to each LLM call without
+The agent loop now exposes pre-loop and per-provider context interception
+boundaries. Hooks receive cloned message context and may replace it; tool turns
+therefore apply the per-call hook independently to each LLM call without
 mutating durable result history. This matches the pinned TypeScript
-`ContextEvent` contract in
-`packages/coding-agent/src/core/extensions/types.ts:687-691` and its runner
-dispatch in `packages/coding-agent/src/core/extensions/runner.ts:984-1013`.
-Go evidence is `internal/agent/loop.go` and
-`TestRunAppliesContextHookBeforeEveryProviderCall`; the focused test, full
-424-test suite, race, vet, build, and diff checks pass.
+`BeforeAgentStartEvent` contract in
+`packages/coding-agent/src/core/extensions/types.ts:716-725` and
+`ContextEvent` contract in `:687-691`, with runner dispatch at
+`packages/coding-agent/src/core/extensions/runner.ts:984-1013`.
+Go evidence is `internal/agent/loop.go`,
+`TestRunAppliesBeforeAgentStartHookOnce`, and
+`TestRunAppliesContextHookBeforeEveryProviderCall`; the focused tests, full
+425-test suite, race, vet, build, and diff checks pass. Prompt/image/system-
+prompt fields on the richer TypeScript event remain open.
 
 ## Evidence ledger
 
