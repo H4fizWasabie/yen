@@ -30,6 +30,15 @@ type GoogleGenerativeAI struct {
 	ThinkingLevel string
 	Client        *http.Client
 	MaxRetries    int
+	Timeout       time.Duration
+	MaxRetryDelay time.Duration
+}
+
+func (p GoogleGenerativeAI) ProviderID() string {
+	if p.ProviderName != "" {
+		return p.ProviderName
+	}
+	return "google"
 }
 
 func NewGoogleGenerativeAI(baseURL, apiKey, model string) GoogleGenerativeAI {
@@ -165,6 +174,14 @@ type googleChunk struct {
 }
 
 func (p GoogleGenerativeAI) next(ctx context.Context, messages []agent.Message, tools []string, update func(string)) (agent.Response, error) {
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	if key, ok := agent.APIKeyFromContext(ctx); ok {
+		p.APIKey = key
+	}
 	return p.nextWithEvents(ctx, messages, tools, func(event agent.StreamEvent) {
 		if update != nil && event.Type == "text_delta" {
 			update(event.Delta)
@@ -173,6 +190,14 @@ func (p GoogleGenerativeAI) next(ctx context.Context, messages []agent.Message, 
 }
 
 func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	if key, ok := agent.APIKeyFromContext(ctx); ok {
+		p.APIKey = key
+	}
 	bearer, err := p.bearerToken(ctx)
 	if err != nil {
 		return agent.Response{}, err

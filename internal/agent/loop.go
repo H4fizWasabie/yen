@@ -61,6 +61,7 @@ type Usage struct {
 type Provider interface {
 	Next(ctx context.Context, messages []Message, tools []string) (Response, error)
 }
+type ProviderIdentity interface{ ProviderID() string }
 
 // TurnStopper lets a provider-specific budget stop the loop after the current
 // assistant/tool turn, matching runtimes that evaluate budgets at the turn
@@ -115,7 +116,11 @@ type ToolHooks struct {
 	// ProviderHeaders lets an extension mutate request headers before transport.
 	ProviderHeaders ProviderHeaderHook
 	// ProviderResponse runs after each HTTP provider response is received.
-	ProviderResponse ProviderResponseHook
+	ProviderResponse    ProviderResponseHook
+	TransformContext    func(context.Context, []Message) ([]Message, error)
+	GetAPIKey           func(context.Context, string) string
+	PrepareNextTurn     func(context.Context, Response, []Message, []Message) error
+	ShouldStopAfterTurn func(context.Context, Response, []Message, []Message) bool
 }
 
 type ProviderHeaderHook func(context.Context, map[string][]string)
@@ -137,6 +142,22 @@ type providerResponseHookKey struct{}
 
 func WithProviderResponseHook(ctx context.Context, hook ProviderResponseHook) context.Context {
 	return context.WithValue(ctx, providerResponseHookKey{}, hook)
+}
+
+type apiKeyContextKey struct{}
+
+func WithAPIKey(ctx context.Context, key string) context.Context {
+	return context.WithValue(ctx, apiKeyContextKey{}, key)
+}
+func APIKeyFromContext(ctx context.Context) (string, bool) {
+	key, ok := ctx.Value(apiKeyContextKey{}).(string)
+	return key, ok
+}
+func providerName(provider Provider) string {
+	if named, ok := provider.(ProviderIdentity); ok {
+		return named.ProviderID()
+	}
+	return ""
 }
 
 func ProviderResponseHookFromContext(ctx context.Context) ProviderResponseHook {
@@ -284,11 +305,16 @@ func RunFromWithQueuesAndEventsAndImagesAndHooks(ctx context.Context, provider P
 	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent, hooks)
 }
 
+// ContinueFrom resumes from an existing context without adding a user prompt.
+func ContinueFrom(ctx context.Context, provider Provider, tools []Tool, history []Message, queues *MessageQueues, onUpdate func(string), onEvent EventFunc, hooks *ToolHooks) (Result, error) {
+	return runFromWithQueuesAndImages(ctx, provider, tools, history, "", nil, queues, onUpdate, onEvent, hooks, true)
+}
+
 func runFromWithQueues(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc) (Result, error) {
 	return runFromWithQueuesAndImages(ctx, provider, tools, history, prompt, nil, queues, onUpdate, onEvent, nil)
 }
 
-func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc, hooks *ToolHooks) (Result, error) {
+func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []Tool, history []Message, prompt string, images []string, queues *MessageQueues, onUpdate func(string), onEvent EventFunc, hooks *ToolHooks, continuation ...bool) (Result, error) {
 	if hooks != nil && hooks.BeforeAgentStart != nil {
 		var err error
 		history, err = hooks.BeforeAgentStart(ctx, cloneMessages(history))
@@ -298,12 +324,16 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 	}
 	result := Result{Messages: append([]Message(nil), history...), Events: []string{"agent_start"}}
 	emitEvent(onEvent, Event{Type: "agent_start"})
-	result.Messages = append(result.Messages, Message{Role: "user", Content: prompt, Images: images})
-	result.Events = append(result.Events, "turn_start", "message_start:user", "message_end:user")
-	emitEvent(onEvent, Event{Type: "turn_start"})
-	userMessage := result.Messages[len(result.Messages)-1]
-	emitEvent(onEvent, Event{Type: "message_start", Message: &userMessage})
-	emitEvent(onEvent, Event{Type: "message_end", Message: &userMessage})
+	if len(continuation) == 0 || !continuation[0] {
+		result.Messages = append(result.Messages, Message{Role: "user", Content: prompt, Images: images})
+		result.Events = append(result.Events, "turn_start", "message_start:user", "message_end:user")
+		emitEvent(onEvent, Event{Type: "turn_start"})
+		userMessage := result.Messages[len(result.Messages)-1]
+		emitEvent(onEvent, Event{Type: "message_start", Message: &userMessage})
+		emitEvent(onEvent, Event{Type: "message_end", Message: &userMessage})
+	} else if len(result.Messages) == 0 || result.Messages[len(result.Messages)-1].Role == "assistant" {
+		return Result{}, errors.New("cannot continue from assistant or empty context")
+	}
 
 	toolMap := make(map[string]Tool, len(tools))
 	toolNames := make([]string, 0, len(tools))
@@ -331,9 +361,17 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		if hooks != nil && hooks.ProviderResponse != nil {
 			providerContext = WithProviderResponseHook(providerContext, hooks.ProviderResponse)
 		}
+		if hooks != nil && hooks.GetAPIKey != nil {
+			providerContext = WithAPIKey(providerContext, hooks.GetAPIKey(ctx, providerName(provider)))
+		}
 		providerMessages := result.Messages
+		if hooks != nil && hooks.TransformContext != nil {
+			providerMessages, err = hooks.TransformContext(ctx, cloneMessages(providerMessages))
+		}
 		if hooks != nil && hooks.Context != nil {
-			providerMessages, err = hooks.Context(ctx, cloneMessages(providerMessages))
+			if err == nil {
+				providerMessages, err = hooks.Context(ctx, cloneMessages(providerMessages))
+			}
 		}
 		if hooks != nil && hooks.ProviderBefore != nil {
 			if err == nil {
@@ -410,6 +448,10 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		}
 
 		if len(response.ToolCalls) == 0 {
+			if hooks != nil && hooks.ShouldStopAfterTurn != nil && hooks.ShouldStopAfterTurn(ctx, response, nil, result.Messages) {
+				result.FinalText = response.Text
+				return result, nil
+			}
 			if stopper, ok := provider.(TurnStopper); ok && stopper.StopAfterTurn(response, nil) {
 				result.FinalText = response.Text
 				result.Events = append(result.Events, "turn_end", "agent_end", "agent_settled")
@@ -577,10 +619,18 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		}
 		result.Events = append(result.Events, "turn_end")
 		emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
+		if hooks != nil && hooks.PrepareNextTurn != nil {
+			if err := hooks.PrepareNextTurn(ctx, response, toolResults, result.Messages); err != nil {
+				return result, err
+			}
+		}
 		if stopper, ok := provider.(TurnStopper); ok && stopper.StopAfterTurn(response, toolResults) {
 			result.Events = append(result.Events, "agent_end", "agent_settled")
 			emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
 			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
+			return result, nil
+		}
+		if hooks != nil && hooks.ShouldStopAfterTurn != nil && hooks.ShouldStopAfterTurn(ctx, response, toolResults, result.Messages) {
 			return result, nil
 		}
 		result.Events = append(result.Events, "turn_start")

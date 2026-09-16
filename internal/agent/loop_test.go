@@ -25,6 +25,44 @@ type updatingProvider struct{}
 
 type eventStreamingProvider struct{}
 
+type continuationProvider struct{ calls int }
+
+func (p *continuationProvider) Next(_ context.Context, messages []Message, _ []string) (Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return Response{ToolCalls: []ToolCall{{ID: "1", Name: "read", Args: map[string]any{}}}, StopReason: "toolUse"}, nil
+	}
+	if p.calls == 2 {
+		return Response{StopReason: "error", ErrorMessage: "overloaded"}, nil
+	}
+	if len(messages) != 3 {
+		return Response{}, errors.New("context was replayed or lost")
+	}
+	return Response{Text: "recovered", StopReason: "stop"}, nil
+}
+
+type continuationTool struct{ calls int }
+
+func (t *continuationTool) Name() string { return "read" }
+func (t *continuationTool) Execute(context.Context, map[string]any) (string, error) {
+	t.calls++
+	return "ok", nil
+}
+
+func TestContinueFromPreservesCompletedToolContext(t *testing.T) {
+	p := &continuationProvider{}
+	tool := &continuationTool{}
+	result, err := Run(context.Background(), p, []Tool{tool}, "start")
+	if err == nil {
+		t.Fatal("expected transient failure")
+	}
+	result.Messages = result.Messages[:len(result.Messages)-1]
+	result, err = ContinueFrom(context.Background(), p, []Tool{tool}, result.Messages, nil, nil, nil, nil)
+	if err != nil || result.FinalText != "recovered" || tool.calls != 1 {
+		t.Fatalf("result=%#v err=%v toolCalls=%d", result, err, tool.calls)
+	}
+}
+
 func TestMessageQueueModesDrainAllOrOne(t *testing.T) {
 	queue := &MessageQueues{}
 	queue.SetModes("one-at-a-time", "one-at-a-time")

@@ -64,6 +64,7 @@ type OpenAICompletions struct {
 	Client          *http.Client
 	MaxRetries      int
 	MaxRetryDelay   time.Duration
+	Timeout         time.Duration
 }
 
 func (p OpenAICompletions) ListModels(ctx context.Context) ([]ModelInfo, error) {
@@ -151,6 +152,7 @@ func (p OpenAICompletions) ListModels(ctx context.Context) ([]ModelInfo, error) 
 func NewOpenAICompletions(baseURL, apiKey, model string) OpenAICompletions {
 	return OpenAICompletions{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Model: model}
 }
+func (p OpenAICompletions) ProviderID() string { return p.ProviderName }
 
 func (p OpenAICompletions) Next(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
 	return p.nextWithUpdates(ctx, messages, toolNames, nil, nil, false)
@@ -171,6 +173,14 @@ func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Messag
 }
 
 func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	if key, ok := agent.APIKeyFromContext(ctx); ok {
+		p.APIKey = key
+	}
 	converted := convertMessages(messages)
 	if p.ProviderName == "mistral" {
 		converted = convertMistralMessages(messages)
@@ -285,6 +295,9 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		}
 		response.Body.Close()
 		delay := retryDelay(response.Header, attempt)
+		if p.MaxRetryDelay > 0 && delay > p.MaxRetryDelay {
+			delay = p.MaxRetryDelay
+		}
 		if p.MaxRetryDelay > 0 && delay > p.MaxRetryDelay {
 			return agent.Response{}, fmt.Errorf("provider retry delay %s exceeds maximum %s", delay, p.MaxRetryDelay)
 		}

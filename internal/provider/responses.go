@@ -32,10 +32,14 @@ type OpenAIResponses struct {
 	ThinkingLevel string
 	Client        *http.Client
 	MaxRetries    int
+	Timeout       time.Duration
+	MaxRetryDelay time.Duration
 	// Transport selects the Codex transport. Empty means the normal HTTP path;
 	// "websocket" enables the Codex WebSocket endpoint.
 	Transport string
 }
+
+func (p OpenAIResponses) ProviderID() string { return p.ProviderName }
 
 func NewOpenAIResponses(baseURL, apiKey, model string) OpenAIResponses {
 	return OpenAIResponses{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Model: model}
@@ -106,6 +110,14 @@ func (p OpenAIResponses) ListModels(ctx context.Context) ([]ModelInfo, error) {
 }
 
 func (p OpenAIResponses) Next(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	if key, ok := agent.APIKeyFromContext(ctx); ok {
+		p.APIKey = key
+	}
 	return p.next(ctx, messages, toolNames, nil)
 }
 
@@ -122,6 +134,14 @@ func (p OpenAIResponses) NextWithEvents(ctx context.Context, messages []agent.Me
 }
 
 func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	if key, ok := agent.APIKeyFromContext(ctx); ok {
+		p.APIKey = key
+	}
 	if p.APIKey == "" && strings.TrimSpace(p.Headers["cf-aig-authorization"]) == "" {
 		return agent.Response{}, fmt.Errorf("no API key for provider: %s", p.name())
 	}

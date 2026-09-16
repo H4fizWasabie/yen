@@ -97,6 +97,11 @@ type TimedMessage struct {
 	Timestamp string
 }
 
+type CustomEntry struct {
+	ID, Type string
+	Data     any
+}
+
 type TreeEntry struct {
 	ID        string   `json:"id"`
 	ParentID  *string  `json:"parentId,omitempty"`
@@ -128,6 +133,8 @@ type sessionEntry struct {
 	FirstKeptEntryIndex *int        `json:"firstKeptEntryIndex,omitempty"`
 	TokensBefore        int         `json:"tokensBefore,omitempty"`
 	Usage               *Usage      `json:"usage,omitempty"`
+	CustomType          string      `json:"customType,omitempty"`
+	Data                any         `json:"data,omitempty"`
 	raw                 json.RawMessage
 }
 
@@ -400,6 +407,21 @@ func (s *Session) Append(message Message) (string, error) {
 		if err := s.appendFile(entry); err != nil {
 			return "", err
 		}
+	}
+	return id, nil
+}
+
+func (s *Session) AppendCustomEntry(customType string, data any) (string, error) {
+	if strings.TrimSpace(customType) == "" {
+		return "", fmt.Errorf("custom type is required")
+	}
+	id := newEntryID(s.entries)
+	parentID := s.currentParentID()
+	entry := sessionEntry{Type: "custom", ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ParentID: parentID, CustomType: customType, Data: data}
+	s.entries = append(s.entries, entry)
+	s.leafID = id
+	if err := s.appendFile(entry); err != nil {
+		return "", err
 	}
 	return id, nil
 }
@@ -708,6 +730,16 @@ func (s *Session) Messages() []Message {
 		}
 	}
 	return messages
+}
+
+func (s *Session) CustomEntries() []CustomEntry {
+	result := []CustomEntry{}
+	for _, entry := range s.activeEntries() {
+		if entry.Type == "custom" {
+			result = append(result, CustomEntry{ID: entry.ID, Type: entry.CustomType, Data: entry.Data})
+		}
+	}
+	return result
 }
 
 func (s *Session) Tree() []TreeEntry {

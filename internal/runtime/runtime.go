@@ -27,6 +27,7 @@ type Runner struct {
 	Queue                          *conversation.Queue
 	Provider                       agent.Provider
 	SummarizationProvider          agent.Provider
+	TaskBoundaryProvider           agent.Provider
 	ToolFactory                    func(workspace string) []agent.Tool
 	SessionToolFactory             func(workspace string, current *session.Session) []agent.Tool
 	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
@@ -107,6 +108,7 @@ func (r *Runner) ApplySettings(current settings.Settings) {
 	if os.Getenv("YEN_PROVIDER") == "" && current.SummarizationProvider != "" {
 		if configured, err := providerpkg.NewConfigured(current.SummarizationProvider, current.SummarizationModel); err == nil {
 			r.SummarizationProvider = configured
+			r.TaskBoundaryProvider = configured
 		}
 	}
 	steering, followUp := settings.QueueModes(current)
@@ -118,15 +120,9 @@ func (r *Runner) ApplySettings(current settings.Settings) {
 		if current.Compaction.Enabled != nil {
 			r.AutoCompactDisabled = !*current.Compaction.Enabled
 		}
-		if current.Compaction.ReserveTokens > 0 {
-			r.AutoCompactReserveTokens = current.Compaction.ReserveTokens
-		}
-		if current.Compaction.KeepRecentTokens > 0 {
-			r.AutoCompactKeepRecentTokens = current.Compaction.KeepRecentTokens
-		}
-		if current.Compaction.MaxHistoryTurns > 0 {
-			r.AutoCompactMaxHistoryTurns = current.Compaction.MaxHistoryTurns
-		}
+		r.AutoCompactReserveTokens = current.Compaction.ReserveTokens
+		r.AutoCompactKeepRecentTokens = current.Compaction.KeepRecentTokens
+		r.AutoCompactMaxHistoryTurns = current.Compaction.MaxHistoryTurns
 	}
 	if current.Retry != nil {
 		if current.Retry.BaseDelayMs > 0 {
@@ -137,6 +133,22 @@ func (r *Runner) ApplySettings(current settings.Settings) {
 		}
 		if current.Retry.Enabled != nil {
 			r.AutoRetryEnabled = *current.Retry.Enabled
+		}
+		if current.Retry.Provider != nil {
+			p := current.Retry.Provider
+			timeout, retries, delay := -1, -1, -1
+			if p.Has("timeoutMs") {
+				timeout = p.TimeoutMs
+			}
+			if p.Has("maxRetries") {
+				retries = p.MaxRetries
+			}
+			if p.Has("maxRetryDelayMs") {
+				delay = p.MaxRetryDelayMs
+			}
+			if configured, err := providerpkg.SetProviderRetrySettings(r.Provider, timeout, retries, delay); err == nil {
+				r.Provider = configured
+			}
 		}
 		if current.Retry.MaxRetries > 0 {
 			if configured, err := providerpkg.SetRetryMax(r.Provider, current.Retry.MaxRetries); err == nil {
@@ -648,6 +660,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 			_, _ = r.Memory.ConsolidateIfTriggered(ctx, r.Provider, turn.ID, turn.ConversationID, turn.WorkspaceID, turn.Adapter, expandedPrompt, toConsolidationTurns(current.TimedMessages()))
 		}
 	}
+	if runErr == nil && r.TaskBoundaryProvider != nil {
+		go maybeDetectTaskBoundary(ctx, current, r.TaskBoundaryProvider, expandedPrompt, turn.ID)
+	}
 	if runErr == nil && r.Checkpoints != nil {
 		if err := r.Checkpoints.Set(turn.ConversationID, memory.Checkpoint{LastEntryID: turn.ID}); err != nil {
 			return result, err
@@ -690,7 +705,11 @@ func (r *Runner) runAgentWithRetry(ctx context.Context, provider agent.Provider,
 				return result, ctx.Err()
 			}
 		}
-		result, runErr = agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, provider, tools, history, prompt, images, queues, onUpdate, onEvent, hooks)
+		retryHistory := append([]agent.Message(nil), result.Messages...)
+		if n := len(retryHistory); n > 0 && retryHistory[n-1].Role == "assistant" && retryHistory[n-1].StopReason == "error" {
+			retryHistory = retryHistory[:n-1]
+		}
+		result, runErr = agent.ContinueFrom(ctx, provider, tools, retryHistory, queues, onUpdate, onEvent, hooks)
 		if onEvent != nil && runErr == nil {
 			onEvent(agent.Event{Type: "auto_retry_end", Attempt: attempt, Success: true})
 		}
