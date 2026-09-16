@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"net/http"
@@ -40,6 +41,46 @@ func TestInteractiveRunRendersScrollbackStatusAndInput(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output missing %q: %q", want, output)
 		}
+	}
+}
+
+func TestInteractiveResumeSelectsSessionFromScriptedInput(t *testing.T) {
+	dir := t.TempDir()
+	currentPath := filepath.Join(dir, "session.jsonl")
+	otherPath := filepath.Join(dir, "z-other.jsonl")
+	if err := session.New(currentPath, session.Header{ID: "current"}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.New(otherPath, session.Header{ID: "other"}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_SESSION_FILE", currentPath)
+	t.Setenv("YEN_DATA_DIR", dir)
+	var stdout, stderr bytes.Buffer
+	if code := runWithInput([]string{"-i"}, strings.NewReader("/resume\n2\n/session\n/quit\n"), &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	resumed, err := session.Open(otherPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Header().ID != "other" || !strings.Contains(stdout.String(), "Select session") || !strings.Contains(stdout.String(), otherPath) {
+		t.Fatalf("header=%q output=%q", resumed.Header().ID, stdout.String())
+	}
+}
+
+func TestInteractiveModelSelectorChangesProviderFromScriptedInput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"one"},{"id":"two"}]}`)
+	}))
+	defer server.Close()
+	current := session.New(filepath.Join(t.TempDir(), "session.jsonl"), session.Header{ID: "current"})
+	runner := &runtime.Runner{Provider: provider.OpenAICompletions{BaseURL: server.URL, Model: "one", ProviderName: "test"}}
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveSelector("/model", bufio.NewReader(strings.NewReader("2\n")), current, runner, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || providerModel(runner.Provider) != "two" {
+		t.Fatalf("handled=%v err=%v model=%q output=%q", handled, err, providerModel(runner.Provider), output.String())
 	}
 }
 

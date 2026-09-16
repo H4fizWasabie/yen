@@ -15,6 +15,17 @@ status/progress, extension UI component rendering, and remaining slash
 commands remain open. Repository gates pass: `go test ./...`,
 `go test -race ./...`, `go vet ./...`, `go build ./...`, and `git diff --check`.
 
+The selector increment is also implemented on this branch: interactive
+`/resume` and `/model` with no argument present numbered choices, validate
+session files through `session.Open`, and accept scripted numeric input plus
+`j`/`k` and arrow-key tokens. `/resume` switches the active session path.
+Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2796-2928,4281-4305,4736-4770,5094-5135`;
+Go evidence is `internal/tui/tui.go`, `cmd/theoses/main.go`, and
+`TestInteractiveResumeSelectsSessionFromScriptedInput`. Remaining work is
+extension UI component rendering, streaming status/progress, and the oracle's
+remaining slash commands.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:
