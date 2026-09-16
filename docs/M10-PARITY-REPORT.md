@@ -580,3 +580,24 @@ The 2026-09-16 side-by-side VPS read-back places the active pilot release at
 This is a no-cutover parity decision, not a claim of total feature parity.
 The TypeScript runtime remains operational, Go remains a reversible pilot, and
 no decommission or irreversible cutover is authorized.
+
+Anthropic Console OAuth now supports the pinned browser PKCE flow through the
+localhost callback, authorization-code exchange, refresh-token rotation, and
+`/login anthropic` persistence in the Yen credential store. Oracle authority:
+`packages/ai/src/auth/oauth/anthropic.ts:28-37,190-231,234-312,314-363`.
+Go evidence: `internal/auth/anthropic.go`, `internal/auth/anthropic_test.go`,
+and `TestInteractiveAnthropicLoginRequiresAuthFile`. Provider configuration
+already uses the stored `anthropic` credential when
+`YEN_ANTHROPIC_API_KEY` is absent. Live account acceptance remains a manual
+step.
+
+Google Vertex ADC configuration now also accepts the oracle's `GCLOUD_PROJECT`
+fallback when `YEN_GOOGLE_CLOUD_PROJECT` is unset, while retaining Yen-owned
+credentials, service-account/authorized-user token exchange, and
+`generateContent` model filtering. Oracle authority:
+`packages/ai/src/providers/google-vertex.ts:6-12,64-88,92-99` and
+`packages/ai/src/api/google-vertex.ts:99-109`. Go evidence:
+`internal/provider/config.go`, `internal/provider/google_auth.go`,
+`internal/provider/google.go`, and
+`TestGoogleVertexUsesGCLOUDProjectForADCConfiguration`. Static catalog/auth
+UI metadata and live Vertex acceptance remain open.

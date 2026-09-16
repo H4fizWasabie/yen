@@ -399,6 +399,17 @@ func TestInteractiveLogoutRemovesStoredProviderCredential(t *testing.T) {
 	}
 }
 
+func TestInteractiveAnthropicLoginRequiresAuthFile(t *testing.T) {
+	t.Setenv("YEN_AUTH_FILE", "")
+	current := session.New(filepath.Join(t.TempDir(), "session.jsonl"), session.Header{ID: "session-1"})
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/login anthropic", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if !handled || err == nil || !strings.Contains(err.Error(), "YEN_AUTH_FILE is required") {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+}
+
 func TestInteractiveSettingsAndReloadCommands(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})

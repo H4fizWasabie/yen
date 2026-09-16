@@ -242,6 +242,24 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err = fmt.Fprintln(stdout, "Logged in: openai-codex")
 		return true, err
+	case text == "/login anthropic":
+		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+		if path == "" {
+			return true, fmt.Errorf("YEN_AUTH_FILE is required for /login")
+		}
+		credential, err := auth.LoginAnthropic(context.Background(), func(message string) {
+			_, _ = fmt.Fprintln(stdout, message)
+		})
+		if err != nil {
+			return true, err
+		}
+		if _, err := auth.Open(path).Modify("anthropic", func(*auth.Credential) (*auth.Credential, error) {
+			return &credential, nil
+		}); err != nil {
+			return true, err
+		}
+		_, err = fmt.Fprintln(stdout, "Logged in: anthropic")
+		return true, err
 	case text == "/login github-copilot" || strings.HasPrefix(text, "/login github-copilot "):
 		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
 		if path == "" {
