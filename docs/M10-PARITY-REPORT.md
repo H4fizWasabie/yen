@@ -4,6 +4,38 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+`internal/provider.NewFromEnv` and `NewConfigured` now pin OpenRouter's
+manual backend provider order for two specific models, matching the live
+pilot host's `cost-watch.json`/memory-recorded routing decisions rather than
+leaving OpenRouter's default (unordered) fallback in place:
+`z-ai/glm-5.3-flash` (the main conversation model) routes
+`Relace → StreamLake → Parasail → Novita`, and
+`deepseek/deepseek-v4-flash-0731` (the consolidation/summarization and
+explorer sub-agent model, already pinned in `internal/provider/explorer.go`)
+routes `OpenInference → BaseTen → GMICloud`. Verified against the live pilot
+host directly (not just static config, which was found to be stale/
+misleading for the consolidation model): the actual `consolidation-telegram-*`
+session log records `deepseek/deepseek-v4-flash-0731`, and two theoses2
+memory notes from 2026-09-14 confirm that exact 3-provider order for the
+same model. `docs/M10-PARITY-REPORT.md`'s prior claim that
+`deepseek/deepseek-v4.1-flash` (the value in the live
+`settings.json.defaultModel`) drives consolidation was incorrect;
+`settings.json`'s `defaultModel` does not appear to be authoritative for
+either the main chat model (session-pinned to `z-ai/glm-5.3-flash`) or
+consolidation. Image generation model defaults (`meta/muse-image` via
+OpenRouter, `@cf/black-forest-labs/flux-1-schnell` via Cloudflare) were
+verified already identical to the oracle's defaults and required no change;
+neither has a manual provider-order pin on either side. Go evidence is
+`internal/provider/config.go` (`openRouterManualProviderOrder`,
+`openRouterProviderRouting`), `TestNewFromEnvPinsGLMToManualOpenRouterProviderOrder`,
+`TestNewConfiguredPinsGLMToManualOpenRouterProviderOrder`,
+`TestNewConfiguredPinsConsolidationDeepseekToManualOpenRouterProviderOrder`,
+and `TestNewFromEnvLeavesUnpinnedModelsWithoutProviderRouting`. Full
+repository gates (`go test ./...`, `go test -race ./...`, `go vet ./...`,
+`go build ./...`, `git diff --check`) pass.
+
+## Checkpoint update: 2026-09-16
+
 Every prior "raw terminal input" slice (raw `/model`/`/resume`/extension
 selectors, raw tree fold/unfold and paging, raw history-aware line editing)
 was previously tested only by calling `SelectRaw`/`ReadLineWithOutputAndHistory`/etc.

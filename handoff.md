@@ -2,6 +2,61 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Pin OpenRouter manual provider order for GLM and consolidation
+
+On `feat/pin-openrouter-provider-routing` (branched from `main`), following
+a live comparison against the running pilot host's actual theoses2
+deployment: `internal/provider.NewFromEnv`/`NewConfigured` now set
+`OpenAICompletions.ProviderRouting` (already-existing infrastructure, used
+previously only by `explorer.go`'s pinned sub-agent provider) for two
+models, matching the pilot host's live routing decisions rather than
+OpenRouter's default fallback behavior:
+
+- `z-ai/glm-5.3-flash` (main conversation model) →
+  `Relace, StreamLake, Parasail, Novita`, read directly from the pilot
+  host's `/home/theoses/.theoses/agent/cost-watch.json`
+  `manual_provider_order` (and confirmed live in `cost-watch-state.json`,
+  refreshed 2026-09-16).
+- `deepseek/deepseek-v4-flash-0731` (consolidation/summarization model,
+  and already the explorer sub-agent's pinned model in
+  `internal/provider/explorer.go`) → `OpenInference, BaseTen, GMICloud`,
+  confirmed via two theoses2 memory notes from 2026-09-14 and matching the
+  order explorer.go already hardcoded.
+
+Investigation correction recorded here for future reference: an earlier
+pass in this session incorrectly concluded theoses2's consolidation model
+was `deepseek/deepseek-v4.1-flash` by trusting the static
+`settings.json.defaultModel` value. That was wrong — the actual
+`consolidation-telegram-*` session log on the pilot host records
+`deepseek/deepseek-v4-flash-0731`, and `settings.json`'s `defaultModel`
+does not appear to drive either the main chat model (which is
+session-pinned to `z-ai/glm-5.3-flash`, confirmed via the live Telegram
+session log) or consolidation. Static settings/config files on this host
+should not be trusted over actual session-log evidence when the two
+disagree.
+
+Image generation was checked and needs no change: Yen's
+`internal/codingagent/generate_image.go` defaults
+(`meta/muse-image` via OpenRouter, `@cf/black-forest-labs/flux-1-schnell`
+via Cloudflare) already match theoses2's `DEFAULT_OPENROUTER_IMAGE_MODEL`/
+`DEFAULT_CLOUDFLARE_MODEL` exactly, and neither has a manual provider-order
+pin in `cost-watch.json` or the theoses2 source on either side.
+
+Go evidence is `internal/provider/config.go`
+(`openRouterManualProviderOrder`, `openRouterProviderRouting`),
+`TestNewFromEnvPinsGLMToManualOpenRouterProviderOrder`,
+`TestNewConfiguredPinsGLMToManualOpenRouterProviderOrder`,
+`TestNewConfiguredPinsConsolidationDeepseekToManualOpenRouterProviderOrder`,
+and `TestNewFromEnvLeavesUnpinnedModelsWithoutProviderRouting`. All
+required gates pass locally. Remaining deployment step: after this merges,
+cut a new release on the pilot VPS and set
+`summarizationProvider`/`summarizationModel` in Yen's global settings
+(`/root/.config/yen/settings.json` on the pilot host) to
+`openrouter`/`deepseek/deepseek-v4-flash-0731` so the consolidation path
+actually uses the pinned model+routing (currently it falls back to the
+main provider, `z-ai/glm-5.3-flash`, when `SummarizationProvider` is unset
+in `internal/runtime.Runner`).
+
 ## Checkpoint: Goal 4 live terminal acceptance (raw-mode detection path)
 
 On `feat/goal-4-live-terminal-acceptance` (branched from `origin/main`),
