@@ -82,6 +82,27 @@ func isFireworksAnthropicModel(model string) bool {
 	return ok
 }
 
+// openRouterManualProviderOrder pins specific OpenRouter models to a manual
+// backend provider preference order, matching the oracle's cost-watch
+// manual_provider_order pin for the same model.
+var openRouterManualProviderOrder = map[string][]string{
+	"z-ai/glm-5.3-flash":              {"Relace", "StreamLake", "Parasail", "Novita"},
+	"deepseek/deepseek-v4-flash-0731": {"OpenInference", "BaseTen", "GMICloud"},
+}
+
+// openRouterProviderRouting returns the OpenRouter "provider" routing
+// payload for a pinned model, or nil when the model has no manual pin.
+func openRouterProviderRouting(providerID, model string) map[string]any {
+	if providerID != "openrouter" {
+		return nil
+	}
+	order, ok := openRouterManualProviderOrder[model]
+	if !ok {
+		return nil
+	}
+	return map[string]any{"order": order}
+}
+
 var providerKeyEnvs = map[string]string{
 	"ant-ling":                   "YEN_ANT_LING_API_KEY",
 	"baseten":                    "YEN_BASETEN_API_KEY",
@@ -543,6 +564,7 @@ func NewFromEnv() OpenAICompletions {
 	client := NewOpenAICompletions(baseURL, key, model)
 	client.ProviderName = providerID
 	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
+	client.ProviderRouting = openRouterProviderRouting(providerID, model)
 	return client
 }
 
@@ -868,6 +890,7 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 	client := NewOpenAICompletions(baseURL, key, model)
 	client.ProviderName = providerID
 	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
+	client.ProviderRouting = openRouterProviderRouting(providerID, model)
 	return client, nil
 }
 

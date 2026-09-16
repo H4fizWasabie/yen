@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -500,6 +501,59 @@ func TestNewFromEnvPrefersYenProviderCredentials(t *testing.T) {
 	client := NewFromEnv()
 	if client.ProviderName != "openrouter" || client.BaseURL != providerDefaults["openrouter"] || client.APIKey != "yen-key" || client.Model != "z-ai/glm-5.3-flash" {
 		t.Fatalf("client=%#v", client)
+	}
+}
+
+func TestNewFromEnvPinsGLMToManualOpenRouterProviderOrder(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "openrouter")
+	t.Setenv("YEN_MODEL", "z-ai/glm-5.3-flash")
+	t.Setenv("YEN_OPENROUTER_API_KEY", "yen-key")
+	client := NewFromEnv()
+	order, ok := client.ProviderRouting["order"].([]string)
+	if !ok || !reflect.DeepEqual(order, []string{"Relace", "StreamLake", "Parasail", "Novita"}) {
+		t.Fatalf("provider routing=%#v", client.ProviderRouting)
+	}
+}
+
+func TestNewConfiguredPinsConsolidationDeepseekToManualOpenRouterProviderOrder(t *testing.T) {
+	t.Setenv("YEN_OPENROUTER_API_KEY", "yen-key")
+	configured, err := NewConfigured("openrouter", "deepseek/deepseek-v4-flash-0731")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(OpenAICompletions)
+	if !ok {
+		t.Fatalf("configured=%#v", configured)
+	}
+	order, ok := client.ProviderRouting["order"].([]string)
+	if !ok || !reflect.DeepEqual(order, []string{"OpenInference", "BaseTen", "GMICloud"}) {
+		t.Fatalf("provider routing=%#v", client.ProviderRouting)
+	}
+}
+
+func TestNewFromEnvLeavesUnpinnedModelsWithoutProviderRouting(t *testing.T) {
+	t.Setenv("YEN_PROVIDER", "openrouter")
+	t.Setenv("YEN_MODEL", "deepseek/deepseek-v4.1-flash")
+	t.Setenv("YEN_OPENROUTER_API_KEY", "yen-key")
+	client := NewFromEnv()
+	if client.ProviderRouting != nil {
+		t.Fatalf("expected no provider routing for an unpinned model, got %#v", client.ProviderRouting)
+	}
+}
+
+func TestNewConfiguredPinsGLMToManualOpenRouterProviderOrder(t *testing.T) {
+	t.Setenv("YEN_OPENROUTER_API_KEY", "yen-key")
+	configured, err := NewConfigured("openrouter", "z-ai/glm-5.3-flash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(OpenAICompletions)
+	if !ok {
+		t.Fatalf("configured=%#v", configured)
+	}
+	order, ok := client.ProviderRouting["order"].([]string)
+	if !ok || !reflect.DeepEqual(order, []string{"Relace", "StreamLake", "Parasail", "Novita"}) {
+		t.Fatalf("provider routing=%#v", client.ProviderRouting)
 	}
 }
 
