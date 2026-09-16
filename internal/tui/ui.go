@@ -96,6 +96,9 @@ func HandleExtensionUIWithScreen(_ context.Context, request map[string]any, read
 		}
 	case "setWidget":
 		if screen != nil {
+			key := fmt.Sprint(request["widgetKey"])
+			delete(screen.WidgetsAbove, key)
+			delete(screen.WidgetsBelow, key)
 			placement := screen.WidgetsBelow
 			if request["widgetPlacement"] == "aboveEditor" {
 				placement = screen.WidgetsAbove
@@ -108,7 +111,6 @@ func HandleExtensionUIWithScreen(_ context.Context, request map[string]any, read
 					screen.WidgetsBelow = placement
 				}
 			}
-			key := fmt.Sprint(request["widgetKey"])
 			if request["widgetLines"] == nil {
 				delete(placement, key)
 			} else {

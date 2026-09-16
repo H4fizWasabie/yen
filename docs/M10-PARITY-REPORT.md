@@ -95,6 +95,12 @@ the oracle truncation marker. Oracle authority is
 Go evidence is `internal/tui/ui.go` and
 `TestHandleExtensionUITruncatesLongWidgets`.
 
+Replacing an extension widget now removes the old key from both editor
+placements before storing the new placement. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2030-2037`.
+Go evidence is `internal/tui/ui.go` and
+`TestHandleExtensionUIReplacesWidgetAcrossPlacements`.
+
 Interactive tool execution now updates the status region through the existing
 runtime event stream, including a bounded argument preview, and resumes normal
 streaming status after the tool result. Oracle authority is

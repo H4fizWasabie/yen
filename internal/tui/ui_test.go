@@ -80,6 +80,24 @@ func TestHandleExtensionUITruncatesLongWidgets(t *testing.T) {
 	}
 }
 
+func TestHandleExtensionUIReplacesWidgetAcrossPlacements(t *testing.T) {
+	screen := &Screen{}
+	for _, request := range []map[string]any{
+		{"method": "setWidget", "widgetKey": "hint", "widgetLines": []any{"above"}, "widgetPlacement": "aboveEditor"},
+		{"method": "setWidget", "widgetKey": "hint", "widgetLines": []any{"below"}, "widgetPlacement": "belowEditor"},
+	} {
+		if _, err := HandleExtensionUIWithScreen(nil, request, bufio.NewReader(strings.NewReader("")), &strings.Builder{}, screen); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := screen.WidgetsAbove["hint"]; ok {
+		t.Fatalf("old widget placement remains: %#v", screen.WidgetsAbove)
+	}
+	if got := screen.WidgetsBelow["hint"]; len(got) != 1 || got[0] != "below" {
+		t.Fatalf("new widget placement=%#v", got)
+	}
+}
+
 func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
 	var output strings.Builder
 	selected, err := Select(bufio.NewReader(strings.NewReader("j\n\n")), &output, "Pick", []string{"first", "second"})

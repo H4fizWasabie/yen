@@ -126,6 +126,12 @@ Extension widgets now cap string content at ten lines and append
 Go evidence is `internal/tui/ui.go` and
 `TestHandleExtensionUITruncatesLongWidgets`.
 
+Replacing an extension widget now removes the prior key from both placements
+before storing the new placement. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2030-2037`;
+Go evidence is `internal/tui/ui.go` and
+`TestHandleExtensionUIReplacesWidgetAcrossPlacements`.
+
 The interactive tool-progress increment is implemented: the CLI consumes
 runtime `agent.Event` callbacks, shows bounded `Running <tool>: <preview>`
 status during tool execution, and returns to streaming status after results.
