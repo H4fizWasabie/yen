@@ -2,6 +2,41 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Goal 4 tree viewport/page panning
+
+On `feat/goal-4-tree-viewport-panning` (branched from `origin/main` after
+#195 merged), `internal/tui.SelectTree` now windows the option list around
+the highlighted row instead of always printing every entry, and supports
+PageUp/PageDown to page by a full viewport height. `SelectTree` computes the
+default page size from the real terminal height via the existing
+`terminalSize` helper (`Math.max(5, floor(height/2))`, matching the oracle);
+a new `SelectTreeAt(..., maxVisible int)` entry point takes an explicit page
+size so both production code and tests can control windowing deterministically.
+Oracle authority is
+`packages/coding-agent/src/modes/interactive/components/tree-selector.ts:673-680,1018-1023`
+and `packages/coding-agent/src/modes/interactive/interactive-mode.ts:1362`.
+Go evidence is `internal/tui/tree.go`,
+`TestSelectTreeRawPageDownAdvancesByViewportHeight`,
+`TestSelectTreeRawPageUpRetreatsByViewportHeight`,
+`TestSelectTreeLineBufferedPaging`,
+`TestSelectTreeRawWindowedNumericSelectionUsesVisibleOffset`, and
+`TestSelectTreeDefaultsToRealTerminalViewportHeight`. All required gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass locally.
+
+Raw terminals parse the real hardware PageUp/PageDown escape sequences
+(`\x1b[5~`/`\x1b[6~`), chosen deliberately over reusing the plain Left/Right
+arrows from the prior fold/unfold slice, since the oracle itself binds plain
+Left/Right to paging (`tui.editor.cursorLeft`/`cursorRight` fall through to
+the pageUp/pageDown branch) and reserves ctrl+left/alt+left for fold — so
+paging needed its own, non-conflicting key. Line-buffered (scripted/piped)
+callers use "pgup"/"pgdn". This increment is opened as a PR against `main`
+and must not be merged by this agent. Branch-summary prompt/navigation
+behavior, native diff rendering, Mermaid rendering, dynamic borders,
+status-indicator spinner behavior, ctrl/alt modifier-key parsing, and live
+terminal acceptance remain open Goal 4 slices, each requiring its own
+failing seam test and PR.
+
 ## Checkpoint: Goal 4 interactive tree fold/unfold
 
 On `feat/goal-4-tree-fold-unfold` (branched from `origin/main` after #194

@@ -4,6 +4,37 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+The interactive tree selector now windows its display around the
+highlighted row and supports PageUp/PageDown paging, matching the oracle's
+viewport calculation and page-key handling. Oracle authority is
+`packages/coding-agent/src/modes/interactive/components/tree-selector.ts:673-680`
+(`startIndex`/`endIndex` windowing formula) and
+`packages/coding-agent/src/modes/interactive/components/tree-selector.ts:1018-1023`
+(PageUp/PageDown move the selection by `maxVisibleLines`), with the default
+page size from
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:1362`
+(`Math.max(5, Math.floor(terminalHeight / 2))`), which `internal/tui.SelectTree`
+now reproduces via the existing `terminalSize` helper. Numeric selection is
+relative to the currently visible window, matching what is actually
+rendered. Raw terminals parse the real hardware PageUp/PageDown escape
+sequences (`\x1b[5~`/`\x1b[6~`); line-buffered (scripted/piped) callers use
+"pgup"/"pgdn". A new `internal/tui.SelectTreeAt` entry point takes an
+explicit page size so tests can exercise windowing/paging deterministically
+without depending on a real terminal. Go evidence is `internal/tui/tree.go`,
+`TestSelectTreeRawPageDownAdvancesByViewportHeight`,
+`TestSelectTreeRawPageUpRetreatsByViewportHeight`,
+`TestSelectTreeLineBufferedPaging`,
+`TestSelectTreeRawWindowedNumericSelectionUsesVisibleOffset`, and
+`TestSelectTreeDefaultsToRealTerminalViewportHeight`. Full repository gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass. Branch-summary prompt/navigation behavior, native
+diff rendering, Mermaid rendering, dynamic borders, status-indicator
+spinner behavior, ctrl/alt modifier-key parsing (for fold/unfold and any
+other bindings), and live terminal acceptance remain open and are not
+claimed here.
+
+## Checkpoint update: 2026-09-16
+
 `internal/tui.SelectTree` now supports folding a highlighted node (hiding its
 descendants from the option list) and unfolding it again, matching the
 oracle's `app.tree.foldOrUp`/`app.tree.unfoldOrDown` toggle. Oracle authority

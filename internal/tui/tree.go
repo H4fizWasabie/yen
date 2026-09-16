@@ -68,7 +68,22 @@ func RenderTree(entries []session.TreeEntry, activeID string) []string {
 }
 
 // SelectTree presents the session tree as a navigable selector and returns
-// the selected entry ID. It keeps the static RenderTree output available for
+// the selected entry ID, using the real terminal height to bound the
+// viewport (packages/coding-agent/src/modes/interactive/interactive-mode.ts:1362:
+// `maxVisibleLines = Math.max(5, Math.floor(terminalHeight / 2))`). See
+// SelectTreeAt for the full behavior and its documented scope.
+func SelectTree(r *bufio.Reader, w io.Writer, title string, entries []session.TreeEntry, rawInput bool) (string, error) {
+	_, height := terminalSize(w)
+	maxVisible := height / 2
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+	return SelectTreeAt(r, w, title, entries, rawInput, maxVisible)
+}
+
+// SelectTreeAt is SelectTree with an explicit maximum number of visible
+// rows, so callers (and tests) can control paging without depending on the
+// real terminal size. It keeps the static RenderTree output available for
 // callers that only need a report.
 //
 // A highlighted node with children can be folded to hide its descendants
@@ -83,7 +98,16 @@ func RenderTree(entries []session.TreeEntry, activeID string) []string {
 // raw terminals use plain Left/Right arrows and line-buffered
 // (scripted/piped) callers use "f"/"u" as documented approximations of the
 // oracle key bindings.
-func SelectTree(r *bufio.Reader, w io.Writer, title string, entries []session.TreeEntry, rawInput bool) (string, error) {
+//
+// When there are more rows than maxVisible, the selector windows the
+// display around the highlighted row and pages by maxVisible rows at a time
+// on PageUp/PageDown, matching
+// packages/coding-agent/src/modes/interactive/components/tree-selector.ts:673-680,1018-1023.
+// Raw terminals send hardware PageUp/PageDown as "\x1b[5~"/"\x1b[6~"; the Go
+// raw reader parses those two sequences specifically. Line-buffered callers
+// use "pgup"/"pgdn". Numeric selection is relative to the currently visible
+// window, matching what is actually printed.
+func SelectTreeAt(r *bufio.Reader, w io.Writer, title string, entries []session.TreeEntry, rawInput bool, maxVisible int) (string, error) {
 	if len(entries) == 0 {
 		return "", nil
 	}
@@ -145,42 +169,63 @@ func SelectTree(r *bufio.Reader, w io.Writer, title string, entries []session.Tr
 
 	selected := 0
 	if rawInput {
-		return selectTreeRaw(r, w, title, visible, optionFor, fold, unfold, &selected)
+		return selectTreeRaw(r, w, title, visible, optionFor, fold, unfold, &selected, maxVisible)
 	}
-	return selectTreeLine(r, w, title, visible, optionFor, fold, unfold, &selected)
+	return selectTreeLine(r, w, title, visible, optionFor, fold, unfold, &selected, maxVisible)
 }
 
-func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []session.TreeEntry, optionFor func(session.TreeEntry) string, fold, unfold func(string), selected *int) (string, error) {
+// windowBounds returns the [start, end) slice of a maxVisible-tall page
+// centered on selected, per tree-selector.ts:673-680.
+func windowBounds(selected, total, maxVisible int) (int, int) {
+	if maxVisible <= 0 || total <= maxVisible {
+		return 0, total
+	}
+	start := selected - maxVisible/2
+	if upper := total - maxVisible; start > upper {
+		start = upper
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxVisible
+	if end > total {
+		end = total
+	}
+	return start, end
+}
+
+func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []session.TreeEntry, optionFor func(session.TreeEntry) string, fold, unfold func(string), selected *int, maxVisible int) (string, error) {
 	if _, err := fmt.Fprintln(w, title); err != nil {
 		return "", err
 	}
 	rendered := 0
-	render := func() error {
+	render := func() (int, int, error) {
 		vis := visible()
 		clampSelected(selected, len(vis))
+		start, end := windowBounds(*selected, len(vis), maxVisible)
 		if rendered > 0 {
 			if _, err := fmt.Fprintf(w, "\x1b[%dA", rendered); err != nil {
-				return err
+				return start, end, err
 			}
 		}
-		for i, entry := range vis {
+		for i, entry := range vis[start:end] {
 			marker := "  "
-			if i == *selected {
+			if start+i == *selected {
 				marker = "> "
 			}
 			if rendered > 0 {
 				if _, err := io.WriteString(w, "\r\x1b[2K"); err != nil {
-					return err
+					return start, end, err
 				}
 			}
 			if _, err := fmt.Fprintf(w, "%s%d) %s\n", marker, i+1, optionFor(entry)); err != nil {
-				return err
+				return start, end, err
 			}
 		}
-		rendered = len(vis)
-		return nil
+		rendered = end - start
+		return start, end, nil
 	}
-	if err := render(); err != nil {
+	if _, _, err := render(); err != nil {
 		return "", err
 	}
 	var number strings.Builder
@@ -198,9 +243,10 @@ func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []
 				}
 				return vis[*selected].ID, nil
 			}
+			start, end := windowBounds(*selected, len(vis), maxVisible)
 			n, parseErr := strconv.Atoi(number.String())
-			if parseErr == nil && n >= 1 && n <= len(vis) {
-				return vis[n-1].ID, nil
+			if parseErr == nil && n >= 1 && n <= end-start {
+				return vis[start+n-1].ID, nil
 			}
 			number.Reset()
 		case 'q', 'Q':
@@ -210,7 +256,7 @@ func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []
 			if *selected < len(vis)-1 {
 				*selected++
 			}
-			if err := render(); err != nil {
+			if _, _, err := render(); err != nil {
 				return "", err
 			}
 		case 'k':
@@ -218,7 +264,7 @@ func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []
 			if *selected > 0 {
 				*selected--
 			}
-			if err := render(); err != nil {
+			if _, _, err := render(); err != nil {
 				return "", err
 			}
 		case '\x1b':
@@ -229,12 +275,12 @@ func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []
 			if next != '[' {
 				return "", nil
 			}
-			direction, err := r.ReadByte()
+			marker, err := r.ReadByte()
 			if err != nil {
 				return "", err
 			}
 			number.Reset()
-			switch direction {
+			switch marker {
 			case 'B':
 				if *selected < len(vis)-1 {
 					*selected++
@@ -251,10 +297,23 @@ func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []
 				if len(vis) > 0 {
 					unfold(vis[*selected].ID)
 				}
+			case '5', '6':
+				tilde, err := r.ReadByte()
+				if err != nil {
+					return "", err
+				}
+				if tilde != '~' {
+					continue
+				}
+				if marker == '5' {
+					*selected -= maxVisible
+				} else {
+					*selected += maxVisible
+				}
 			default:
 				continue
 			}
-			if err := render(); err != nil {
+			if _, _, err := render(); err != nil {
 				return "", err
 			}
 		default:
@@ -267,25 +326,26 @@ func selectTreeRaw(r *bufio.Reader, w io.Writer, title string, visible func() []
 	}
 }
 
-func selectTreeLine(r *bufio.Reader, w io.Writer, title string, visible func() []session.TreeEntry, optionFor func(session.TreeEntry) string, fold, unfold func(string), selected *int) (string, error) {
+func selectTreeLine(r *bufio.Reader, w io.Writer, title string, visible func() []session.TreeEntry, optionFor func(session.TreeEntry) string, fold, unfold func(string), selected *int, maxVisible int) (string, error) {
 	if _, err := fmt.Fprintln(w, title); err != nil {
 		return "", err
 	}
-	render := func() error {
+	render := func() (int, int, error) {
 		vis := visible()
 		clampSelected(selected, len(vis))
-		for i, entry := range vis {
+		start, end := windowBounds(*selected, len(vis), maxVisible)
+		for i, entry := range vis[start:end] {
 			marker := "  "
-			if i == *selected {
+			if start+i == *selected {
 				marker = "> "
 			}
 			if _, err := fmt.Fprintf(w, "%s%d) %s\n", marker, i+1, optionFor(entry)); err != nil {
-				return err
+				return start, end, err
 			}
 		}
-		return nil
+		return start, end, nil
 	}
-	if err := render(); err != nil {
+	if _, _, err := render(); err != nil {
 		return "", err
 	}
 	for {
@@ -304,36 +364,49 @@ func selectTreeLine(r *bufio.Reader, w io.Writer, title string, visible func() [
 		if strings.EqualFold(line, "q") || line == "\x1b" {
 			return "", nil
 		}
-		if n, parseErr := strconv.Atoi(line); parseErr == nil && n >= 1 && n <= len(vis) {
-			return vis[n-1].ID, nil
+		if n, parseErr := strconv.Atoi(line); parseErr == nil {
+			start, end := windowBounds(*selected, len(vis), maxVisible)
+			if n >= 1 && n <= end-start {
+				return vis[start+n-1].ID, nil
+			}
 		}
 		switch line {
 		case "j":
 			if *selected < len(vis)-1 {
 				*selected++
 			}
-			if err := render(); err != nil {
+			if _, _, err := render(); err != nil {
 				return "", err
 			}
 		case "k":
 			if *selected > 0 {
 				*selected--
 			}
-			if err := render(); err != nil {
+			if _, _, err := render(); err != nil {
 				return "", err
 			}
 		case "f":
 			if len(vis) > 0 {
 				fold(vis[*selected].ID)
 			}
-			if err := render(); err != nil {
+			if _, _, err := render(); err != nil {
 				return "", err
 			}
 		case "u":
 			if len(vis) > 0 {
 				unfold(vis[*selected].ID)
 			}
-			if err := render(); err != nil {
+			if _, _, err := render(); err != nil {
+				return "", err
+			}
+		case "pgup":
+			*selected -= maxVisible
+			if _, _, err := render(); err != nil {
+				return "", err
+			}
+		case "pgdn":
+			*selected += maxVisible
+			if _, _, err := render(); err != nil {
 				return "", err
 			}
 		default:
