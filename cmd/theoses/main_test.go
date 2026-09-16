@@ -409,7 +409,9 @@ func TestInteractiveTreeSelectorBranchesFromChosenEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\n")), false, current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
+	// "1\n" selects the tree entry; the trailing "\n" confirms the default
+	// "No summary" choice at the branch-summary prompt.
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\n\n")), false, current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
 		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
 	}
 	if current.LeafID() == entryID {
@@ -428,11 +430,81 @@ func TestInteractiveTreeSelectorRawUsesRawByteNavigation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("\r")), true, current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
+	// The first "\r" confirms the tree entry; the second confirms the
+	// default "No summary" choice at the branch-summary prompt.
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("\r\r")), true, current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
 		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
 	}
 	if current.LeafID() == entryID {
 		t.Fatalf("raw tree selector did not create a branch")
+	}
+}
+
+func TestInteractiveTreeSummarizeChoiceRecordsRequestedMarker(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1"})
+	if _, err := current.Append(session.Message{Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	entryID := current.LeafID()
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	// "1\n" selects the tree entry, "2\n" picks "Summarize" from the
+	// branch-summary prompt.
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\n2\n")), false, current, &output); err != nil || !handled {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	if !strings.Contains(output.String(), entryID) || !strings.Contains(output.String(), "summary requested") {
+		t.Fatalf("expected summary-requested marker in output: %q", output.String())
+	}
+}
+
+func TestInteractiveTreeSummarizeEscapeReshowsTreeSelector(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1"})
+	if _, err := current.Append(session.Message{Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	entryID := current.LeafID()
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	// "1\n" selects the tree entry, "q\n" cancels the branch-summary prompt
+	// (the tree selector must be re-shown), then "1\n\n" re-selects the
+	// entry and confirms "No summary".
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\nq\n1\n\n")), false, current, &output); err != nil || !handled {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	if !strings.Contains(output.String(), entryID) {
+		t.Fatalf("expected branch after re-showing tree selector: %q", output.String())
+	}
+	if current.LeafID() == entryID {
+		t.Fatalf("tree selector did not create a branch after escape")
+	}
+}
+
+func TestInteractiveTreeSummarizeCustomPromptCancelLoopsBackToSummaryChoice(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1"})
+	if _, err := current.Append(session.Message{Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	entryID := current.LeafID()
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	// "1\n" selects the tree entry, "3\n" picks "Summarize with custom
+	// prompt", "q\n" cancels the instructions prompt (looping back to the
+	// summary choice, not the tree selector), then "1\n" picks "No summary".
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\n3\nq\n1\n")), false, current, &output); err != nil || !handled {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	if !strings.Contains(output.String(), entryID) || strings.Contains(output.String(), "summary requested") {
+		t.Fatalf("expected plain branch (no summary) after cancelling custom prompt: %q", output.String())
 	}
 }
 

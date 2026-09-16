@@ -4,6 +4,35 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+Navigating the interactive `/tree` selector to a non-leaf entry now prompts
+"Summarize branch?" with "No summary" / "Summarize" / "Summarize with
+custom prompt", matching the oracle's summarize-before-navigate flow.
+Cancelling the choice re-shows the tree selector; cancelling the custom
+instructions prompt loops back to the summary choice instead of the tree
+selector. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4953-5031`.
+This slice implements only the prompt/navigation flow: it records the
+chosen summary mode in the status message but does not generate or persist
+actual LLM branch-summary content (the oracle's `generateBranchSummary` /
+`session.navigateTree({summarize, customInstructions})`), and it does not
+preserve the previously highlighted tree entry when re-showing the selector
+after a cancelled summary choice (the oracle's `initialSelectedId`). The
+custom-instructions prompt uses "q" to cancel, matching this codebase's
+existing extension UI text-input convention
+(`internal/tui/ui.go`'s "input"/"editor" handling) rather than a literal
+Escape key, since this is a plain line read with no raw key parsing. Go
+evidence is `cmd/theoses/main.go`,
+`TestInteractiveTreeSummarizeChoiceRecordsRequestedMarker`,
+`TestInteractiveTreeSummarizeEscapeReshowsTreeSelector`, and
+`TestInteractiveTreeSummarizeCustomPromptCancelLoopsBackToSummaryChoice`.
+Full repository gates (`go test ./...`, `go test -race ./...`,
+`go vet ./...`, `go build ./...`, `git diff --check`) pass. Actual branch
+summary generation, native diff rendering, Mermaid rendering, dynamic
+borders, status-indicator spinner behavior, ctrl/alt modifier-key parsing,
+and live terminal acceptance remain open and are not claimed here.
+
+## Checkpoint update: 2026-09-16
+
 The interactive tree selector now windows its display around the
 highlighted row and supports PageUp/PageDown paging, matching the oracle's
 viewport calculation and page-key handling. Oracle authority is

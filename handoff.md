@@ -2,6 +2,40 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Goal 4 branch-summary prompt/navigation
+
+On `feat/goal-4-branch-summary-prompt` (branched from `origin/main` after
+#196 merged), choosing a non-leaf entry in the interactive `/tree` selector
+now shows a "Summarize branch?" prompt ("No summary" / "Summarize" /
+"Summarize with custom prompt") before branching, and implements the
+oracle's cancel-navigation semantics: escaping the summary choice re-shows
+the tree selector (`runTreeSelector`'s outer loop), and cancelling the
+custom-instructions prompt loops back to the summary choice instead
+(`chooseBranchSummary`'s inner loop). Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4953-5031`.
+Go evidence is `cmd/theoses/main.go`,
+`TestInteractiveTreeSummarizeChoiceRecordsRequestedMarker`,
+`TestInteractiveTreeSummarizeEscapeReshowsTreeSelector`, and
+`TestInteractiveTreeSummarizeCustomPromptCancelLoopsBackToSummaryChoice`.
+All required gates (`go test ./...`, `go test -race ./...`, `go vet ./...`,
+`go build ./...`, `git diff --check`) pass locally.
+
+Documented scope narrowing: this slice is prompt/navigation flow only.
+It does not generate or persist actual branch-summary content — the
+oracle's `generateBranchSummary`/`session.navigateTree({summarize,
+customInstructions})` LLM summarization pipeline is a separate, larger
+piece of work requiring new session entry types and provider calls, and is
+not attempted here; the Go code only records the chosen mode in the status
+line ("... (summary requested; generation not yet implemented)"). It also
+does not preserve the previously highlighted tree entry when re-showing the
+selector after a cancelled summary choice (the oracle's
+`initialSelectedId`). This increment is opened as a PR against `main` and
+must not be merged by this agent. Actual branch summary generation, native
+diff rendering, Mermaid rendering, dynamic borders, status-indicator
+spinner behavior, ctrl/alt modifier-key parsing, and live terminal
+acceptance remain open Goal 4 slices, each requiring its own failing seam
+test and PR.
+
 ## Checkpoint: Goal 4 tree viewport/page panning
 
 On `feat/goal-4-tree-viewport-panning` (branched from `origin/main` after
