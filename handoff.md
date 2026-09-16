@@ -591,6 +591,19 @@ Skill discovery and explicit skill expansion now use the containing directory
 name when `SKILL.md` omits frontmatter `name`, matching the oracle fallback.
 Focused resource coverage and the full 270-test race/vet/diff gate pass.
 
+## Latest provider increment: Anthropic OAuth
+
+Anthropic Console OAuth is implemented in `internal/auth/anthropic.go` with
+PKCE, the pinned localhost callback, authorization-code exchange, refresh-token
+rotation, and `/login anthropic` persistence through `YEN_AUTH_FILE`.
+The pinned oracle evidence is
+`packages/ai/src/auth/oauth/anthropic.ts:28-37,190-231,234-312,314-363`.
+`internal/auth/anthropic_test.go` covers callback/PKCE exchange and refresh;
+`cmd/theoses/main_test.go` covers CLI command recognition and the existing
+auth-file boundary. Stored `anthropic` OAuth access is already selected by
+the provider config fallback. Real-account login and live Anthropic acceptance
+remain manual and open.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
