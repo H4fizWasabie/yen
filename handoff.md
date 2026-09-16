@@ -1,6 +1,25 @@
 # Theoses2 Go rewrite handoff
 
-Date: 2026-09-15
+Date: 2026-09-16
+
+## Checkpoint: Goal 4 native tree component layout
+
+On `feat/tui-component-layout`, `/tree` now renders a git-log-style ASCII
+branch tree (`├─ `/`└─ ` connectors, `│  ` continuation gutters, `(current)`
+active-leaf marker) instead of a raw JSON dump, closing one scoped slice of
+the CLI's "native custom component layout" gap. Oracle authority is
+`packages/coding-agent/src/modes/interactive/components/tree-selector.ts:664-743,696-729`
+(`TreeList.render`), invoked from `showTreeSelector()` at
+`interactive-mode.ts:4953-4996`; the oracle's tree component is bespoke
+application code layered on the in-house `theoses-tui` package, not an
+external terminal-UI framework. Go evidence is `internal/tui/tree.go`,
+`TestRenderTreeDrawsConnectorsAndGutters`,
+`TestRenderTreeHandlesMultipleRoots`, and
+`TestInteractiveTreeRendersAsciiBranchConnectors`. Remaining open in this
+gap: interactive tree navigation (arrow-key node selection, horizontal
+viewport panning, fold/unfold) and the oracle's other native components
+(diff view, mermaid diagram rendering, dynamic borders, status-indicator
+spinners). The PR is open for review and must not be merged by this agent.
 
 ## Checkpoint: Goal 4 bounded terminal viewport
 

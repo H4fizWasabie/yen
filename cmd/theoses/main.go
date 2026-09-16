@@ -679,11 +679,8 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		_, err := fmt.Fprintln(stdout, "Copied last agent message to clipboard")
 		return true, err
 	case text == "/tree":
-		data, err := json.Marshal(current.Tree())
-		if err != nil {
-			return true, err
-		}
-		_, err = fmt.Fprintf(stdout, "%s\n", data)
+		lines := tui.RenderTree(current.Tree(), current.LeafID())
+		_, err := fmt.Fprintf(stdout, "%s\n", strings.Join(lines, "\n"))
 		return true, err
 	case text == "/artifacts":
 		catalog := current.ArtifactCatalog(16 * 1024)

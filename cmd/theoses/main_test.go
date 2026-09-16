@@ -340,6 +340,29 @@ func TestInteractiveSessionCommands(t *testing.T) {
 	}
 }
 
+func TestInteractiveTreeRendersAsciiBranchConnectors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	current := session.New(path, session.Header{ID: "session-1", ConversationID: "conv-1"})
+	if _, err := current.Append(session.Message{Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &runtime.Runner{}
+	link := conversation.Link{ConversationID: "conv-1"}
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/tree", current, runner, link, &activePath, &output)
+	if err != nil || !handled {
+		t.Fatalf("tree command handled=%v err=%v", handled, err)
+	}
+	if strings.Contains(output.String(), "parentId") {
+		t.Fatalf("expected ASCII tree rendering, got raw JSON: %q", output.String())
+	}
+}
+
 func TestInteractiveCopyCopiesLastAssistantMessage(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
