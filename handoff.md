@@ -678,8 +678,10 @@ explicit Yen or ambient AWS settings are absent: `Credential.Key` supplies the
 bearer token, while `Credential.Env` supplies `AWS_PROFILE` and region. This
 matches the pinned oracle's stored credential resolution at
 `packages/ai/src/providers/amazon-bedrock.ts:7-78` and is covered by
-`TestBedrockUsesStoredCredentialEnvironment`. Static model metadata,
-interactive auth UI, and live AWS acceptance remain open.
+`TestBedrockUsesStoredCredentialEnvironment`. `/login amazon-bedrock` now
+persists the oracle's bearer-token, AWS-profile, or existing credential-chain
+choice, covered by `TestInteractiveBedrockLoginStoresSelectedCredential`.
+Static model metadata and live AWS acceptance remain open.
 
 ## Latest operations evidence
 

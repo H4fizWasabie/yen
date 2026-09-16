@@ -278,6 +278,29 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err = fmt.Fprintln(stdout, "Logged in: anthropic")
 		return true, err
+	case text == "/login amazon-bedrock" || strings.HasPrefix(text, "/login amazon-bedrock "):
+		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+		if path == "" {
+			return true, fmt.Errorf("YEN_AUTH_FILE is required for /login")
+		}
+		parts := strings.Fields(strings.TrimSpace(strings.TrimPrefix(text, "/login amazon-bedrock")))
+		credential := auth.Credential{Type: "api_key"}
+		switch {
+		case len(parts) == 2 && parts[0] == "bearer-token":
+			credential.Key = parts[1]
+		case len(parts) == 2 && parts[0] == "aws-profile":
+			credential.Env = map[string]string{"AWS_PROFILE": parts[1]}
+		case len(parts) == 1 && parts[0] == "credential-chain":
+		default:
+			return true, fmt.Errorf("usage: /login amazon-bedrock bearer-token <token> | aws-profile <profile> | credential-chain")
+		}
+		if _, err := auth.Open(path).Modify("amazon-bedrock", func(*auth.Credential) (*auth.Credential, error) {
+			return &credential, nil
+		}); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintln(stdout, "Logged in: amazon-bedrock")
+		return true, err
 	case text == "/login github-copilot" || strings.HasPrefix(text, "/login github-copilot "):
 		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
 		if path == "" {
