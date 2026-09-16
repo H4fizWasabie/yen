@@ -68,7 +68,8 @@ JSON-encoding other structured results. Oracle authority is
 `packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`.
 Go evidence is `internal/tui/render.go`, `cmd/theoses/main.go`, and
 `TestRenderMessageUsesExtensionRenderer`,
-`TestRenderMessageFormatsStructuredTextComponent`, plus the scripted CLI
+`TestRenderMessageFormatsStructuredTextComponent`,
+`TestRenderMessageFormatsSerializedTextComponent`, plus the scripted CLI
 acceptance `TestInteractiveRunRendersExtensionMessage`. Full native component
 layout and interactive widgets remain open.
 

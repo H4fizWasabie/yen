@@ -71,3 +71,16 @@ func TestRenderMessageFormatsStructuredTextComponent(t *testing.T) {
 		t.Fatalf("rendered=%q ok=%v", rendered, ok)
 	}
 }
+
+func TestRenderMessageFormatsSerializedTextComponent(t *testing.T) {
+	registry := extensions.New()
+	if err := registry.RegisterMessageRenderer("custom", func(any, extensions.RenderOptions) (any, bool) {
+		return map[string]any{"text": "serialized component", "paddingX": float64(0), "paddingY": float64(0)}, true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rendered, ok := RenderMessage(registry, session.Message{Role: "custom"})
+	if !ok || rendered != "serialized component" {
+		t.Fatalf("rendered=%q ok=%v", rendered, ok)
+	}
+}
