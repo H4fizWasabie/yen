@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -455,7 +456,115 @@ func decodeCodexResponseBody(response *http.Response) (io.Reader, func(), error)
 	return decoder, func() { decoder.Close() }, nil
 }
 
+type codexWebSocketCacheEntry struct {
+	mu        sync.Mutex
+	conn      *websocket.Conn
+	idleTimer *time.Timer
+}
+
+type codexWebSocketBody struct {
+	*io.PipeReader
+	release func()
+	once    sync.Once
+}
+
+func (b *codexWebSocketBody) Close() error {
+	err := b.PipeReader.Close()
+	b.once.Do(b.release)
+	return err
+}
+
+var codexWebSocketCache sync.Map
+
 func openCodexWebSocketResponse(ctx context.Context, p OpenAIResponses, body []byte) (*http.Response, error) {
+	cacheKey := p.BaseURL + "\x00" + p.Headers["chatgpt-account-id"]
+	value, _ := codexWebSocketCache.LoadOrStore(cacheKey, &codexWebSocketCacheEntry{})
+	entry := value.(*codexWebSocketCacheEntry)
+	entry.mu.Lock()
+	if entry.idleTimer != nil {
+		entry.idleTimer.Stop()
+		entry.idleTimer = nil
+	}
+	connection := entry.conn
+	if connection == nil {
+		var err error
+		connection, err = dialCodexWebSocket(ctx, p)
+		if err != nil {
+			entry.mu.Unlock()
+			return nil, err
+		}
+		entry.conn = connection
+	}
+
+	request := map[string]any{"type": "response.create"}
+	var fields map[string]any
+	if err := json.Unmarshal(body, &fields); err != nil {
+		entry.mu.Unlock()
+		return nil, err
+	}
+	for key, value := range fields {
+		request[key] = value
+	}
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		entry.mu.Unlock()
+		return nil, err
+	}
+	if err := connection.Write(ctx, websocket.MessageText, encoded); err != nil {
+		entry.conn = nil
+		_ = connection.Close(websocket.StatusInternalError, "request failed")
+		entry.mu.Unlock()
+		return nil, err
+	}
+
+	reader, writer := io.Pipe()
+	go func() {
+		for {
+			typ, message, readErr := connection.Read(ctx)
+			if readErr != nil {
+				entry.conn = nil
+				_ = writer.CloseWithError(readErr)
+				return
+			}
+			if typ != websocket.MessageText && typ != websocket.MessageBinary {
+				continue
+			}
+			var event struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(message, &event) != nil {
+				entry.conn = nil
+				_ = writer.CloseWithError(errors.New("invalid Codex WebSocket event"))
+				return
+			}
+			if _, writeErr := fmt.Fprintf(writer, "data: %s\n\n", message); writeErr != nil {
+				return
+			}
+			if event.Type == "response.completed" || event.Type == "response.done" || event.Type == "response.incomplete" || event.Type == "response.failed" {
+				_ = writer.Close()
+				return
+			}
+		}
+	}()
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Body: &codexWebSocketBody{PipeReader: reader, release: func() {
+			entry.idleTimer = time.AfterFunc(5*time.Minute, func() {
+				entry.mu.Lock()
+				if entry.conn == connection {
+					entry.conn = nil
+					_ = connection.Close(websocket.StatusNormalClosure, "idle_timeout")
+				}
+				entry.mu.Unlock()
+			})
+			entry.mu.Unlock()
+		}},
+	}, nil
+}
+
+func dialCodexWebSocket(ctx context.Context, p OpenAIResponses) (*websocket.Conn, error) {
 	endpoint, err := url.Parse(p.BaseURL + "/responses")
 	if err != nil {
 		return nil, err
@@ -487,55 +596,7 @@ func openCodexWebSocketResponse(ctx context.Context, p OpenAIResponses, body []b
 	if err != nil {
 		return nil, err
 	}
-
-	request := map[string]any{"type": "response.create"}
-	var fields map[string]any
-	if err := json.Unmarshal(body, &fields); err != nil {
-		connection.Close(websocket.StatusInternalError, "invalid request")
-		return nil, err
-	}
-	for key, value := range fields {
-		request[key] = value
-	}
-	encoded, err := json.Marshal(request)
-	if err != nil {
-		connection.Close(websocket.StatusInternalError, "invalid request")
-		return nil, err
-	}
-	if err := connection.Write(ctx, websocket.MessageText, encoded); err != nil {
-		connection.Close(websocket.StatusInternalError, "request failed")
-		return nil, err
-	}
-
-	reader, writer := io.Pipe()
-	go func() {
-		defer connection.Close(websocket.StatusNormalClosure, "done")
-		for {
-			typ, message, readErr := connection.Read(ctx)
-			if readErr != nil {
-				_ = writer.CloseWithError(readErr)
-				return
-			}
-			if typ != websocket.MessageText && typ != websocket.MessageBinary {
-				continue
-			}
-			var event struct {
-				Type string `json:"type"`
-			}
-			if json.Unmarshal(message, &event) != nil {
-				_ = writer.CloseWithError(errors.New("invalid Codex WebSocket event"))
-				return
-			}
-			if _, writeErr := fmt.Fprintf(writer, "data: %s\n\n", message); writeErr != nil {
-				return
-			}
-			if event.Type == "response.completed" || event.Type == "response.done" || event.Type == "response.incomplete" || event.Type == "response.failed" {
-				_ = writer.Close()
-				return
-			}
-		}
-	}()
-	return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: reader}, nil
+	return connection, nil
 }
 
 func (p OpenAIResponses) name() string {

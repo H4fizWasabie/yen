@@ -891,3 +891,13 @@ scope, and checkpoint ordering are explicitly decided.
 - Do not add all providers, dashboard, extensions, RPC, Telegram, or memory
   simultaneously.
 - Do not deploy until rollback validation and explicit authorization exist.
+
+## Latest Codex WebSocket checkpoint
+
+Codex now reuses a serialized idle WebSocket per endpoint/account and retains
+it across terminal responses, while continuing to send `previous_response_id`
+and input deltas. Evidence: `internal/provider/responses.go`,
+`internal/provider/responses_test.go`, and
+`TestOpenAICodexReusesWebSocketConnection`. Oracle authority:
+`packages/ai/src/api/openai-codex-responses.ts:809-834,1077-1170,1384-1503`.
+Live Codex acceptance remains open without credentials.
