@@ -12,6 +12,7 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	"github.com/H4fizWasabie/yen/internal/session"
@@ -384,7 +385,11 @@ func TestQueueModeAndCommandDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := Server{Runner: runtime.New(queue, rpcProvider{}, nil), Link: conversation.Link{ConversationID: "commands", WorkspaceID: dir}}
+	registry := extensions.New()
+	if err := registry.RegisterCommand(extensions.Command{Name: "deploy", Description: "Deploy safely", Handler: func(context.Context, string) error { return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	server := Server{Runner: runtime.New(queue, rpcProvider{}, nil), Link: conversation.Link{ConversationID: "commands", WorkspaceID: dir}, Extensions: registry}
 	var output bytes.Buffer
 	if err := server.handle(context.Background(), &output, command{Type: "set_steering_mode", Mode: "all"}); err != nil {
 		t.Fatal(err)
@@ -398,7 +403,7 @@ func TestQueueModeAndCommandDiscovery(t *testing.T) {
 	if err := server.handle(context.Background(), &output, command{Type: "get_commands"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), `"steeringMode":"all"`) || !strings.Contains(output.String(), `"name":"compact"`) || !strings.Contains(output.String(), `"name":"skill:summarize"`) || !strings.Contains(output.String(), `"name":"review"`) {
+	if !strings.Contains(output.String(), `"steeringMode":"all"`) || !strings.Contains(output.String(), `"name":"compact"`) || !strings.Contains(output.String(), `"name":"skill:summarize"`) || !strings.Contains(output.String(), `"name":"review"`) || !strings.Contains(output.String(), `"name":"deploy"`) || !strings.Contains(output.String(), `"source":"extension"`) {
 		t.Fatalf("output=%s", output.String())
 	}
 }

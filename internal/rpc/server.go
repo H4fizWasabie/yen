@@ -18,6 +18,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
 	sessionpkg "github.com/H4fizWasabie/yen/internal/session"
@@ -25,8 +26,9 @@ import (
 )
 
 type Server struct {
-	Runner *runtime.Runner
-	Link   conversation.Link
+	Runner     *runtime.Runner
+	Link       conversation.Link
+	Extensions *extensions.Registry
 
 	writeMu                    sync.Mutex
 	linkMu                     sync.RWMutex
@@ -422,6 +424,13 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		}
 		commands = append(commands, codingagent.SkillCommands(workspace)...)
 		commands = append(commands, codingagent.PromptCommands(workspace)...)
+		if s.Extensions != nil {
+			for _, extension := range s.Extensions.Commands() {
+				commands = append(commands, map[string]any{
+					"name": extension.Name, "description": extension.Description, "source": "extension",
+				})
+			}
+		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"commands": commands}, nil)
 	case "set_model":
 		if strings.TrimSpace(request.Provider) == "" || strings.TrimSpace(request.Model) == "" {

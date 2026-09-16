@@ -19,6 +19,14 @@ No cutover or TypeScript modification has happened. Local Telegram/dashboard
 adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
+Current follow-up work is grouped in branch `feat/extension-registry`. The
+in-process extension registry composes registered agent/tool/provider hooks,
+keeps command and renderer registrations deterministic, and exposes extension
+commands through RPC `get_commands`. It is covered by
+`internal/extensions/registry_test.go` and the RPC command-discovery test.
+The dynamic TypeScript extension loader, extension-file discovery, shortcuts,
+flags, session actions, and provider-registration config are still deferred.
+
 Latest code checkpoint: branch `feat/persistent-external-tools`, PR #45, commit
 `f56f8b6`. It keeps external HTTP/MCP tools open across turns and closes them
 when the Yen runtime exits, while turn-scoped built-ins remain unchanged.

@@ -16,6 +16,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
@@ -31,6 +32,7 @@ type Runner struct {
 	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
 	PersistentTools                []agent.Tool
 	ToolHooks                      *agent.ToolHooks
+	ExtensionRegistry              *extensions.Registry
 	SessionPath                    func(turn conversation.Turn) string
 	Checkpoints                    *memory.Checkpoints
 	Memory                         *memory.Engine
@@ -555,7 +557,11 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	}
 	tools = append(tools, recallTurnsTool{history: history})
 	history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
-	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, r.ToolHooks)
+	hooks := r.ToolHooks
+	if r.ExtensionRegistry != nil {
+		hooks = r.ExtensionRegistry.AgentHooks(hooks)
+	}
+	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, hooks)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && (recoverableLengthStop(result) || silentContextOverflow(result, r.AutoCompactContextWindow))) {
 		keepRecentTurns := r.AutoCompactTurns
 		if keepRecentTurns < 1 {
@@ -579,7 +585,7 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 				history = append([]agent.Message{codingagent.ArtifactCatalogMessage(catalog)}, history...)
 			}
 			history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
-			result, runErr = agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, r.ToolHooks)
+			result, runErr = agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, hooks)
 		}
 	}
 	outcome := "completed"
