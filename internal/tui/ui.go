@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const maxWidgetLines = 10
+
 // HandleExtensionUI adapts the shared extension_ui_request protocol to the
 // interactive CLI's line-driven screen.
 func HandleExtensionUI(_ context.Context, request map[string]any, reader *bufio.Reader, writer io.Writer) (map[string]any, error) {
@@ -110,9 +112,9 @@ func HandleExtensionUIWithScreen(_ context.Context, request map[string]any, read
 			if request["widgetLines"] == nil {
 				delete(placement, key)
 			} else {
-				lines := make([]string, 0)
-				for _, line := range requestLines(request["widgetLines"]) {
-					lines = append(lines, line)
+				lines := requestLines(request["widgetLines"])
+				if len(lines) > maxWidgetLines {
+					lines = append(lines[:maxWidgetLines], "... (widget truncated)")
 				}
 				placement[key] = lines
 			}

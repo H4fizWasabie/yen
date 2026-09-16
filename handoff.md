@@ -120,6 +120,12 @@ and `packages/coding-agent/src/modes/interactive/components/footer.ts:232-240`;
 Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
 `TestHandleExtensionUIKeepsExtensionStatusesByKey`.
 
+Extension widgets now cap string content at ten lines and append
+`... (widget truncated)` when longer, matching the oracle. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2024-2053,2112`;
+Go evidence is `internal/tui/ui.go` and
+`TestHandleExtensionUITruncatesLongWidgets`.
+
 The interactive tool-progress increment is implemented: the CLI consumes
 runtime `agent.Event` callbacks, shows bounded `Running <tool>: <preview>`
 status during tool execution, and returns to streaming status after results.
