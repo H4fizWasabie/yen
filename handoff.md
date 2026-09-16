@@ -802,6 +802,22 @@ implemented. Static catalog metadata and live provider acceptance remain open.
 
 ## Latest operations evidence
 
+## Latest provider catalog checkpoint
+
+The approved current Theoses2 catalog snapshot is embedded from commit
+`f283c608a157301c5d80c57595d118a0c33f9179`,
+`packages/ai/src/providers/data/*.json`; the pinned baseline remains the
+behavioral reference and does not track those generated files. `AvailableModels`
+prefers live provider catalogs and falls back to the embedded metadata without
+credentials. Copilot automatically selects the catalog-declared
+`openai-responses` or `anthropic-messages` route when no explicit
+`YEN_COPILOT_API` is set. Evidence: `internal/provider/catalog.go`,
+`internal/provider/config.go`, `TestStaticCatalogIncludesCodexMetadata`,
+`TestAvailableModelsFallsBackToStaticCatalog`,
+`TestStaticCatalogSnapshotCoversProviderData`, and
+`TestCopilotUsesStaticModelProtocol`. Live provider acceptance remains open
+without credentials.
+
 ## Checkpoint: RPC command matrix and extension UI
 
 Against current `main`, RPC now carries the complete pinned command matrix,
