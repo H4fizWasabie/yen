@@ -60,6 +60,7 @@ func TestGitHubCopilotUsesStoredYenCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_PROVIDER", "github-copilot")
 	t.Setenv("YEN_COPILOT_GITHUB_TOKEN", "")
 	configured, err := NewConfigured("github-copilot", "fixture-model")
 	if err != nil {
@@ -231,6 +232,23 @@ func TestGitHubCopilotUsesDynamicHeadersAndYenToken(t *testing.T) {
 	result, err := client.Next(context.Background(), []agent.Message{{Role: "assistant", Content: "prior", Images: []string{"data:image/png;base64,AA=="}}}, nil)
 	if err != nil || result.Provider != "github-copilot" || result.Text != "ok" {
 		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
+func TestGitHubCopilotUsesStoredAPIKeyCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if _, err := auth.Open(path).Modify("github-copilot", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "api_key", Key: "stored-copilot"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_PROVIDER", "github-copilot")
+	t.Setenv("YEN_COPILOT_GITHUB_TOKEN", "")
+	client := ConfiguredFromEnv()
+	configured, ok := client.(OpenAICompletions)
+	if !ok || configured.APIKey != "stored-copilot" {
+		t.Fatalf("configured=%#v", client)
 	}
 }
 

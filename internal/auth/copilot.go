@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -28,10 +29,20 @@ var copilotHeaders = map[string]string{
 // LoginGitHubCopilot performs the default github.com device login flow.
 // notify receives the verification URL and user code.
 func LoginGitHubCopilot(ctx context.Context, notify func(string)) (Credential, error) {
-	return loginGitHubCopilot(ctx, &http.Client{Timeout: 10 * time.Second}, notify, copilotDeviceCodeURL, copilotAccessTokenURL, copilotTokenURL)
+	return LoginGitHubCopilotForDomain(ctx, "github.com", "", notify)
 }
 
-func loginGitHubCopilot(ctx context.Context, client *http.Client, notify func(string), deviceURL, accessURL, tokenURL string) (Credential, error) {
+// LoginGitHubCopilotForDomain performs device login against github.com or a
+// validated GitHub Enterprise domain.
+func LoginGitHubCopilotForDomain(ctx context.Context, domain, enterpriseURL string, notify func(string)) (Credential, error) {
+	domain, err := normalizeCopilotDomain(domain)
+	if err != nil {
+		return Credential{}, err
+	}
+	return loginGitHubCopilot(ctx, &http.Client{Timeout: 10 * time.Second}, notify, "https://"+domain+"/login/device/code", "https://"+domain+"/login/oauth/access_token", "https://api."+domain+"/copilot_internal/v2/token", "https://api."+domain, enterpriseURL)
+}
+
+func loginGitHubCopilot(ctx context.Context, client *http.Client, notify func(string), deviceURL, accessURL, tokenURL, modelsBaseURL, enterpriseURL string) (Credential, error) {
 	device, err := copilotDeviceCode(ctx, client, deviceURL)
 	if err != nil {
 		return Credential{}, err
@@ -59,8 +70,40 @@ func loginGitHubCopilot(ctx context.Context, client *http.Client, notify func(st
 		if pending {
 			continue
 		}
-		return copilotToken(ctx, client, tokenURL, githubToken)
+		credential, err := copilotToken(ctx, client, tokenURL, githubToken)
+		if err != nil {
+			return Credential{}, err
+		}
+		credential.EnterpriseURL = enterpriseURL
+		models, err := fetchCopilotModels(ctx, client, modelsBaseURL, credential.Access)
+		if err != nil {
+			return Credential{}, err
+		}
+		credential.AvailableModelIDs = models
+		return credential, nil
 	}
+}
+
+func normalizeCopilotDomain(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "github.com", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid GitHub Enterprise domain")
+	}
+	if parsed.Scheme == "" {
+		parsed, err = url.Parse("https://" + value)
+	}
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Path != "" && parsed.Path != "/" {
+		return "", fmt.Errorf("invalid GitHub Enterprise domain")
+	}
+	return parsed.Hostname(), nil
+}
+
+func NormalizeGitHubCopilotDomain(value string) (string, error) {
+	return normalizeCopilotDomain(value)
 }
 
 type copilotDevice struct {
@@ -160,6 +203,81 @@ func copilotToken(ctx context.Context, client *http.Client, endpoint, githubToke
 		return Credential{}, fmt.Errorf("invalid github copilot token response")
 	}
 	return Credential{Type: "oauth", Access: payload.Token, Refresh: githubToken, Expires: payload.ExpiresAt*1000 - 5*60*1000}, nil
+}
+
+func RefreshGitHubCopilot(ctx context.Context, refresh string) (Credential, error) {
+	return RefreshGitHubCopilotForDomain(ctx, refresh, "github.com", "")
+}
+
+func RefreshGitHubCopilotForDomain(ctx context.Context, refresh, domain, enterpriseURL string) (Credential, error) {
+	domain, err := normalizeCopilotDomain(domain)
+	if err != nil {
+		return Credential{}, err
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	credential, err := copilotToken(ctx, client, "https://api."+domain+"/copilot_internal/v2/token", refresh)
+	if err != nil {
+		return Credential{}, err
+	}
+	credential.EnterpriseURL = enterpriseURL
+	models, err := fetchCopilotModels(ctx, client, "https://api."+domain, credential.Access)
+	if err != nil {
+		return Credential{}, err
+	}
+	credential.AvailableModelIDs = models
+	return credential, nil
+}
+
+func fetchCopilotModels(ctx context.Context, client *http.Client, baseURL, token string) ([]string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	for name, value := range copilotHeaders {
+		request.Header.Set(name, value)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("github copilot model catalog returned %s", response.Status)
+	}
+	var payload struct {
+		Data []struct {
+			ID           string `json:"id"`
+			Picker       bool   `json:"model_picker_enabled"`
+			Capabilities struct {
+				Supports struct {
+					ToolCalls *bool `json:"tool_calls"`
+				} `json:"supports"`
+			} `json:"capabilities"`
+			Policy struct {
+				State string `json:"state"`
+			} `json:"policy"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	var picker, enabled []string
+	for _, model := range payload.Data {
+		if model.ID == "" || model.Capabilities.Supports.ToolCalls != nil && !*model.Capabilities.Supports.ToolCalls || model.Policy.State == "disabled" {
+			continue
+		}
+		if model.Picker {
+			picker = append(picker, model.ID)
+		} else if model.Policy.State == "enabled" {
+			enabled = append(enabled, model.ID)
+		}
+	}
+	if len(picker) > 0 {
+		return picker, nil
+	}
+	return enabled, nil
 }
 
 func copilotFormPost(ctx context.Context, client *http.Client, endpoint string, form url.Values, acceptJSON bool) (*http.Response, error) {
