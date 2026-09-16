@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoginOpenAICodexDevice(t *testing.T) {
@@ -54,5 +56,57 @@ func TestRefreshOpenAICodex(t *testing.T) {
 	credential, err := refreshOpenAICodex(context.Background(), server.Client(), server.URL, "old-refresh")
 	if err != nil || credential.Access != "new-access" || credential.Refresh != "new-refresh" || credential.Expires <= 0 {
 		t.Fatalf("credential=%#v err=%v", credential, err)
+	}
+}
+
+func TestLoginOpenAICodexBrowserUsesLocalCallbackAndPKCE(t *testing.T) {
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil || r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code") != "auth-code" || r.Form.Get("code_verifier") == "" || r.Form.Get("redirect_uri") != "http://localhost:1455/auth/callback" {
+			t.Fatalf("form=%v err=%v", r.Form, err)
+		}
+		_, _ = w.Write([]byte(`{"access_token":"access","refresh_token":"refresh","expires_in":3600}`))
+	}))
+	defer tokenServer.Close()
+
+	authURL := make(chan string, 1)
+	result := make(chan struct {
+		credential Credential
+		err        error
+	}, 1)
+	go func() {
+		credential, err := loginOpenAICodexBrowser(context.Background(), tokenServer.Client(), func(value string) { authURL <- value }, "https://authorize.example/oauth/authorize", tokenServer.URL)
+		result <- struct {
+			credential Credential
+			err        error
+		}{credential, err}
+	}()
+
+	var parsed *url.URL
+	select {
+	case value := <-authURL:
+		var err error
+		parsed, err = url.Parse(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("login did not publish authorization URL")
+	}
+	response, err := http.Get("http://localhost:1455/auth/callback?code=auth-code&state=" + url.QueryEscape(parsed.Query().Get("state")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("callback status=%s", response.Status)
+	}
+
+	select {
+	case outcome := <-result:
+		if outcome.err != nil || outcome.credential.Access != "access" || outcome.credential.Refresh != "refresh" {
+			t.Fatalf("credential=%#v err=%v", outcome.credential, outcome.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("login did not complete")
 	}
 }

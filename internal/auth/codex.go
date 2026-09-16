@@ -6,19 +6,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const (
-	codexClientID       = "app_EMoamEEZ73f0CkXaXp7hrann"
-	codexAuthBase       = "https://auth.openai.com"
-	codexDeviceUserCode = codexAuthBase + "/api/accounts/deviceauth/usercode"
-	codexDeviceToken    = codexAuthBase + "/api/accounts/deviceauth/token"
-	codexTokenURL       = codexAuthBase + "/oauth/token"
-	codexDeviceURL      = codexAuthBase + "/codex/device"
+	codexClientID        = "app_EMoamEEZ73f0CkXaXp7hrann"
+	codexAuthBase        = "https://auth.openai.com"
+	codexDeviceUserCode  = codexAuthBase + "/api/accounts/deviceauth/usercode"
+	codexDeviceToken     = codexAuthBase + "/api/accounts/deviceauth/token"
+	codexTokenURL        = codexAuthBase + "/oauth/token"
+	codexDeviceURL       = codexAuthBase + "/codex/device"
+	codexAuthorizeURL    = codexAuthBase + "/oauth/authorize"
+	codexBrowserCallback = "http://localhost:1455/auth/callback"
+	codexBrowserScope    = "openid profile email offline_access"
 )
 
 type codexDeviceAuth struct {
@@ -36,6 +41,50 @@ func LoginOpenAICodexDevice(ctx context.Context, notify func(string)) (Credentia
 // RefreshOpenAICodex exchanges a stored refresh token for a new OAuth credential.
 func RefreshOpenAICodex(ctx context.Context, refresh string) (Credential, error) {
 	return refreshOpenAICodex(ctx, &http.Client{Timeout: 10 * time.Second}, codexTokenURL, refresh)
+}
+
+// LoginOpenAICodexBrowser performs the browser PKCE login flow.
+func LoginOpenAICodexBrowser(ctx context.Context, notify func(string)) (Credential, error) {
+	return loginOpenAICodexBrowser(ctx, http.DefaultClient, notify, codexAuthorizeURL, codexTokenURL)
+}
+
+func loginOpenAICodexBrowser(ctx context.Context, client *http.Client, notify func(string), authorizeEndpoint, tokenEndpoint string) (Credential, error) {
+	verifier, err := randomPKCE()
+	if err != nil {
+		return Credential{}, err
+	}
+	listener, err := net.Listen("tcp", callbackHost()+":1455")
+	if err != nil {
+		return Credential{}, fmt.Errorf("openai codex OAuth callback: %w", err)
+	}
+	defer listener.Close()
+	callback := make(chan struct{ code, state string }, 1)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/auth/callback" {
+			http.Error(w, "callback route not found", http.StatusNotFound)
+			return
+		}
+		code, state := r.URL.Query().Get("code"), r.URL.Query().Get("state")
+		if code == "" || state == "" || state != verifier {
+			http.Error(w, "invalid OAuth callback", http.StatusBadRequest)
+			return
+		}
+		_, _ = io.WriteString(w, "Authentication completed. You can close this window.")
+		callback <- struct{ code, state string }{code, state}
+	})}
+	go func() { _ = server.Serve(listener) }()
+	defer server.Shutdown(context.Background())
+
+	params := url.Values{"response_type": {"code"}, "client_id": {codexClientID}, "redirect_uri": {codexBrowserCallback}, "scope": {codexBrowserScope}, "code_challenge": {pkceChallenge(verifier)}, "code_challenge_method": {"S256"}, "state": {verifier}}
+	if notify != nil {
+		notify(strings.TrimRight(authorizeEndpoint, "?") + "?" + params.Encode())
+	}
+	select {
+	case result := <-callback:
+		return exchangeCodexCodeWithRedirect(ctx, client, tokenEndpoint, result.code, verifier, codexBrowserCallback)
+	case <-ctx.Done():
+		return Credential{}, ctx.Err()
+	}
 }
 
 func loginOpenAICodexDevice(ctx context.Context, client *http.Client, notify func(string), userCodeURL, deviceTokenURL, tokenURL, verificationURL string) (Credential, error) {
@@ -146,7 +195,11 @@ func requestCodexDevice(ctx context.Context, client *http.Client, endpoint strin
 }
 
 func exchangeCodexCode(ctx context.Context, client *http.Client, endpoint, code, verifier string) (Credential, error) {
-	form := url.Values{"grant_type": {"authorization_code"}, "client_id": {codexClientID}, "code": {code}, "code_verifier": {verifier}, "redirect_uri": {codexAuthBase + "/deviceauth/callback"}}
+	return exchangeCodexCodeWithRedirect(ctx, client, endpoint, code, verifier, codexAuthBase+"/deviceauth/callback")
+}
+
+func exchangeCodexCodeWithRedirect(ctx context.Context, client *http.Client, endpoint, code, verifier, redirect string) (Credential, error) {
+	form := url.Values{"grant_type": {"authorization_code"}, "client_id": {codexClientID}, "code": {code}, "code_verifier": {verifier}, "redirect_uri": {redirect}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBufferString(form.Encode()))
 	if err != nil {
 		return Credential{}, err

@@ -615,6 +615,14 @@ exchange, and native model catalog filtering. Oracle evidence:
 `TestGoogleVertexUsesGCLOUDProjectForADCConfiguration`. Static catalog/auth UI
 metadata and live Vertex acceptance remain open.
 
+OpenAI Codex browser OAuth is now implemented in `internal/auth/codex.go` with
+PKCE, localhost `:1455/auth/callback` state validation, authorization-code
+exchange, and `/login openai-codex browser`; device login remains available.
+Oracle evidence: `packages/ai/src/auth/oauth/openai-codex.ts:26-38,300-311,320-394,418-506,511-543`.
+`internal/auth/codex_test.go` covers the callback and exchange, and
+`cmd/theoses/main_test.go` covers the CLI auth-file boundary. Real-account
+login and live Codex acceptance remain manual and open.
+
 ## Latest operations evidence
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response

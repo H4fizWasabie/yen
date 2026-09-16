@@ -591,6 +591,14 @@ already uses the stored `anthropic` credential when
 `YEN_ANTHROPIC_API_KEY` is absent. Live account acceptance remains a manual
 step.
 
+OpenAI Codex now also exposes the oracle's browser OAuth path: PKCE
+authorization, localhost `:1455/auth/callback` state validation, token exchange,
+and an explicit `/login openai-codex browser` CLI command alongside device login.
+Oracle authority: `packages/ai/src/auth/oauth/openai-codex.ts:26-38,300-311,320-394,418-506,511-543`.
+Go evidence: `internal/auth/codex.go`, `internal/auth/codex_test.go`, and
+`TestInteractiveCodexBrowserLoginRequiresAuthFile`. Real-account login and
+live acceptance remain manual.
+
 Google Vertex ADC configuration now also accepts the oracle's `GCLOUD_PROJECT`
 fallback when `YEN_GOOGLE_CLOUD_PROJECT` is unset, while retaining Yen-owned
 credentials, service-account/authorized-user token exchange, and
