@@ -71,11 +71,15 @@ remain open.
 
 Interactive input now applies the editor's basic cursor-editing contract before
 submission: left/right, home/end, backspace, delete, Ctrl-A/E/B/F, and UTF-8
-rune-safe insertion. Oracle authority is
+rune-safe insertion. Real tty sessions enter scoped character-at-a-time mode,
+disable tty echo, preserve kernel Ctrl-C/Ctrl-\\ signal generation, and redraw
+the prompt/cursor after each edit; pipes retain
+the scripted line path. Oracle authority is
 `packages/tui/src/components/editor.ts:464-476,603-862`. Go evidence is
-`internal/tui/editor.go`, `cmd/theoses/main.go`, and
-`TestInteractiveRunAppliesLineEditing`. Raw terminal echo/cursor placement,
-multiline editing, history, and live terminal acceptance remain open.
+`internal/tui/editor.go`, `internal/tui/terminal_raw_linux.go`,
+`cmd/theoses/main.go`, `TestReadLineWithOutputRedrawsCursor`, and
+`TestInteractiveRunAppliesLineEditing`. Multiline editing, history, and live
+terminal acceptance remain open.
 
 ## Checkpoint update: 2026-09-16
 

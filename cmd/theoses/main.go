@@ -166,8 +166,19 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		interactiveReader = bufio.NewReader(stdin)
 		reader := interactiveReader
 		history := tui.NewLineHistory()
+		restoreTerminal, rawInput, err := tui.EnableRawInput(stdin)
+		if err != nil {
+			return reportError(stderr, err)
+		}
+		defer func() { _ = restoreTerminal() }()
 		for {
-			prompt, readErr := tui.ReadLineWithHistory(reader, history)
+			var prompt string
+			var readErr error
+			if rawInput {
+				prompt, readErr = tui.ReadLineWithOutput(reader, stdout, "> ")
+			} else {
+				prompt, readErr = tui.ReadLineWithHistory(reader, history)
+			}
 			if readErr != nil {
 				if readErr != io.EOF {
 					return reportError(stderr, readErr)

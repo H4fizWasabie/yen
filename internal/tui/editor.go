@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 	"io"
+	"strconv"
 )
 
 // LineEditor applies the small set of editing keys used by the interactive
@@ -100,15 +101,36 @@ func (e *LineEditor) setText(value string) {
 // It deliberately does not echo: the caller owns screen redraws and ordinary
 // terminals continue to provide canonical input echo.
 func ReadLine(r *bufio.Reader) (string, error) {
-	return readLine(r, nil)
+	return readLine(r, nil, nil)
 }
 
 // ReadLineWithHistory reads a line and supports Up/Down prompt history.
 func ReadLineWithHistory(r *bufio.Reader, history *LineHistory) (string, error) {
-	return readLine(r, history)
+	return readLine(r, history, nil)
 }
 
-func readLine(r *bufio.Reader, history *LineHistory) (string, error) {
+// ReadLineWithOutput redraws the prompt and cursor after each edit. It is for
+// terminals in raw mode; callers using pipes should use ReadLine instead.
+func ReadLineWithOutput(r *bufio.Reader, w io.Writer, prompt string) (string, error) {
+	line, err := readLine(r, nil, func(editor *LineEditor) error {
+		if _, err := io.WriteString(w, "\r\x1b[2K"+prompt+editor.Text()); err != nil {
+			return err
+		}
+		if distance := len(editor.value) - editor.cursor; distance > 0 {
+			_, err := io.WriteString(w, "\x1b["+strconv.Itoa(distance)+"D")
+			return err
+		}
+		return nil
+	})
+	if err == nil {
+		if _, writeErr := io.WriteString(w, "\r\n"); writeErr != nil {
+			return "", writeErr
+		}
+	}
+	return line, err
+}
+
+func readLine(r *bufio.Reader, history *LineHistory, redraw func(*LineEditor) error) (string, error) {
 	var editor LineEditor
 	for {
 		value, _, err := r.ReadRune()
@@ -128,6 +150,11 @@ func readLine(r *bufio.Reader, history *LineHistory) (string, error) {
 			line := editor.Text()
 			if history != nil {
 				history.add(line)
+			}
+			if redraw != nil {
+				if err := redraw(&editor); err != nil {
+					return "", err
+				}
 			}
 			return line, nil
 		case 0x04: // Ctrl-D
@@ -159,6 +186,11 @@ func readLine(r *bufio.Reader, history *LineHistory) (string, error) {
 		default:
 			if value >= 0x20 {
 				editor.insert(value)
+			}
+		}
+		if redraw != nil {
+			if err := redraw(&editor); err != nil {
+				return "", err
 			}
 		}
 	}
