@@ -661,6 +661,10 @@ Anthropic routes. `TestCloudflareAIGatewaySelectsConfiguredProtocol` covers the
 registration seam. The pinned oracle's generated Cloudflare catalogs and live
 native image/API acceptance remain open.
 
+`TestCloudflareAIGatewayListsConfiguredModelCatalog` now verifies the Gateway
+`/models` path, `cf-aig-authorization`, provider identity, and model IDs.
+Static generated metadata and live native image/API acceptance remain open.
+
 ## Latest operations evidence
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response
