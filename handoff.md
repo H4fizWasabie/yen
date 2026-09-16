@@ -673,6 +673,14 @@ Cloudflare configuration also reads stored API-key credentials and their
 account/gateway environment when explicit Yen variables are absent, covered by
 `TestCloudflareUsesStoredCredentialEnvironment`.
 
+Bedrock configuration now reads the stored `amazon-bedrock` credential when
+explicit Yen or ambient AWS settings are absent: `Credential.Key` supplies the
+bearer token, while `Credential.Env` supplies `AWS_PROFILE` and region. This
+matches the pinned oracle's stored credential resolution at
+`packages/ai/src/providers/amazon-bedrock.ts:7-78` and is covered by
+`TestBedrockUsesStoredCredentialEnvironment`. Static model metadata,
+interactive auth UI, and live AWS acceptance remain open.
+
 ## Latest operations evidence
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response

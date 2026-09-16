@@ -227,16 +227,41 @@ func vertexProjectLocation(credential auth.Credential) (string, string) {
 }
 
 func bedrockConfigured(model string) BedrockConverse {
+	credential := storedBedrockCredential()
 	region := strings.TrimSpace(os.Getenv("AWS_REGION"))
 	if region == "" {
 		region = strings.TrimSpace(os.Getenv("AWS_DEFAULT_REGION"))
 	}
+	if region == "" {
+		region = strings.TrimSpace(credential.Env["AWS_REGION"])
+		if region == "" {
+			region = strings.TrimSpace(credential.Env["AWS_DEFAULT_REGION"])
+		}
+	}
 	client := NewBedrockConverse(region, model)
 	client.Profile = strings.TrimSpace(os.Getenv("AWS_PROFILE"))
+	if client.Profile == "" {
+		client.Profile = strings.TrimSpace(credential.Env["AWS_PROFILE"])
+	}
 	client.BaseURL = strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_AWS_BEDROCK_BASE_URL")), "/")
 	client.BearerToken = strings.TrimSpace(os.Getenv("YEN_AWS_BEARER_TOKEN_BEDROCK"))
+	if client.BearerToken == "" {
+		client.BearerToken = strings.TrimSpace(credential.Key)
+	}
 	client.SkipAuth = os.Getenv("YEN_AWS_BEDROCK_SKIP_AUTH") == "1"
 	return client
+}
+
+func storedBedrockCredential() auth.Credential {
+	path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+	if path == "" {
+		return auth.Credential{}
+	}
+	credential, ok, err := auth.Open(path).Read("amazon-bedrock")
+	if err != nil || !ok {
+		return auth.Credential{}
+	}
+	return credential
 }
 
 func radiusConfigured(model string) TheosesMessages {
