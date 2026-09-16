@@ -687,6 +687,22 @@ This is a no-cutover parity decision, not a claim of total feature parity.
 The TypeScript runtime remains operational, Go remains a reversible pilot, and
 no decommission or irreversible cutover is authorized.
 
+## Goal 1 provider catalog checkpoint: 2026-09-16
+
+The approved current Theoses2 catalog snapshot is embedded from commit
+`f283c608a157301c5d80c57595d118a0c33f9179`,
+`packages/ai/src/providers/data/*.json`. This supplements the pinned baseline,
+which has the generated imports but no tracked data files; the pinned commit
+remains the behavioral reference. Go evidence is `internal/provider/catalog.go`,
+`internal/provider/config.go`, `TestStaticCatalogIncludesCodexMetadata`,
+`TestAvailableModelsFallsBackToStaticCatalog`, and
+`TestStaticCatalogSnapshotCoversProviderData`. Dynamic `/models` remains
+preferred; the embedded catalog is the credential-free fallback. Copilot model
+entries now select their catalog-declared Responses or Anthropic protocol when
+`YEN_COPILOT_API` is unset, covered by `TestCopilotUsesStaticModelProtocol`.
+Live provider acceptance remains open because no provider credentials are
+available.
+
 ## Goal 1 provider audit: 2026-09-16
 
 The pinned local oracle contains provider wrapper files and generated-model
