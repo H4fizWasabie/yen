@@ -101,18 +101,27 @@ func (e *LineEditor) setText(value string) {
 // It deliberately does not echo: the caller owns screen redraws and ordinary
 // terminals continue to provide canonical input echo.
 func ReadLine(r *bufio.Reader) (string, error) {
-	return readLine(r, nil, nil)
+	return readLine(r, nil)
 }
 
 // ReadLineWithHistory reads a line and supports Up/Down prompt history.
 func ReadLineWithHistory(r *bufio.Reader, history *LineHistory) (string, error) {
-	return readLine(r, history, nil)
+	return readLine(r, history)
+}
+
+func readLine(r *bufio.Reader, history *LineHistory) (string, error) {
+	return readLineWithRedraw(r, history, nil)
 }
 
 // ReadLineWithOutput redraws the prompt and cursor after each edit. It is for
 // terminals in raw mode; callers using pipes should use ReadLine instead.
 func ReadLineWithOutput(r *bufio.Reader, w io.Writer, prompt string) (string, error) {
-	line, err := readLine(r, nil, func(editor *LineEditor) error {
+	return ReadLineWithOutputAndHistory(r, w, prompt, nil)
+}
+
+// ReadLineWithOutputAndHistory combines raw-terminal redraws with prompt history.
+func ReadLineWithOutputAndHistory(r *bufio.Reader, w io.Writer, prompt string, history *LineHistory) (string, error) {
+	line, err := readLineWithRedraw(r, history, func(editor *LineEditor) error {
 		if _, err := io.WriteString(w, "\r\x1b[2K"+prompt+editor.Text()); err != nil {
 			return err
 		}
@@ -130,7 +139,7 @@ func ReadLineWithOutput(r *bufio.Reader, w io.Writer, prompt string) (string, er
 	return line, err
 }
 
-func readLine(r *bufio.Reader, history *LineHistory, redraw func(*LineEditor) error) (string, error) {
+func readLineWithRedraw(r *bufio.Reader, history *LineHistory, redraw func(*LineEditor) error) (string, error) {
 	var editor LineEditor
 	for {
 		value, _, err := r.ReadRune()

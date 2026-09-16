@@ -175,7 +175,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			var prompt string
 			var readErr error
 			if rawInput {
-				prompt, readErr = tui.ReadLineWithOutput(reader, stdout, "> ")
+				prompt, readErr = tui.ReadLineWithOutputAndHistory(reader, stdout, "> ", history)
 			} else {
 				prompt, readErr = tui.ReadLineWithHistory(reader, history)
 			}
