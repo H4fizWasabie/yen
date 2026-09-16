@@ -20,6 +20,13 @@ func TestBashToolRejectsInvalidTimeout(t *testing.T) {
 	}
 }
 
+func TestBashToolStopsTimedOutCommandTree(t *testing.T) {
+	_, err := NewBashTool(t.TempDir()).Execute(context.Background(), map[string]any{"command": "sleep 10", "timeout": 0.01})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestBashToolAppliesConfiguredShellPathAndPrefix(t *testing.T) {
 	tool := NewBashToolWithOptions(t.TempDir(), BashOptions{
 		ShellPath:     "/bin/bash",

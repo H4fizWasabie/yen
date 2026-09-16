@@ -72,9 +72,19 @@ func (t BashTool) ExecuteResult(ctx context.Context, args map[string]any) (BashR
 	}
 	capture := newBashCapture()
 	cmd := exec.CommandContext(ctx, shell, flag, command)
+	prepareCommand(cmd)
 	cmd.Dir = t.cwd
 	cmd.Stdout, cmd.Stderr = capture, capture
+	stopped := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			terminateCommand(cmd)
+		case <-stopped:
+		}
+	}()
 	err := cmd.Run()
+	close(stopped)
 	result := capture.result()
 	if ctx.Err() != nil {
 		result.Cancelled = true
