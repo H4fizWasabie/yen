@@ -438,12 +438,18 @@ func cloudflareGatewayConfigured(model string) agent.Provider {
 	protocol := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_CLOUDFLARE_API")))
 	switch protocol {
 	case "openai-responses":
+		if strings.TrimSpace(os.Getenv("YEN_CLOUDFLARE_BASE_URL")) == "" {
+			baseURL = strings.TrimSuffix(baseURL, "/compat") + "/openai"
+		}
 		client := NewOpenAIResponses(baseURL, "", model)
 		client.ProviderName = "cloudflare-ai-gateway"
 		client.Headers = map[string]string{"cf-aig-authorization": "Bearer " + key}
 		client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 		return client
 	case "anthropic-messages":
+		if strings.TrimSpace(os.Getenv("YEN_CLOUDFLARE_BASE_URL")) == "" {
+			baseURL = strings.TrimSuffix(baseURL, "/compat") + "/anthropic"
+		}
 		client := NewAnthropicMessages(baseURL, "", model)
 		client.ProviderName = "cloudflare-ai-gateway"
 		client.Headers = map[string]string{"cf-aig-authorization": "Bearer " + key}
