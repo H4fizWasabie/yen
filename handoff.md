@@ -88,13 +88,15 @@ rendering remains open.
 
 The rich-rendering increment is implemented: newly persisted messages from
 registered extension renderers are projected into interactive terminal
-scrollback as strings or JSON, while ordinary messages retain the existing
-path. Oracle authority is
+scrollback as strings or readable text components, with other structured
+values retained as JSON, while ordinary messages retain the existing path.
+Oracle authority is
 `packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`;
 Go evidence is `internal/tui/render.go`, `cmd/theoses/main.go`, and
-`TestRenderMessageUsesExtensionRenderer` plus the scripted CLI acceptance
-`TestInteractiveRunRendersExtensionMessage`. Full native component layout and
-interactive widgets remain open.
+`TestRenderMessageUsesExtensionRenderer`,
+`TestRenderMessageFormatsStructuredTextComponent`, plus the scripted CLI
+acceptance `TestInteractiveRunRendersExtensionMessage`. Full native component
+layout and interactive widgets remain open.
 
 The extension presentation-state increment is implemented: `setStatus`,
 `setTitle`, `setWidget`, `notify`, and `set_editor_text` update the shared

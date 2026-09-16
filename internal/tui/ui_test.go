@@ -58,3 +58,16 @@ func TestRenderMessageUsesExtensionRenderer(t *testing.T) {
 		t.Fatalf("rendered=%q ok=%v", rendered, ok)
 	}
 }
+
+func TestRenderMessageFormatsStructuredTextComponent(t *testing.T) {
+	registry := extensions.New()
+	if err := registry.RegisterMessageRenderer("custom", func(any, extensions.RenderOptions) (any, bool) {
+		return map[string]any{"type": "text", "text": "rendered component"}, true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rendered, ok := RenderMessage(registry, session.Message{Role: "custom"})
+	if !ok || rendered != "rendered component" {
+		t.Fatalf("rendered=%q ok=%v", rendered, ok)
+	}
+}

@@ -9,8 +9,8 @@ import (
 )
 
 // RenderMessage applies an extension renderer to a session message for the
-// terminal scrollback. String results stay readable; structured results use
-// their JSON representation.
+// terminal scrollback. String results and text components stay readable;
+// other structured results use their JSON representation.
 func RenderMessage(registry *extensions.Registry, message session.Message) (string, bool) {
 	if registry == nil {
 		return "", false
@@ -25,6 +25,11 @@ func RenderMessage(registry *extensions.Registry, message session.Message) (stri
 	}
 	if text, ok := value.(string); ok {
 		return text, true
+	}
+	if component, ok := value.(map[string]any); ok && component["type"] == "text" {
+		if text, ok := component["text"].(string); ok {
+			return text, true
+		}
 	}
 	data, err := json.Marshal(value)
 	if err != nil {

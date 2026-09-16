@@ -63,13 +63,14 @@ Native rich component rendering remains open.
 
 The rich-rendering increment is now closed for registered message renderers:
 interactive turns project newly persisted extension-rendered messages into
-terminal scrollback, preserving plain strings and JSON-encoding structured
-results. Oracle authority is
+terminal scrollback, preserving plain strings and text components while
+JSON-encoding other structured results. Oracle authority is
 `packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`.
 Go evidence is `internal/tui/render.go`, `cmd/theoses/main.go`, and
-`TestRenderMessageUsesExtensionRenderer` plus the scripted CLI acceptance
-`TestInteractiveRunRendersExtensionMessage`. Full native component layout and
-interactive widgets remain open.
+`TestRenderMessageUsesExtensionRenderer`,
+`TestRenderMessageFormatsStructuredTextComponent`, plus the scripted CLI
+acceptance `TestInteractiveRunRendersExtensionMessage`. Full native component
+layout and interactive widgets remain open.
 
 Extension presentation requests now update the interactive screen model:
 status, title, above/below-editor widgets, notifications, and editor text are
