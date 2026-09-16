@@ -35,6 +35,8 @@ type ContentPart struct {
 	Text              string `json:"text,omitempty"`
 	TextSignature     string `json:"textSignature,omitempty"`
 	ThinkingSignature string `json:"thinkingSignature,omitempty"`
+	ReasoningDetails  []any  `json:"reasoningDetails,omitempty"`
+	ThinkingRedacted  bool   `json:"thinkingRedacted,omitempty"`
 	ID                string `json:"id,omitempty"`
 	Name              string `json:"name,omitempty"`
 	Arguments         any    `json:"arguments,omitempty"`
@@ -88,6 +90,8 @@ type Message struct {
 	Provider            string   `json:"provider,omitempty"`
 	Model               string   `json:"model,omitempty"`
 	Usage               *Usage   `json:"usage,omitempty"`
+	ReasoningDetails    []any    `json:"reasoningDetails,omitempty"`
+	ThinkingRedacted    bool     `json:"thinkingRedacted,omitempty"`
 	ToolResultDetails   any      `json:"toolResultDetails,omitempty"`
 	ToolResultUsage     *Usage   `json:"toolResultUsage,omitempty"`
 	AddedToolNames      []string `json:"addedToolNames,omitempty"`

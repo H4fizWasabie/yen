@@ -22,6 +22,7 @@ type LoadError struct{ Path, Error string }
 type LoadedExtension struct{ Path, Name string }
 type LoadResult struct {
 	Registry                       *Registry
+	Resources                      *ResourceLoader
 	Extensions                     []LoadedExtension
 	Errors                         []LoadError
 	bridges                        []*bridge
@@ -97,7 +98,11 @@ func discoverAndLoad(workspace, agentDir string, configured, operatorConfigured 
 			return
 		}
 		if info, err := os.Stat(raw); err == nil && info.IsDir() {
-			for _, path := range extensionEntries(raw) {
+			entries := extensionEntries(raw)
+			if len(entries) == 0 {
+				entries = discover(raw)
+			}
+			for _, path := range entries {
 				paths = append(paths, path)
 				if isOperator {
 					operator[path] = true
@@ -117,7 +122,10 @@ func discoverAndLoad(workspace, agentDir string, configured, operatorConfigured 
 		addConfigured(raw, true)
 	}
 	trusted := settings.IsTrusted(workspace)
-	result := &LoadResult{Registry: New(), workspace: workspace, agentDir: agentDir, configured: append([]string(nil), configured...), operatorConfigured: append([]string(nil), operatorConfigured...)}
+	result := &LoadResult{Registry: New(), Resources: NewResourceLoader(workspace, agentDir), workspace: workspace, agentDir: agentDir, configured: append([]string(nil), configured...), operatorConfigured: append([]string(nil), operatorConfigured...)}
+	if err := result.Resources.Reload(); err != nil {
+		result.Errors = append(result.Errors, LoadError{Path: workspace, Error: err.Error()})
+	}
 	seen := map[string]bool{}
 	for _, path := range paths {
 		path, _ = filepath.Abs(path)
@@ -227,23 +235,45 @@ type extensionTool struct {
 func (t extensionTool) Name() string                         { return t.definition.Name }
 func (t extensionTool) ToolDefinition() agent.ToolDefinition { return t.definition }
 func (t extensionTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	var result any
-	if err := t.bridge.call(ctx, "tool", t.Name(), args, &result); err != nil {
-		return "", err
+	result, err := t.ExecuteRich(ctx, args)
+	return result.Text, err
+}
+
+func (t extensionTool) ExecuteRich(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
+	var raw any
+	if err := t.bridge.call(ctx, "tool", t.Name(), args, &raw); err != nil {
+		return agent.ToolResult{}, err
 	}
-	if value, ok := result.(string); ok {
-		return value, nil
+	if value, ok := raw.(string); ok {
+		return agent.ToolResult{Text: value}, nil
 	}
-	if object, ok := result.(map[string]any); ok {
-		if value, ok := object["content"].(string); ok {
-			return value, nil
+	object, ok := raw.(map[string]any)
+	if !ok {
+		data, _ := json.Marshal(raw)
+		return agent.ToolResult{Text: string(data)}, nil
+	}
+	result := agent.ToolResult{Details: object["details"], Terminate: boolValue(object["terminate"])}
+	if value, ok := object["content"].(string); ok {
+		result.Text = value
+	} else if value, ok := object["result"].(string); ok {
+		result.Text = value
+	} else {
+		data, _ := json.Marshal(raw)
+		result.Text = string(data)
+	}
+	if names, ok := object["addedToolNames"].([]any); ok {
+		for _, name := range names {
+			if value, ok := name.(string); ok {
+				result.AddedToolNames = append(result.AddedToolNames, value)
+			}
 		}
-		if value, ok := object["result"].(string); ok {
-			return value, nil
-		}
 	}
-	data, _ := json.Marshal(result)
-	return string(data), nil
+	return result, nil
+}
+
+func boolValue(value any) bool {
+	result, _ := value.(bool)
+	return result
 }
 
 func isUnder(path, root string) bool {

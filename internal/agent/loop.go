@@ -13,6 +13,8 @@ type Message struct {
 	TextSignature       string
 	Thinking            string
 	ThinkingSignature   string
+	ReasoningDetails    []any
+	ThinkingRedacted    bool
 	Images              []string
 	ToolCalls           []ToolCall
 	ToolCallID          string
@@ -44,6 +46,8 @@ type Response struct {
 	TextSignature     string
 	Thinking          string
 	ThinkingSignature string
+	ReasoningDetails  []any
+	ThinkingRedacted  bool
 	ToolCalls         []ToolCall
 	StopReason        string
 	RawStopReason     string
@@ -472,7 +476,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
 			return result, err
 		}
-		assistant := Message{Role: "assistant", Content: response.Text, TextSignature: response.TextSignature, Thinking: response.Thinking, ThinkingSignature: response.ThinkingSignature, ToolCalls: response.ToolCalls, StopReason: response.StopReason, ErrorMessage: response.ErrorMessage, ResponseID: response.ResponseID, ResponseModel: response.ResponseModel, RawStopReason: response.RawStopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
+		assistant := Message{Role: "assistant", Content: response.Text, TextSignature: response.TextSignature, Thinking: response.Thinking, ThinkingSignature: response.ThinkingSignature, ReasoningDetails: response.ReasoningDetails, ThinkingRedacted: response.ThinkingRedacted, ToolCalls: response.ToolCalls, StopReason: response.StopReason, ErrorMessage: response.ErrorMessage, ResponseID: response.ResponseID, ResponseModel: response.ResponseModel, RawStopReason: response.RawStopReason, Provider: response.Provider, Model: response.Model, Usage: &response.Usage}
 		result.Messages = append(result.Messages, assistant)
 		if onEvent != nil {
 			onEvent(Event{Type: "usage", Usage: response.Usage, Message: &assistant, StopReason: response.StopReason})
@@ -653,7 +657,9 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				result.Events = append(result.Events, "tool_execution_end:"+call.ID)
 			}
 			if hooks != nil && hooks.After != nil {
-				toolResult, isError, hookErr := hooks.After(ctx, assistant, call, ToolResult{Text: content, Images: images}, err != nil)
+				var isError bool
+				var hookErr error
+				toolResult, isError, hookErr = hooks.After(ctx, assistant, call, toolResult, err != nil)
 				if hookErr != nil {
 					err = hookErr
 				}
@@ -663,7 +669,7 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 				content, images = toolResult.Text, toolResult.Images
 			}
 			result.Events = append(result.Events, "message_start:toolResult")
-			toolMessage := Message{Role: "tool", Content: content, Images: images, ToolCallID: call.ID, ToolName: call.Name}
+			toolMessage := Message{Role: "tool", Content: content, Images: images, ToolCallID: call.ID, ToolName: call.Name, ToolResultDetails: toolResult.Details, ToolResultUsage: toolResult.Usage, AddedToolNames: toolResult.AddedToolNames, ToolResultTerminate: toolResult.Terminate}
 			result.Messages = append(result.Messages, toolMessage)
 			toolResults = append(toolResults, toolMessage)
 			emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})

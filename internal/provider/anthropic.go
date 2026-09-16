@@ -46,7 +46,15 @@ func (p AnthropicMessages) NextWithEvents(ctx context.Context, messages []agent.
 	return p.next(ctx, messages, toolNames, nil, emit)
 }
 
-func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent)) (agent.Response, error) {
+func (p AnthropicMessages) NextWithToolDefinitions(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), nil, nil, definitions)
+}
+
+func (p AnthropicMessages) NextWithToolDefinitionsAndEvents(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), nil, emit, definitions)
+}
+
+func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), definitionSets ...[]agent.ToolDefinition) (agent.Response, error) {
 	if p.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
@@ -94,6 +102,15 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 		tools := make([]map[string]any, 0, len(toolNames))
 		for _, name := range toolNames {
 			tool := map[string]any{"name": name, "description": name, "input_schema": map[string]any{"type": "object"}}
+			if len(definitionSets) > 0 {
+				for _, definition := range definitionSets[0] {
+					if definition.Name == name {
+						tool["description"] = definition.Description
+						tool["input_schema"] = definition.Parameters
+						break
+					}
+				}
+			}
 			if p.CacheControl && len(toolNames) == len(tools)+1 {
 				tool["cache_control"] = map[string]any{"type": "ephemeral"}
 			}
@@ -241,6 +258,8 @@ func (p AnthropicMessages) next(ctx context.Context, messages []agent.Message, t
 				result.ThinkingSignature = event.ContentBlock.Signature
 				partial.ThinkingSignature = event.ContentBlock.Signature
 			} else if event.ContentBlock.Type == "redacted_thinking" {
+				result.ThinkingRedacted = true
+				partial.ThinkingRedacted = true
 				result.Thinking += "[Reasoning redacted]"
 				partial.Thinking += "[Reasoning redacted]"
 				result.ThinkingSignature = event.ContentBlock.Data
