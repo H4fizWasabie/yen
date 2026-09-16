@@ -193,6 +193,26 @@ func TestOpenAIResponsesListsModelsWithConfiguredHeaders(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesListsAllCatalogPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("after") {
+		case "":
+			_, _ = w.Write([]byte(`{"data":[{"id":"first"}],"has_more":true,"last_id":"first"}`))
+		case "first":
+			_, _ = w.Write([]byte(`{"data":[{"id":"second"}],"has_more":false}`))
+		default:
+			t.Fatalf("unexpected after=%q", r.URL.Query().Get("after"))
+		}
+	}))
+	defer server.Close()
+
+	models, err := NewOpenAIResponses(server.URL, "key", "model").ListModels(context.Background())
+	if err != nil || len(models) != 2 || models[0].ID != "first" || models[1].ID != "second" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
 func TestOpenAIResponsesPersistsReasoningItemSignature(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

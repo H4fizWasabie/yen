@@ -45,41 +45,63 @@ func (p OpenAIResponses) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.BaseURL+"/models", nil)
+	endpoint, err := url.Parse(p.BaseURL + "/models")
 	if err != nil {
 		return nil, err
 	}
-	if p.APIKeyHeader != "" {
-		request.Header.Set(p.APIKeyHeader, p.APIKey)
-	} else if p.APIKey != "" {
-		request.Header.Set("Authorization", "Bearer "+p.APIKey)
-	}
-	for name, value := range p.Headers {
-		request.Header.Set(name, value)
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("model catalog returned %s", response.Status)
-	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
-		return nil, err
-	}
-	models := make([]ModelInfo, 0, len(payload.Data))
-	for _, model := range payload.Data {
-		if strings.TrimSpace(model.ID) != "" {
-			models = append(models, ModelInfo{Provider: p.name(), ID: model.ID})
+	var models []ModelInfo
+	after := ""
+	for page := 0; page < 100; page++ {
+		query := endpoint.Query()
+		if after == "" {
+			query.Del("after")
+		} else {
+			query.Set("after", after)
 		}
+		endpoint.RawQuery = query.Encode()
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		if p.APIKeyHeader != "" {
+			request.Header.Set(p.APIKeyHeader, p.APIKey)
+		} else if p.APIKey != "" {
+			request.Header.Set("Authorization", "Bearer "+p.APIKey)
+		}
+		for name, value := range p.Headers {
+			request.Header.Set(name, value)
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			return nil, err
+		}
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			response.Body.Close()
+			return nil, fmt.Errorf("model catalog returned %s", response.Status)
+		}
+		var payload struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+			HasMore bool   `json:"has_more"`
+			LastID  string `json:"last_id"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload)
+		response.Body.Close()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		for _, model := range payload.Data {
+			if strings.TrimSpace(model.ID) != "" {
+				models = append(models, ModelInfo{Provider: p.name(), ID: model.ID})
+			}
+		}
+		if !payload.HasMore || strings.TrimSpace(payload.LastID) == "" || payload.LastID == after {
+			return models, nil
+		}
+		after = payload.LastID
 	}
-	return models, nil
+	return nil, errors.New("model catalog pagination exceeded 100 pages")
 }
 
 func (p OpenAIResponses) Next(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
