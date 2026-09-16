@@ -35,6 +35,26 @@ func TestAnthropicMessagesStreamsTextAndThinking(t *testing.T) {
 	}
 }
 
+func TestCloudflareAIGatewayAnthropicUsesGatewayAuthorization(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/messages" || r.Header.Get("cf-aig-authorization") != "Bearer gateway-key" || r.Header.Get("x-api-key") != "" {
+			t.Fatalf("path=%q gateway=%q api-key=%q", r.URL.Path, r.Header.Get("cf-aig-authorization"), r.Header.Get("x-api-key"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"type":"message_start","message":{"id":"cf-message","model":"fixture-model"}}`)
+		fmt.Fprintln(w, `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}`)
+	}))
+	defer server.Close()
+
+	provider := NewAnthropicMessages(server.URL, "", "fixture-model")
+	provider.ProviderName = "cloudflare-ai-gateway"
+	provider.Headers = map[string]string{"cf-aig-authorization": "Bearer gateway-key"}
+	result, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "hello"}}, nil)
+	if err != nil || result.ResponseID != "cf-message" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestAnthropicMessagesPreservesThinkingSignatureDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
