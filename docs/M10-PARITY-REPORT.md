@@ -30,6 +30,35 @@ terminal acceptance remain open and are not claimed here.
 
 ## Checkpoint update: 2026-09-16
 
+A new `internal/tui.Spinner` reproduces the oracle's `Loader` frame-cycling
+state machine and status-line composition: the default ten-frame braille
+animation and 80ms interval, wraparound cycling that stops advancing at one
+frame or fewer, and `FormatStatusLine`'s "frame + space + message" (or bare
+message when the frame is empty/hidden) composition. Oracle authority is
+`packages/tui/src/components/loader.ts:11-12,72-91` and
+`packages/coding-agent/src/modes/interactive/components/status-indicator.ts:7-114`
+(the four status-indicator kinds — working/retry/compaction/branchSummary —
+are all thin `Loader` subclasses differing only in message/color, so the
+frame-cycling and line-formatting core covers their shared behavior). This
+slice is the tested state machine only: the oracle drives `Loader` with a
+real interval timer calling `ui.requestRender()` on every tick, but this Go
+interactive CLI's loop only redraws in response to prompt reads and agent
+events, not a wall-clock timer, so wiring a live-animating spinner into the
+interactive loop is a separate, larger change to that loop's structure and
+is not attempted here. Go evidence is `internal/tui/spinner.go`,
+`TestSpinnerAdvanceCyclesThroughDefaultFrames`,
+`TestSpinnerWithSingleFrameNeverAdvances`,
+`TestSpinnerWithNoFramesRendersEmpty`,
+`TestFormatStatusLinePrefixesNonEmptyFrame`, and
+`TestFormatStatusLineOmitsFrameWhenEmpty`. Full repository gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass. Live timer-driven redraw integration, a
+container/section model for dynamic borders, color/theme support, Mermaid
+rendering (deferred per user direction), ctrl/alt modifier-key parsing, and
+live terminal acceptance remain open and are not claimed here.
+
+## Checkpoint update: 2026-09-16
+
 Navigating the interactive `/tree` selector to a non-leaf entry now prompts
 "Summarize branch?" with "No summary" / "Summarize" / "Summarize with
 custom prompt", matching the oracle's summarize-before-navigate flow.
