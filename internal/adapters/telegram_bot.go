@@ -175,8 +175,12 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	}
 	var statusMessageID int64
 	var statusMu sync.Mutex
+	var resultImages []string
 	stopTyping := b.startTyping(ctx, chatID)
 	result, err := b.Adapter.HandleMessageWithImagesEvents(ctx, chatID, text, replyContext, image, func(event agent.Event) {
+		if event.Type == "tool_result" && event.Message != nil {
+			resultImages = append(resultImages, event.Message.Images...)
+		}
 		if event.Type == "tool_call" && event.Name != "" {
 			statusMu.Lock()
 			defer statusMu.Unlock()
@@ -198,7 +202,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	if err != nil {
 		return b.sendMessage(ctx, chatID, "Error: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
-	if err := b.sendResultImages(ctx, chatID, result, messageReplyID(update.Message.MessageID)); err != nil {
+	if err := b.sendResultImages(ctx, chatID, resultImages, messageReplyID(update.Message.MessageID)); err != nil {
 		return b.sendMessage(ctx, chatID, "Error sending generated image: "+err.Error(), messageReplyID(update.Message.MessageID))
 	}
 	if statusMessageID != 0 && result.FinalText != "" && len(splitTelegramSections(result.FinalText)) == 1 && len([]rune(result.FinalText)) <= telegramMessageLimit {
@@ -209,14 +213,7 @@ func (b *TelegramBot) HandleUpdate(ctx context.Context, update telegramUpdate) e
 	return b.sendMessage(ctx, chatID, result.FinalText, messageReplyID(update.Message.MessageID))
 }
 
-func (b *TelegramBot) sendResultImages(ctx context.Context, chatID string, result agent.Result, replyTo *int64) error {
-	var images []string
-	for _, message := range result.Messages {
-		if message.Role != "tool" {
-			continue
-		}
-		images = append(images, message.Images...)
-	}
+func (b *TelegramBot) sendResultImages(ctx context.Context, chatID string, images []string, replyTo *int64) error {
 	if len(images) > 1 {
 		return b.sendMediaGroup(ctx, chatID, images)
 	}
