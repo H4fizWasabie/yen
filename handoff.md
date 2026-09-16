@@ -2,6 +2,31 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Goal 4 raw tree selector integration
+
+`feat/tui-selector-raw-input` is rebased onto current `origin/main` (which
+already carries #190's raw terminal input as `861a1f9`). `internal/tui.SelectTree`
+gained a `rawInput bool` parameter that dispatches to the existing `SelectRaw`
+or `Select` helper — no duplicated selector logic — and
+`cmd/theoses.handleInteractiveTree` now receives the interactive loop's
+`rawInput` value and forwards it, so `/tree` gets the same byte-at-a-time
+j/k/arrow/Enter navigation as `/resume`, `/model`, and extension `select`
+requests once raw terminal input is enabled; scripted/piped callers keep the
+line-buffered path. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4953-4996`,
+`packages/coding-agent/src/modes/interactive/components/tree-selector.ts:703-746,980-1020`,
+and `packages/tui/src/components/editor.ts:464-476`. Go evidence is
+`internal/tui/tree.go`, `cmd/theoses/main.go`,
+`TestSelectTreeRawUsesRawByteNavigation`, and
+`TestInteractiveTreeSelectorRawUsesRawByteNavigation`. All required gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass locally. This increment is opened as a PR against
+`main` and must not be merged by this agent; interactive tree fold/unfold,
+viewport/page panning, branch-summary prompt/navigation behavior, native diff
+rendering, Mermaid rendering, dynamic borders, status-indicator spinner
+behavior, and live terminal acceptance remain open Goal 4 slices, each
+requiring its own failing seam test and PR.
+
 ## Checkpoint: Goal 4 interactive tree selection
 
 Interactive `/tree` now presents the existing session tree entries through a

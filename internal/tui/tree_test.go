@@ -46,7 +46,19 @@ func TestSelectTreeReturnsNavigatedEntry(t *testing.T) {
 		{ID: root, Name: "root"},
 		{ID: "child", ParentID: &root, Name: "child"},
 	}
-	selected, err := SelectTree(bufio.NewReader(strings.NewReader("j\n\n")), &strings.Builder{}, "Tree", entries)
+	selected, err := SelectTree(bufio.NewReader(strings.NewReader("j\n\n")), &strings.Builder{}, "Tree", entries, false)
+	if err != nil || selected != "child" {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+}
+
+func TestSelectTreeRawUsesRawByteNavigation(t *testing.T) {
+	root := "root"
+	entries := []session.TreeEntry{
+		{ID: root, Name: "root"},
+		{ID: "child", ParentID: &root, Name: "child"},
+	}
+	selected, err := SelectTree(bufio.NewReader(strings.NewReader("j\r")), &strings.Builder{}, "Tree", entries, true)
 	if err != nil || selected != "child" {
 		t.Fatalf("selected=%q err=%v", selected, err)
 	}

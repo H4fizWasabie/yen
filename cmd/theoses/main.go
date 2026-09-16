@@ -195,7 +195,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				continue
 			}
 			var response strings.Builder
-			handled, err := handleInteractiveTree(prompt, reader, currentSession, &response)
+			handled, err := handleInteractiveTree(prompt, reader, rawInput, currentSession, &response)
 			if !handled && err == nil {
 				handled, err = handleInteractiveSelector(prompt, reader, rawInput, currentSession, runner, link, &sessionPath, &response)
 			}
@@ -306,11 +306,11 @@ func interactiveToolResult(event agent.Event) string {
 	return "Tool " + event.Name + ": " + result
 }
 
-func handleInteractiveTree(input string, reader *bufio.Reader, current *session.Session, stdout io.Writer) (bool, error) {
+func handleInteractiveTree(input string, reader *bufio.Reader, rawInput bool, current *session.Session, stdout io.Writer) (bool, error) {
 	if strings.TrimSpace(input) != "/tree" {
 		return false, nil
 	}
-	selected, err := tui.SelectTree(reader, stdout, "Select tree entry", current.Tree())
+	selected, err := tui.SelectTree(reader, stdout, "Select tree entry", current.Tree(), rawInput)
 	if err != nil || selected == "" {
 		return true, err
 	}

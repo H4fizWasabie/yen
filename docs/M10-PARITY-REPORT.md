@@ -4,6 +4,28 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+The interactive `/tree` selector now shares the raw-byte navigation path with
+`/resume` and `/model`: `internal/tui.SelectTree` takes a `rawInput` flag and
+dispatches to the existing `SelectRaw` (byte-at-a-time j/k/arrow/Enter) or
+`Select` (line-buffered) helpers without introducing a second selector
+implementation. `cmd/theoses.handleInteractiveTree` threads the interactive
+loop's `rawInput` state through to the selector. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4953-4996`
+and `packages/coding-agent/src/modes/interactive/components/tree-selector.ts:703-746,980-1020`
+(same tree-selector authority as the original `/tree` slice, now also
+governing raw-terminal navigation timing per
+`packages/tui/src/components/editor.ts:464-476`). Go evidence is
+`internal/tui/tree.go`, `cmd/theoses/main.go`,
+`TestSelectTreeRawUsesRawByteNavigation`, and
+`TestInteractiveTreeSelectorRawUsesRawByteNavigation`. Full repository gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass. Fold, viewport panning, branch-summary
+prompt/navigation behavior, native diff rendering, Mermaid rendering, dynamic
+borders, status-indicator spinner behavior, and live terminal acceptance
+remain open and are not claimed here.
+
+## Checkpoint update: 2026-09-16
+
 Interactive `/tree` now presents session entries through a navigable selector,
 accepts number/j/k/arrow/Enter input, and branches from the chosen entry using
 the existing `Session.Branch` capability. The static ASCII tree report is
