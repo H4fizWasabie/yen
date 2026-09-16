@@ -37,6 +37,17 @@ handling. Go evidence is `internal/tui/editor.go`, `cmd/theoses/main.go`, and
 increment is independent of PR #190 and must remain open for review; it must
 not be merged by this agent.
 
+## Checkpoint: Goal 4 raw extension selectors
+
+Extension `select` requests now choose `internal/tui.SelectRaw` when the
+interactive CLI has enabled raw terminal input, while the public line-based
+helper remains unchanged for scripted and piped callers. Oracle authority is
+`packages/coding-agent/src/modes/rpc/rpc-types.ts:237-249` and
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2357-2378`.
+Go evidence is `internal/tui/ui.go`, `cmd/theoses/main.go`, and
+`TestHandleExtensionUIRawSelectConfirmsHighlightedOption`. Full gates pass.
+This remains stacked on PR #190 and must not be merged by this agent.
+
 ## Checkpoint: Goal 4 raw selector input
 
 Raw tty `/resume` and `/model` selectors now consume individual bytes through

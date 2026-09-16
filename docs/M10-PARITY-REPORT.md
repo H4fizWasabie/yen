@@ -37,6 +37,18 @@ Raw-terminal history redraw remains coupled to the pending raw-input slice.
 
 ## Checkpoint update: 2026-09-16
 
+Extension `select` requests now use the same raw byte selector as `/resume`
+and `/model` when the interactive CLI has a raw terminal; scripted and piped
+requests retain the line-buffered path. Oracle authority is
+`packages/coding-agent/src/modes/rpc/rpc-types.ts:237-249` and
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2357-2378`.
+Go evidence is `internal/tui/ui.go`, `cmd/theoses/main.go`, and
+`TestHandleExtensionUIRawSelectConfirmsHighlightedOption`. Full repository
+gates pass. This selector increment remains stacked on PR #190 pending Claude
+review.
+
+## Checkpoint update: 2026-09-16
+
 Raw tty `/resume` and `/model` selectors now consume individual bytes, making
 j/k and arrow navigation immediately actionable; Enter confirms the highlighted
 row, and numeric selection, q, and Escape remain supported. Scripted and piped
