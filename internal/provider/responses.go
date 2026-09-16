@@ -124,11 +124,18 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 	if p.APIKey == "" && strings.TrimSpace(p.Headers["cf-aig-authorization"]) == "" {
 		return agent.Response{}, fmt.Errorf("no API key for provider: %s", p.name())
 	}
+	input := messages
 	payload := map[string]any{
 		"model":  p.Model,
-		"input":  responsesInput(messages),
+		"input":  responsesInput(input),
 		"stream": true,
 		"store":  false,
+	}
+	if p.ProviderName == "openai-codex" {
+		if responseID, delta := codexContinuation(messages); responseID != "" {
+			payload["previous_response_id"] = responseID
+			payload["input"] = responsesInput(delta)
+		}
 	}
 	if tools := responsesTools(toolNames); len(tools) > 0 {
 		payload["tools"] = tools
@@ -417,6 +424,15 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		emit(agent.StreamEvent{Type: "done", Partial: partial})
 	}
 	return result, nil
+}
+
+func codexContinuation(messages []agent.Message) (string, []agent.Message) {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" && strings.TrimSpace(messages[i].ResponseID) != "" && i < len(messages)-1 {
+			return messages[i].ResponseID, messages[i+1:]
+		}
+	}
+	return "", nil
 }
 
 func compressCodexBody(body []byte) ([]byte, error) {

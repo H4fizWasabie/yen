@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -94,6 +95,55 @@ func TestOpenAICodexSSECompressesRequestAndDecodesResponse(t *testing.T) {
 	}
 	if result.ResponseID != "codex-1" || request["store"] != false {
 		t.Fatalf("result=%#v request=%#v", result, request)
+	}
+}
+
+func TestOpenAICodexSendsPreviousResponseIDWithNewInput(t *testing.T) {
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		compressed, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoder, err := zstd.NewReader(bytes.NewReader(compressed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decoder.DecodeAll(compressed, nil)
+		decoder.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request map[string]any
+		if err := json.Unmarshal(decoded, &request); err != nil {
+			t.Fatal(err)
+		}
+		requests = append(requests, request)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, fmt.Sprintf("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-%d\",\"status\":\"completed\"}}\n\n", len(requests)))
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "codex-token", "gpt-5")
+	provider.ProviderName = "openai-codex"
+	first, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "first"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = provider.Next(context.Background(), []agent.Message{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "answer", ResponseID: first.ResponseID},
+		{Role: "user", Content: "second"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 || requests[1]["previous_response_id"] != "resp-1" {
+		t.Fatalf("requests=%#v", requests)
+	}
+	input, ok := requests[1]["input"].([]any)
+	if !ok || len(input) != 1 || !strings.Contains(string(mustJSON(t, input[0])), "second") {
+		t.Fatalf("second input=%#v", requests[1]["input"])
 	}
 }
 
