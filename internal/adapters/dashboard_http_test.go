@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
@@ -154,6 +156,56 @@ func TestDashboardShellSupportsReplyContext(t *testing.T) {
 		if !strings.Contains(dashboardHTML, want) {
 			t.Fatalf("dashboard shell does not support %q", want)
 		}
+	}
+}
+
+func TestDashboardBrowserAcceptance(t *testing.T) {
+	browser := os.Getenv("YEN_DASHBOARD_BROWSER")
+	if browser == "" {
+		t.Skip("set YEN_DASHBOARD_BROWSER to a Chromium-compatible browser")
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if r.URL.Path == "/" {
+			_, _ = io.WriteString(w, strings.Replace(dashboardHTML, "</body>", `<script>
+const browserAcceptance=setInterval(()=>{const branch=document.querySelector('.branch');if(!branch)return;clearInterval(browserAcceptance);branch.click();setTimeout(()=>{document.title=document.querySelector('#messages').textContent.includes('child branch')?'PASS':'FAIL'},100)},50)
+document.querySelector('#token').value='secret';document.querySelector('#login form').requestSubmit()
+</script></body>`, 1))
+			return
+		}
+		switch r.URL.Path {
+		case "/api/login":
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		case "/api/sessions":
+			writeJSON(w, http.StatusOK, map[string]any{"sessions": []map[string]any{{"id": "session", "title": "session", "channel": "dashboard"}}})
+		case "/api/sessions/session":
+			writeJSON(w, http.StatusOK, browserSessionPayload("root", "root message"))
+		case "/api/sessions/session/branch":
+			writeJSON(w, http.StatusOK, browserSessionPayload("child", "child branch"))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	profile := t.TempDir()
+	out, err := exec.CommandContext(ctx, browser, "--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--user-data-dir="+profile, "--virtual-time-budget=3000", "--dump-dom", server.URL+"/").Output()
+	if err != nil {
+		t.Fatalf("browser acceptance: %v", err)
+	}
+	if !strings.Contains(string(out), "<title>PASS</title>") {
+		t.Fatalf("browser did not navigate the branch tree: %s", out)
+	}
+}
+
+func browserSessionPayload(leafID, message string) map[string]any {
+	return map[string]any{
+		"session": map[string]any{"id": "session", "title": "session", "leafId": leafID}, "leafId": leafID,
+		"tree":    []map[string]any{{"id": "root", "message": map[string]any{"content": "root message"}}, {"id": "child", "parentId": "root", "message": map[string]any{"content": "child branch"}}},
+		"history": []map[string]any{{"role": "user", "segments": []map[string]any{{"type": "text", "text": message}}}},
 	}
 }
 

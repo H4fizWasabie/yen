@@ -144,6 +144,16 @@ No cutover or TypeScript modification has happened. Local Telegram/dashboard
 adapter code and acceptance fixtures exist; TypeScript remains the operational
 fallback.
 
+Dashboard branch-tree parity was rechecked against pinned oracle commit
+`3a910426a0db91570392c20c281ae8dfd82e01a1`. Its dashboard `app.js` has no
+conversation branch renderer or branch endpoint; its `tree` references are
+only the file-workbench tree. Yen's existing `renderTree()` is therefore an
+intentional extension with no oracle-backed richer presentation gap. The
+dependency-free browser acceptance is `TestDashboardBrowserAcceptance` in
+`internal/adapters/dashboard_http_test.go`; CI installs Chromium and runs it
+against the served shell to verify branch rendering and switching. Without
+`YEN_DASHBOARD_BROWSER`, the test skips locally when no browser is installed.
+
 Current follow-up work is grouped in branch `feat/extension-registry`. The
 in-process extension registry composes registered agent/tool/provider hooks,
 keeps command and renderer registrations deterministic, and exposes extension
