@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,53 +53,75 @@ func (p GoogleGenerativeAI) ListModels(ctx context.Context) ([]ModelInfo, error)
 	if err != nil {
 		return nil, err
 	}
-	endpoint := p.BaseURL + "/models"
-	if bearer == "" {
-		endpoint += "?key=" + url.QueryEscape(p.APIKey)
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	endpoint, err := url.Parse(p.BaseURL + "/models")
 	if err != nil {
 		return nil, err
-	}
-	if bearer != "" {
-		request.Header.Set("Authorization", "Bearer "+bearer)
 	}
 	client := p.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-		return nil, fmt.Errorf("google models returned %s: %s", response.Status, strings.TrimSpace(string(message)))
-	}
-	var payload struct {
-		Models []struct {
-			Name                       string   `json:"name"`
-			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
-		} `json:"models"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	result := make([]ModelInfo, 0, len(payload.Models))
+	var result []ModelInfo
 	providerName := p.ProviderName
 	if providerName == "" {
 		providerName = "google"
 	}
-	for _, model := range payload.Models {
-		for _, method := range model.SupportedGenerationMethods {
-			if method == "generateContent" {
-				result = append(result, ModelInfo{Provider: providerName, ID: strings.TrimPrefix(model.Name, "models/")})
-				break
+	pageToken := ""
+	for page := 0; ; page++ {
+		if page >= 100 {
+			return nil, errors.New("google model catalog exceeded 100 pages")
+		}
+		query := endpoint.Query()
+		if bearer == "" {
+			query.Set("key", p.APIKey)
+		}
+		if pageToken == "" {
+			query.Del("pageToken")
+		} else {
+			query.Set("pageToken", pageToken)
+		}
+		endpoint.RawQuery = query.Encode()
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		if bearer != "" {
+			request.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			return nil, err
+		}
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			message, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
+			response.Body.Close()
+			return nil, fmt.Errorf("google models returned %s: %s", response.Status, strings.TrimSpace(string(message)))
+		}
+		var payload struct {
+			Models []struct {
+				Name                       string   `json:"name"`
+				SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+			} `json:"models"`
+			NextPageToken string `json:"nextPageToken"`
+		}
+		err = json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload)
+		response.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		for _, model := range payload.Models {
+			for _, method := range model.SupportedGenerationMethods {
+				if method == "generateContent" {
+					result = append(result, ModelInfo{Provider: providerName, ID: strings.TrimPrefix(model.Name, "models/")})
+					break
+				}
 			}
 		}
+		pageToken = payload.NextPageToken
+		if pageToken == "" {
+			return result, nil
+		}
 	}
-	return result, nil
 }
 
 type googleContent struct {

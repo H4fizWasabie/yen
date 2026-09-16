@@ -167,9 +167,9 @@ func codexAccountID(token string) string {
 
 func googleVertexConfigured(model string) GoogleGenerativeAI {
 	baseURL := os.Getenv("YEN_GOOGLE_VERTEX_BASE_URL")
+	credential := storedVertexCredential()
 	if baseURL == "" {
-		project := strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_PROJECT"))
-		location := strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_LOCATION"))
+		project, location := vertexProjectLocation(credential)
 		baseURL = "https://aiplatform.googleapis.com/v1/projects/" + project + "/locations/" + location + "/publishers/google"
 	}
 	key := os.Getenv("YEN_GOOGLE_CLOUD_API_KEY")
@@ -184,6 +184,9 @@ func googleVertexConfigured(model string) GoogleGenerativeAI {
 	} else if client.APIKey == "" {
 		path := strings.TrimSpace(os.Getenv("YEN_GOOGLE_APPLICATION_CREDENTIALS"))
 		if path == "" {
+			path = strings.TrimSpace(credential.Env["GOOGLE_APPLICATION_CREDENTIALS"])
+		}
+		if path == "" {
 			if home, err := os.UserHomeDir(); err == nil {
 				path = filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
 			}
@@ -194,6 +197,33 @@ func googleVertexConfigured(model string) GoogleGenerativeAI {
 	}
 	client.ThinkingLevel = os.Getenv("YEN_REASONING_EFFORT")
 	return client
+}
+
+func storedVertexCredential() auth.Credential {
+	path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+	if path == "" {
+		return auth.Credential{}
+	}
+	credential, ok, err := auth.Open(path).Read("google-vertex")
+	if err != nil || !ok {
+		return auth.Credential{}
+	}
+	return credential
+}
+
+func vertexProjectLocation(credential auth.Credential) (string, string) {
+	project := strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_PROJECT"))
+	if project == "" {
+		project = strings.TrimSpace(credential.Env["GOOGLE_CLOUD_PROJECT"])
+	}
+	if project == "" {
+		project = strings.TrimSpace(os.Getenv("GCLOUD_PROJECT"))
+	}
+	location := strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_LOCATION"))
+	if location == "" {
+		location = strings.TrimSpace(credential.Env["GOOGLE_CLOUD_LOCATION"])
+	}
+	return project, location
 }
 
 func bedrockConfigured(model string) BedrockConverse {
@@ -601,7 +631,8 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if model == "" {
 			model = "gemini-2.5-flash"
 		}
-		if os.Getenv("YEN_GOOGLE_VERTEX_BASE_URL") == "" && (strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_PROJECT")) == "" || strings.TrimSpace(os.Getenv("YEN_GOOGLE_CLOUD_LOCATION")) == "") {
+		project, location := vertexProjectLocation(storedVertexCredential())
+		if os.Getenv("YEN_GOOGLE_VERTEX_BASE_URL") == "" && (project == "" || location == "") {
 			return nil, errors.New("google vertex requires YEN_GOOGLE_CLOUD_PROJECT and YEN_GOOGLE_CLOUD_LOCATION")
 		}
 		return googleVertexConfigured(model), nil

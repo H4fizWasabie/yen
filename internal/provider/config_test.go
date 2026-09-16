@@ -120,6 +120,37 @@ func TestGoogleVertexUsesYenBearerTokenWithoutAPIKeyQuery(t *testing.T) {
 	}
 }
 
+func TestGoogleVertexUsesStoredCredentialEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	credentialsPath := filepath.Join(t.TempDir(), "application-default-credentials.json")
+	if err := os.WriteFile(credentialsPath, []byte(`{"type":"authorized_user"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.Open(path).Modify("google-vertex", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{Type: "api_key", Env: map[string]string{
+			"GOOGLE_CLOUD_PROJECT":           "stored-project",
+			"GOOGLE_CLOUD_LOCATION":          "stored-location",
+			"GOOGLE_APPLICATION_CREDENTIALS": credentialsPath,
+		}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_GOOGLE_CLOUD_API_KEY", "")
+	t.Setenv("YEN_GOOGLE_VERTEX_BASE_URL", "")
+	t.Setenv("YEN_GOOGLE_CLOUD_PROJECT", "")
+	t.Setenv("YEN_GOOGLE_CLOUD_LOCATION", "")
+	t.Setenv("YEN_GOOGLE_APPLICATION_CREDENTIALS", "")
+	client, err := NewConfigured("google-vertex", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vertex := client.(GoogleGenerativeAI)
+	if vertex.BaseURL != "https://aiplatform.googleapis.com/v1/projects/stored-project/locations/stored-location/publishers/google" || vertex.BearerSource == nil {
+		t.Fatalf("vertex=%#v", vertex)
+	}
+}
+
 func TestVertexServiceAccountExchangesJWTForBearerToken(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
