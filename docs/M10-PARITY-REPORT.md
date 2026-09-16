@@ -40,6 +40,13 @@ Go evidence is `cmd/theoses/main.go` and
 `TestInteractiveRunRendersProviderStatusUpdates`. Tool-specific progress and
 extension UI component rendering remain open.
 
+The remaining pinned interactive command entry points are now recognized:
+`/changelog`, `/hotkeys`, `/debug`, `/arminsayshi`, and `/dementedelves`.
+Oracle authority is `packages/coding-agent/src/modes/interactive/interactive-mode.ts:2848-2925,5983-6060,6150-6190`.
+Go evidence is `cmd/theoses/main.go` and
+`TestInteractiveRemainingOracleCommandsAreHandled`; output is text-only where
+the oracle uses native image/UI components.
+
 The agent loop now exposes pre-loop and per-provider context interception
 boundaries. Hooks receive cloned message context and may replace it; tool turns
 therefore apply the per-call hook independently to each LLM call without
