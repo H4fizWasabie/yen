@@ -182,12 +182,15 @@ matching `packages/coding-agent/src/core/explorer.ts:37-38,280-296` and its
 `TestExploreStopsAfterBudgetedToolTurn`; 368 tests, race, vet, and diff gates
 pass.
 
-Explorer catalog hydration/footer accounting cannot be oracle-signed for this
-goal: the pinned commit's repository tree contains no
-`packages/coding-agent/src/core/explorer.ts`, despite the goal specification
-requiring that path. The Go read-only catalog and footer behavior remains
-covered by `internal/codingagent/explore.go` and its explorer tests; provider
-interception is covered by `TestExploreAppliesExtensionProviderHook`.
+Explorer now builds a named four-tool read-only catalog and validates the full
+budget footer. Approved later oracle authority is
+`39e36902a97d12686baaf773c7fbf0e9d477ea33:packages/coding-agent/src/core/explorer.ts:36-38,117-123,246-328`;
+provider-hook authority is
+`8da008adbd9db7fbc3dc8776149f24209f07d10d:packages/coding-agent/src/core/explorer.ts:203-219,259-274,352-360`.
+Go evidence is `internal/codingagent/explore.go`,
+`TestExploreAddsFooterWhenBudgetFooterIsMalformed`, and
+`TestExploreAppliesExtensionProviderHook`. The pinned baseline lacks this
+later-added explorer file; this narrow oracle exception is documented.
 
 ## Checkpoint update: 2026-09-16
 
@@ -613,7 +616,7 @@ implementations and committed tests:
 | Built-in web search | `packages/coding-agent/src/core/tools/web-search.ts:17-71` | `internal/codingagent/web_search.go` posts Tavily's `{query,max_results:5}` request, tries filtered keys in order, formats answer/results, and snapshots the Yen key list at construction; `web_search_test.go` covers fallback and post-construction environment changes | accepted for the current Tavily contract; richer provider/resource interception remains open |
 | Context resource discovery | `packages/coding-agent/src/core/resource-loader.ts:89-96` | `internal/codingagent/prompt.go` discovers `AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, and `CONTEXT.md` through the workspace ancestor chain; `prompt_test.go` covers the added names | partial; full resource-loader precedence, diagnostics, and extension discovery remain open |
 | Dashboard authentication safety | `packages/dashboard/src/index.ts:82-90` | `internal/adapters/dashboard_http.go:89-103` now returns 503 when no access token is configured and 401 for invalid credentials; `dashboard_http_test.go` covers the unconfigured-token boundary | accepted for token-gated API access |
-| Explorer turn budget | `packages/coding-agent/src/core/explorer.ts:37-38`, `:270-296` | `internal/codingagent/explore.go` enforces 8 quick-scan or 15 deep-map provider calls plus 200K/400K input-token ceilings, returns an explicit `INCOMPLETE` answer at the ceiling, and preserves the read-only tool set; `internal/agent/loop.go` stops after the completed budgeted tool turn; `explore_test.go` covers both hard stops | partial; pinned explorer catalog hydration, footer accounting, and provider interception remain open |
+| Explorer turn budget | `39e36902a97d12686baaf773c7fbf0e9d477ea33:packages/coding-agent/src/core/explorer.ts:36-38,117-123,246-328`; provider hooks `8da008adbd9db7fbc3dc8776149f24209f07d10d:packages/coding-agent/src/core/explorer.ts:203-219,259-274,352-360` | `internal/codingagent/explore.go` builds the four-tool read-only catalog, enforces 8 quick-scan or 15 deep-map provider calls plus 200K/400K input-token ceilings, validates/repairs the budget footer, and passes registry hooks into nested provider calls; `explore_test.go` covers hard stops, malformed-footer repair, and provider interception | accepted for the explorer harness contract; the pinned baseline lacks this later-added file and the exception is documented |
 | Installer provider environment | `packages/ai/src/utils/provider-env.ts`, provider registrations under `packages/ai/src/providers/` | `deploy/install-side-by-side.sh` now forwards the complete Yen provider-key registry and native provider/auth settings through both `env -i` wrappers; `sh -n` and the full Go gate pass | accepted for environment forwarding; provider protocol/catalog parity remains partial |
 | GitHub verification gate | repository `package.json` scripts and CI expectations | `.github/workflows/go.yml` runs `go test ./...`, race, vet, and PR/push diff checks; local equivalents pass | accepted for automated Go verification |
 | Native-provider reasoning configuration | `packages/ai/src/api/google-generative-ai.ts`, `packages/ai/src/api/anthropic-messages.ts`, and provider option construction | `internal/provider/config.go` now carries `YEN_REASONING_EFFORT` into Google, Anthropic, MiniMax, and Vercel clients created by both configuration paths; `config_test.go` covers native providers | accepted for environment-driven reasoning configuration |

@@ -701,3 +701,63 @@ func TestSetRetryEnabledControlsSupportedProviders(t *testing.T) {
 		t.Fatalf("provider=%#v err=%v", configured, err)
 	}
 }
+
+func TestStaticCatalogIncludesCodexMetadata(t *testing.T) {
+	models, err := staticCatalog("openai-codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) == 0 {
+		t.Fatal("expected Codex static catalog")
+	}
+	for _, model := range models {
+		if model.Provider != "openai-codex" || model.ID == "" || model.Name == "" || model.API == "" {
+			t.Fatalf("incomplete static model metadata: %#v", model)
+		}
+	}
+}
+
+func TestAvailableModelsFallsBackToStaticCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client := NewOpenAICompletions(server.URL, "", "model")
+	client.ProviderName = "openai-codex"
+	models, err := AvailableModels(context.Background(), client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) == 0 || models[0].Provider != "openai-codex" {
+		t.Fatalf("models=%#v", models)
+	}
+}
+
+func TestCopilotUsesStaticModelProtocol(t *testing.T) {
+	t.Setenv("YEN_COPILOT_API", "")
+	configured, err := NewConfigured("github-copilot", "claude-haiku-4.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := configured.(AnthropicMessages); !ok {
+		t.Fatalf("configured=%T", configured)
+	}
+}
+
+func TestStaticCatalogSnapshotCoversProviderData(t *testing.T) {
+	providers := []string{
+		"amazon-bedrock", "ant-ling", "anthropic", "azure-openai-responses", "baseten", "cerebras",
+		"cloudflare-ai-gateway", "cloudflare-workers-ai", "deepseek", "fireworks", "github-copilot",
+		"google", "google-vertex", "groq", "huggingface", "kimi-coding", "minimax-cn", "minimax",
+		"mistral", "moonshotai-cn", "moonshotai", "nvidia", "openai-codex", "openai", "opencode-go",
+		"opencode", "openrouter", "qwen-token-plan-cn", "qwen-token-plan-individual", "qwen-token-plan",
+		"together", "vercel-ai-gateway", "xai", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn",
+		"xiaomi-token-plan-sgp", "xiaomi", "zai-coding-cn", "zai",
+	}
+	for _, provider := range providers {
+		models, err := staticCatalog(provider)
+		if err != nil || len(models) == 0 {
+			t.Fatalf("provider=%q models=%d err=%v", provider, len(models), err)
+		}
+	}
+}

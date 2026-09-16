@@ -342,6 +342,15 @@ func copilotConfigured(model string) agent.Provider {
 		baseURL = providerDefaults["github-copilot"]
 	}
 	protocol := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_COPILOT_API")))
+	if protocol == "" {
+		models, _ := staticCatalog("github-copilot")
+		for _, entry := range models {
+			if entry.ID == model {
+				protocol = entry.API
+				break
+			}
+		}
+	}
 	switch protocol {
 	case "openai-responses":
 		client := NewOpenAIResponses(baseURL, key, model)
@@ -909,8 +918,20 @@ func Describe(p agent.Provider) (string, string) {
 }
 
 type ModelInfo struct {
-	Provider string `json:"provider"`
-	ID       string `json:"id"`
+	Provider      string            `json:"provider"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name,omitempty"`
+	API           string            `json:"api,omitempty"`
+	BaseURL       string            `json:"baseUrl,omitempty"`
+	Reasoning     bool              `json:"reasoning,omitempty"`
+	Input         []string          `json:"input,omitempty"`
+	ContextWindow int               `json:"contextWindow,omitempty"`
+	MaxTokens     int               `json:"maxTokens,omitempty"`
+	ThinkingMap   map[string]any    `json:"thinkingLevelMap,omitempty"`
+	Cost          map[string]any    `json:"cost,omitempty"`
+	Sampling      map[string]any    `json:"samplingParams,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	Compat        map[string]any    `json:"compat,omitempty"`
 }
 
 type ModelLister interface {
@@ -948,7 +969,17 @@ func SetModel(p agent.Provider, model string) (agent.Provider, error) {
 
 func AvailableModels(ctx context.Context, p agent.Provider) ([]ModelInfo, error) {
 	if lister, ok := p.(ModelLister); ok {
-		return lister.ListModels(ctx)
+		models, err := lister.ListModels(ctx)
+		if err == nil && len(models) > 0 {
+			return models, nil
+		}
+		name, _ := Describe(p)
+		if static, staticErr := staticCatalog(name); staticErr == nil && len(static) > 0 {
+			return static, nil
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	name, model := Describe(p)
 	if name == "" || model == "" {

@@ -27,11 +27,15 @@ files shadowing lower files, and reports collisions through
 All local gates pass: `go test ./...`, `go test -race ./...`, `go vet ./...`,
 `go build ./...`, and `git diff --check`.
 
-Remaining blocker: the pinned oracle tree has no
-`packages/coding-agent/src/core/explorer.ts`, so catalog hydration and footer
-accounting cannot receive the required oracle file:line evidence. Do not
-invent a citation; resolve the oracle path/commit before claiming Goal 6
-complete.
+Explorer now has an explicit four-tool read-only catalog and strict footer
+validation. Approved later oracle authority is
+`39e36902a97d12686baaf773c7fbf0e9d477ea33:packages/coding-agent/src/core/explorer.ts:36-38,117-123,246-328`;
+provider-hook authority is
+`8da008adbd9db7fbc3dc8776149f24209f07d10d:packages/coding-agent/src/core/explorer.ts:203-219,259-274,352-360`.
+Go evidence is `TestExploreAddsFooterWhenBudgetFooterIsMalformed` and
+`TestExploreAppliesExtensionProviderHook`. The pinned baseline lacks this
+later-added explorer file; Claude approved this narrow documented oracle
+exception in PR #165.
 
 ## Checkpoint: Goal 4 interactive CLI TUI increment
 
