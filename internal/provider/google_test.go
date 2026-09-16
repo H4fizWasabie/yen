@@ -66,6 +66,24 @@ func TestGoogleGenerativeAIListsGenerativeModels(t *testing.T) {
 	}
 }
 
+func TestGoogleGenerativeAIListsAllCatalogPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token := r.URL.Query().Get("pageToken"); token == "" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"models/first","supportedGenerationMethods":["generateContent"]}],"nextPageToken":"next"}`))
+		} else if token == "next" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"models/second","supportedGenerationMethods":["generateContent"]}]}`))
+		} else {
+			t.Fatalf("unexpected page token %q", token)
+		}
+	}))
+	defer server.Close()
+
+	models, err := NewGoogleGenerativeAI(server.URL, "google-key", "model").ListModels(context.Background())
+	if err != nil || len(models) != 2 || models[0].ID != "first" || models[1].ID != "second" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
 func TestGoogleVertexCatalogPreservesProviderID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer access-token" {
