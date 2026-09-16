@@ -138,6 +138,9 @@ func (e *Engine) applyConsolidation(turnID, conversationID, workspaceID, adapter
 }
 
 func (e *Engine) applyConsolidationWithCheckpoint(turnID, conversationID, workspaceID, adapter string, facts []ConsolidatedFact, edges []ConsolidatedEdge, episode ConsolidatedEpisode, writeCheckpoint bool) error {
+	if strings.TrimSpace(episode.StartedAt) == "" || strings.TrimSpace(episode.EndedAt) == "" {
+		return errors.New("consolidation episode timestamps are required")
+	}
 	ids := make(map[string]string, len(facts))
 	nodes := make(map[string]Node, len(facts))
 	for _, fact := range facts {
@@ -195,12 +198,6 @@ func (e *Engine) applyConsolidationWithCheckpoint(turnID, conversationID, worksp
 		if err := e.Semantic.Write(node); err != nil {
 			return err
 		}
-	}
-	if episode.StartedAt == "" {
-		episode.StartedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	}
-	if episode.EndedAt == "" {
-		episode.EndedAt = episode.StartedAt
 	}
 	for index, id := range episode.RelatedSemanticNodeIDs {
 		if mapped, ok := ids[id]; ok {

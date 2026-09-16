@@ -35,7 +35,7 @@ func TestEngineAppliesConsolidationFactsEdgesAndEpisodeIdempotently(t *testing.T
 		{ID: "f2", Subject: "Theoses2 is the active project", Body: "The Go rewrite is called yen."},
 	}
 	inputEdges := []ConsolidatedEdge{{From: "f2", To: "f1", Rel: "depends_on"}, {From: "f1", To: "f2", Rel: "not-a-memory-relation"}}
-	episode := ConsolidatedEpisode{Summary: "Captured project and response preferences.", RelatedSemanticNodeIDs: []string{"f1", "f2"}}
+	episode := ConsolidatedEpisode{Summary: "Captured project and response preferences.", StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z", RelatedSemanticNodeIDs: []string{"f1", "f2"}}
 	if err := engine.ApplyConsolidation("turn-9", "conv-9", "work-9", "cli", inputFacts, inputEdges, episode); err != nil {
 		t.Fatal(err)
 	}
@@ -82,11 +82,26 @@ func TestSharedConversationConsolidationIsVisibleAcrossWorkspaces(t *testing.T) 
 	}
 	defer engine.Close()
 	engine.ConversationScoped = true
-	if err := engine.ApplyConsolidation("turn-shared", "conv-shared", "telegram-cwd", "telegram", []ConsolidatedFact{{ID: "f1", Subject: "Shared pilot fact", Body: "Visible across adapters."}}, nil, ConsolidatedEpisode{Summary: "shared"}); err != nil {
+	if err := engine.ApplyConsolidation("turn-shared", "conv-shared", "telegram-cwd", "telegram", []ConsolidatedFact{{ID: "f1", Subject: "Shared pilot fact", Body: "Visible across adapters."}}, nil, ConsolidatedEpisode{Summary: "shared", StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z"}); err != nil {
 		t.Fatal(err)
 	}
 	hits, err := engine.Remember("shared pilot fact", Context{WorkspaceID: "dashboard-cwd", ConversationID: "conv-shared", ConversationScoped: true})
 	if err != nil || len(hits) != 1 || hits[0].Scope != ScopeConversation {
 		t.Fatalf("hits=%#v err=%v", hits, err)
+	}
+}
+
+func TestEngineApplyConsolidationRejectsMissingEpisodeTimestamps(t *testing.T) {
+	engine, err := OpenEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	err = engine.ApplyConsolidation("turn-missing-time", "conv-missing-time", "work", "cli", nil, nil, ConsolidatedEpisode{Summary: "missing"})
+	if err == nil || err.Error() != "consolidation episode timestamps are required" {
+		t.Fatalf("err=%v", err)
+	}
+	if got := engine.Checkpoints.Get("conv-missing-time").LastEntryID; got != "" {
+		t.Fatalf("checkpoint=%q", got)
 	}
 }
