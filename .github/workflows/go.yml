@@ -25,6 +25,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y chromium
       - name: Run dashboard browser acceptance
         run: YEN_DASHBOARD_BROWSER=chromium go test ./internal/adapters -run TestDashboardBrowserAcceptance -count=1
+      - name: Run live terminal acceptance
+        run: YEN_LIVE_TERMINAL_ACCEPTANCE=1 go test ./internal/tui -run TestLiveTerminal -count=1
       - name: Check diff
         shell: bash
         run: |
