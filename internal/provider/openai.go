@@ -259,6 +259,7 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		for name, value := range p.Headers {
 			request.Header.Set(name, value)
 		}
+		applyProviderHeaderHook(ctx, request.Header)
 		response, err = client.Do(request)
 		if err != nil {
 			return agent.Response{}, err

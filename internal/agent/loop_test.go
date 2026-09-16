@@ -367,24 +367,33 @@ func TestRunProviderHooksCanReplaceRequestAndObserveResponse(t *testing.T) {
 				observed = response
 				return nil
 			},
+			ProviderHeaders: func(_ context.Context, headers map[string][]string) {
+				headers["X-Test"] = []string{"seen"}
+			},
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.calls != 1 || len(gotMessages) == 0 || gotMessages[0].Role != "user" || len(provider.messages) != 1 || provider.messages[0].Content != "rewritten" || len(gotTools) != 1 || gotTools[0] != "original" || observed.Text != "ok" || result.FinalText != "ok" {
-		t.Fatalf("provider calls=%d hookMessages=%#v providerMessages=%#v tools=%#v observed=%#v result=%#v", provider.calls, gotMessages, provider.messages, gotTools, observed, result)
+	if provider.calls != 1 || !provider.headerSeen || len(gotMessages) == 0 || gotMessages[0].Role != "user" || len(provider.messages) != 1 || provider.messages[0].Content != "rewritten" || len(gotTools) != 1 || gotTools[0] != "original" || observed.Text != "ok" || result.FinalText != "ok" {
+		t.Fatalf("provider calls=%d headerSeen=%v hookMessages=%#v providerMessages=%#v tools=%#v observed=%#v result=%#v", provider.calls, provider.headerSeen, gotMessages, provider.messages, gotTools, observed, result)
 	}
 }
 
 type providerHookProvider struct {
-	calls    int
-	messages []Message
+	calls      int
+	messages   []Message
+	headerSeen bool
 }
 
-func (p *providerHookProvider) Next(_ context.Context, messages []Message, _ []string) (Response, error) {
+func (p *providerHookProvider) Next(ctx context.Context, messages []Message, _ []string) (Response, error) {
 	p.calls++
 	p.messages = messages
+	if hook := ProviderHeaderHookFromContext(ctx); hook != nil {
+		values := map[string][]string{}
+		hook(ctx, values)
+		p.headerSeen = len(values["X-Test"]) == 1 && values["X-Test"][0] == "seen"
+	}
 	return Response{Text: "ok", StopReason: "stop"}, nil
 }
 

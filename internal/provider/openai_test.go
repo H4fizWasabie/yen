@@ -40,6 +40,25 @@ func TestOpenAICompletionsReadsTextSSE(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsAppliesProviderHeaderHook(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Extension") != "provider-trace" || r.Header.Get("Authorization") != "" {
+			t.Fatalf("headers=%v", r.Header)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	ctx := agent.WithProviderHeaderHook(context.Background(), func(_ context.Context, headers map[string][]string) {
+		headers["X-Extension"] = []string{"provider-trace"}
+		delete(headers, "Authorization")
+	})
+	result, err := NewOpenAICompletions(server.URL, "key", "model").Next(ctx, nil, nil)
+	if err != nil || result.Text != "ok" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestOpenAICompletionsUsesChoiceUsageWhenTopLevelUsageIsAbsent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

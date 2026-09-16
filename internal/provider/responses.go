@@ -133,6 +133,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		for name, value := range p.Headers {
 			request.Header.Set(name, value)
 		}
+		applyProviderHeaderHook(ctx, request.Header)
 		response, err = client.Do(request)
 		if err != nil {
 			return agent.Response{}, err
