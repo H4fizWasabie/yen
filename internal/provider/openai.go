@@ -429,6 +429,10 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 					var object map[string]any
 					if json.Unmarshal(detail, &object) == nil && object["type"] != nil {
 						details = append(details, append(json.RawMessage(nil), detail...))
+						partial.ReasoningDetails = append(partial.ReasoningDetails, object)
+						if object["type"] == "redacted_thinking" || object["type"] == "redacted_reasoning" {
+							partial.ThinkingRedacted = true
+						}
 					}
 				}
 				if len(details) > 0 {
@@ -536,6 +540,8 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	}
 	result.Thinking = partial.Thinking
 	result.ThinkingSignature = partial.ThinkingSignature
+	result.ReasoningDetails = partial.ReasoningDetails
+	result.ThinkingRedacted = partial.ThinkingRedacted
 	result.ToolCalls = toolCalls
 	if len(toolCalls) > 0 && result.StopReason == "" {
 		result.StopReason = "toolUse"
@@ -887,7 +893,12 @@ func convertMessages(messages []agent.Message) []openAIMessage {
 			content = parts
 		}
 		convertedMessage := openAIMessage{Role: message.Role, Content: content, ToolCallID: message.ToolCallID}
-		if message.Thinking != "" || strings.HasPrefix(strings.TrimSpace(message.ThinkingSignature), "[") {
+		if message.Thinking != "" || len(message.ReasoningDetails) > 0 || strings.HasPrefix(strings.TrimSpace(message.ThinkingSignature), "[") {
+			for _, detail := range message.ReasoningDetails {
+				if encoded, err := json.Marshal(detail); err == nil {
+					convertedMessage.ReasoningDetails = append(convertedMessage.ReasoningDetails, encoded)
+				}
+			}
 			if strings.HasPrefix(strings.TrimSpace(message.ThinkingSignature), "[") {
 				_ = json.Unmarshal([]byte(message.ThinkingSignature), &convertedMessage.ReasoningDetails)
 			} else {

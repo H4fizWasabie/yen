@@ -82,6 +82,14 @@ func (p BedrockConverse) NextWithEvents(ctx context.Context, messages []agent.Me
 	return p.next(ctx, messages, tools, emit)
 }
 
+func (p BedrockConverse) NextWithToolDefinitions(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), nil, definitions)
+}
+
+func (p BedrockConverse) NextWithToolDefinitionsAndEvents(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), emit, definitions)
+}
+
 func (p BedrockConverse) NextWithUpdates(ctx context.Context, messages []agent.Message, tools []string, update func(string)) (agent.Response, error) {
 	return p.next(ctx, messages, tools, func(event agent.StreamEvent) {
 		if event.Type == "text_delta" && update != nil {
@@ -90,7 +98,7 @@ func (p BedrockConverse) NextWithUpdates(ctx context.Context, messages []agent.M
 	})
 }
 
-func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent), definitionSets ...[]agent.ToolDefinition) (agent.Response, error) {
 	if strings.TrimSpace(p.Model) == "" {
 		return agent.Response{}, errors.New("amazon bedrock model is required")
 	}
@@ -105,7 +113,7 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 		}
 		client = bedrockruntime.NewFromConfig(cfg)
 	}
-	in, err := bedrockInput(ctx, messages, toolNames, p.Model)
+	in, err := bedrockInputWithImageClient(ctx, messages, toolNames, p.Model, nil, definitionSets...)
 	if err != nil {
 		return agent.Response{}, err
 	}
@@ -163,6 +171,8 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 					result.ThinkingSignature += signature.Value
 					partial.ThinkingSignature += signature.Value
 				} else if redacted, ok := delta.Value.(*bedrocktypes.ReasoningContentBlockDeltaMemberRedactedContent); ok {
+					result.ThinkingRedacted = true
+					partial.ThinkingRedacted = true
 					redactedReasoning[index] = append(redactedReasoning[index], redacted.Value...)
 					if !strings.Contains(result.Thinking, "[Reasoning redacted]") {
 						result.Thinking += "[Reasoning redacted]"
@@ -292,7 +302,7 @@ func bedrockInput(ctx context.Context, messages []agent.Message, toolNames []str
 	return bedrockInputWithImageClient(ctx, messages, toolNames, model, nil)
 }
 
-func bedrockInputWithImageClient(ctx context.Context, messages []agent.Message, toolNames []string, model string, imageClient *http.Client) (*bedrockruntime.ConverseStreamInput, error) {
+func bedrockInputWithImageClient(ctx context.Context, messages []agent.Message, toolNames []string, model string, imageClient *http.Client, definitionSets ...[]agent.ToolDefinition) (*bedrockruntime.ConverseStreamInput, error) {
 	input := &bedrockruntime.ConverseStreamInput{ModelId: aws.String(model)}
 	for _, message := range messages {
 		if message.Role == "system" {
@@ -320,7 +330,16 @@ func bedrockInputWithImageClient(ctx context.Context, messages []agent.Message, 
 	if len(toolNames) > 0 {
 		input.ToolConfig = &bedrocktypes.ToolConfiguration{}
 		for _, name := range toolNames {
-			input.ToolConfig.Tools = append(input.ToolConfig.Tools, &bedrocktypes.ToolMemberToolSpec{Value: bedrocktypes.ToolSpecification{Name: aws.String(name), InputSchema: &bedrocktypes.ToolInputSchemaMemberJson{Value: bedrockdocument.NewLazyDocument(map[string]any{"type": "object"})}}})
+			definition := agent.ToolDefinition{Name: name, Description: name, Parameters: map[string]any{"type": "object"}}
+			if len(definitionSets) > 0 {
+				for _, candidate := range definitionSets[0] {
+					if candidate.Name == name {
+						definition = candidate
+						break
+					}
+				}
+			}
+			input.ToolConfig.Tools = append(input.ToolConfig.Tools, &bedrocktypes.ToolMemberToolSpec{Value: bedrocktypes.ToolSpecification{Name: aws.String(name), Description: aws.String(definition.Description), InputSchema: &bedrocktypes.ToolInputSchemaMemberJson{Value: bedrockdocument.NewLazyDocument(definition.Parameters)}}})
 		}
 	}
 	return input, nil

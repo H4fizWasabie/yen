@@ -44,6 +44,14 @@ func (p TheosesMessages) NextWithUpdates(ctx context.Context, messages []agent.M
 	})
 }
 
+func (p TheosesMessages) NextWithToolDefinitions(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), nil, definitions)
+}
+
+func (p TheosesMessages) NextWithToolDefinitionsAndEvents(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), emit, definitions)
+}
+
 func (p TheosesMessages) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	if strings.TrimSpace(p.GatewayURL) == "" {
 		return nil, errors.New("radius gateway URL is required")
@@ -85,7 +93,7 @@ func (p TheosesMessages) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	return models, nil
 }
 
-func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent), definitionSets ...[]agent.ToolDefinition) (agent.Response, error) {
 	if strings.TrimSpace(p.APIKey) == "" {
 		return agent.Response{}, fmt.Errorf("no API key for provider: %s", p.providerName())
 	}
@@ -98,7 +106,7 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 		Options map[string]any `json:"options"`
 	}{
 		Model:   p.Model,
-		Context: radiusContext{Messages: radiusMessages(messages), Tools: radiusTools(toolNames)},
+		Context: radiusContext{Messages: radiusMessages(messages), Tools: radiusTools(toolNames, definitionSets...)},
 		Options: map[string]any{},
 	}
 	body, err := json.Marshal(payload)
@@ -259,10 +267,19 @@ func radiusMessages(messages []agent.Message) []radiusMessage {
 	return result
 }
 
-func radiusTools(names []string) []map[string]any {
+func radiusTools(names []string, definitionSets ...[]agent.ToolDefinition) []map[string]any {
 	result := make([]map[string]any, 0, len(names))
 	for _, name := range names {
-		result = append(result, map[string]any{"name": name, "description": name, "parameters": toolParameters(name)})
+		definition := agent.ToolDefinition{Name: name, Description: name, Parameters: toolParameters(name)}
+		if len(definitionSets) > 0 {
+			for _, candidate := range definitionSets[0] {
+				if candidate.Name == name {
+					definition = candidate
+					break
+				}
+			}
+		}
+		result = append(result, map[string]any{"name": name, "description": definition.Description, "parameters": definition.Parameters})
 	}
 	return result
 }
