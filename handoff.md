@@ -282,15 +282,18 @@ TypeScript oracle in the areas listed in `docs/M2-FIRST-SLICE.md`.
 
 ## Pick up next
 
-The agent loop now has a context hook seam: `ToolHooks.Context` runs before
-each provider call over a cloned message context, and a hook can replace the
-messages sent to that call without mutating durable agent history. The pinned
-oracle contract is `packages/coding-agent/src/core/extensions/types.ts:687-691`
-and `packages/coding-agent/src/core/extensions/runner.ts:984-1013`; Go evidence
-is `internal/agent/loop.go` and
+The agent loop now has pre-loop and per-provider context hook seams:
+`ToolHooks.BeforeAgentStart` runs once and `ToolHooks.Context` runs before each
+provider call over cloned message context. Hooks can replace messages without
+mutating durable agent history. The pinned oracle contracts are
+`packages/coding-agent/src/core/extensions/types.ts:687-691,716-725` and
+`packages/coding-agent/src/core/extensions/runner.ts:984-1013`; Go evidence is
+`internal/agent/loop.go` and
+`TestRunAppliesBeforeAgentStartHookOnce` /
 `TestRunAppliesContextHookBeforeEveryProviderCall`. Full gates pass on the
 context-hooks worktree. This is hook plumbing only; a dynamic TypeScript
-extension loader and extension command/renderer registries remain open.
+extension loader, richer prompt/image event fields, and extension
+command/renderer registries remain open.
 
 The provider, read, CLI error-boundary, fixed-capacity, canonical identity, and
 queue slices are now implemented and locally verified. Work in this order:
