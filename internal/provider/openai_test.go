@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -103,6 +104,24 @@ func TestGitHubCopilotCatalogFiltersUnavailableModels(t *testing.T) {
 	client.ProviderName = "github-copilot"
 	models, err := client.ListModels(context.Background())
 	if err != nil || len(models) != 1 || models[0].ID != "available" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
+func TestCloudflareAIGatewayListsConfiguredModelCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/account/gateway/models" || r.Header.Get("cf-aig-authorization") != "Bearer gateway-key" {
+			t.Fatalf("path=%q auth=%q", r.URL.Path, r.Header.Get("cf-aig-authorization"))
+		}
+		_, _ = io.WriteString(w, `{"data":[{"id":"@cf/meta/llama"},{"id":"@cf/mistral"}]}`)
+	}))
+	defer server.Close()
+
+	provider := NewOpenAICompletions(server.URL+"/v1/account/gateway", "", "model")
+	provider.ProviderName = "cloudflare-ai-gateway"
+	provider.Headers = map[string]string{"cf-aig-authorization": "Bearer gateway-key"}
+	models, err := provider.ListModels(context.Background())
+	if err != nil || len(models) != 2 || models[0].Provider != "cloudflare-ai-gateway" || models[1].ID != "@cf/mistral" {
 		t.Fatalf("models=%#v err=%v", models, err)
 	}
 }
