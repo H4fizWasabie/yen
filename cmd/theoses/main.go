@@ -310,19 +310,90 @@ func handleInteractiveTree(input string, reader *bufio.Reader, rawInput bool, cu
 	if strings.TrimSpace(input) != "/tree" {
 		return false, nil
 	}
-	selected, err := tui.SelectTree(reader, stdout, "Select tree entry", current.Tree(), rawInput)
-	if err != nil || selected == "" {
+	return runTreeSelector(reader, rawInput, current, stdout)
+}
+
+// runTreeSelector shows the tree selector and, once a non-leaf entry is
+// chosen, walks the oracle's summarize-before-navigate prompt loop
+// (packages/coding-agent/src/modes/interactive/interactive-mode.ts:4953-5031):
+// cancelling the branch-summary choice re-shows the tree selector, and
+// cancelling the custom-instructions prompt loops back to the summary
+// choice instead of the tree selector. This slice implements only the
+// prompt/navigation flow, not actual LLM-generated branch summary content:
+// the chosen summary mode is recorded in the status message and not yet
+// persisted or used to summarize the abandoned branch. It also does not
+// preserve the previously highlighted entry when re-showing the tree
+// selector after a cancelled summary choice, unlike the oracle's
+// initialSelectedId.
+func runTreeSelector(reader *bufio.Reader, rawInput bool, current *session.Session, stdout io.Writer) (bool, error) {
+	for {
+		selected, err := tui.SelectTree(reader, stdout, "Select tree entry", current.Tree(), rawInput)
+		if err != nil || selected == "" {
+			return true, err
+		}
+		if selected == current.LeafID() {
+			_, err = fmt.Fprintln(stdout, "Already at this point")
+			return true, err
+		}
+
+		summaryChoice, rescanTree, err := chooseBranchSummary(reader, rawInput, stdout)
+		if err != nil {
+			return true, err
+		}
+		if rescanTree {
+			continue
+		}
+
+		if err := current.Branch(selected); err != nil {
+			return true, err
+		}
+		status := fmt.Sprintf("Branched from: %s", selected)
+		if summaryChoice != "No summary" {
+			status += " (summary requested; generation not yet implemented)"
+		}
+		_, err = fmt.Fprintln(stdout, status)
 		return true, err
 	}
-	if selected == current.LeafID() {
-		_, err = fmt.Fprintln(stdout, "Already at this point")
-		return true, err
+}
+
+// chooseBranchSummary presents the oracle's "Summarize branch?" choice
+// (interactive-mode.ts:4986-4990) and, for "Summarize with custom prompt",
+// its follow-up instructions prompt (interactive-mode.ts:5000-5006).
+// Escaping the choice returns rescanTree=true; "q" at the instructions
+// prompt matches this codebase's existing extension UI text-input
+// cancellation convention (internal/tui/ui.go's "input"/"editor" handling)
+// and loops back to the summary choice.
+func chooseBranchSummary(reader *bufio.Reader, rawInput bool, stdout io.Writer) (choice string, rescanTree bool, err error) {
+	options := []string{"No summary", "Summarize", "Summarize with custom prompt"}
+	selectFn := tui.Select
+	if rawInput {
+		selectFn = tui.SelectRaw
 	}
-	if err := current.Branch(selected); err != nil {
-		return true, err
+	for {
+		index, err := selectFn(reader, stdout, "Summarize branch?", options)
+		if err != nil {
+			return "", false, err
+		}
+		if index < 0 {
+			return "", true, nil
+		}
+		choice := options[index]
+		if choice != "Summarize with custom prompt" {
+			return choice, false, nil
+		}
+		if _, err := fmt.Fprint(stdout, "Custom summarization instructions\n> "); err != nil {
+			return "", false, err
+		}
+		line, err := reader.ReadString('\n')
+		if err != nil && len(line) == 0 {
+			return "", false, err
+		}
+		value := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+		if value == "q" {
+			continue
+		}
+		return choice, false, nil
 	}
-	_, err = fmt.Fprintf(stdout, "Branched from: %s\n", selected)
-	return true, err
 }
 
 func handleInteractiveSelector(input string, reader *bufio.Reader, rawInput bool, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
