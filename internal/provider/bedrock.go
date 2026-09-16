@@ -6,6 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -97,7 +102,7 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 		}
 		client = bedrockruntime.NewFromConfig(cfg)
 	}
-	in, err := bedrockInput(messages, toolNames, p.Model)
+	in, err := bedrockInput(ctx, messages, toolNames, p.Model)
 	if err != nil {
 		return agent.Response{}, err
 	}
@@ -264,7 +269,11 @@ func (p BedrockConverse) bearerToken() string {
 	return os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
 }
 
-func bedrockInput(messages []agent.Message, toolNames []string, model string) (*bedrockruntime.ConverseStreamInput, error) {
+func bedrockInput(ctx context.Context, messages []agent.Message, toolNames []string, model string) (*bedrockruntime.ConverseStreamInput, error) {
+	return bedrockInputWithImageClient(ctx, messages, toolNames, model, nil)
+}
+
+func bedrockInputWithImageClient(ctx context.Context, messages []agent.Message, toolNames []string, model string, imageClient *http.Client) (*bedrockruntime.ConverseStreamInput, error) {
 	input := &bedrockruntime.ConverseStreamInput{ModelId: aws.String(model)}
 	for _, message := range messages {
 		if message.Role == "system" {
@@ -277,7 +286,7 @@ func bedrockInput(messages []agent.Message, toolNames []string, model string) (*
 		if message.Role == "assistant" {
 			role = "assistant"
 		}
-		content, err := bedrockMessageContent(message, model)
+		content, err := bedrockMessageContent(ctx, message, model, imageClient)
 		if err != nil {
 			return nil, err
 		}
@@ -298,11 +307,11 @@ func bedrockInput(messages []agent.Message, toolNames []string, model string) (*
 	return input, nil
 }
 
-func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.ContentBlock, error) {
+func bedrockMessageContent(ctx context.Context, message agent.Message, model string, imageClient *http.Client) ([]bedrocktypes.ContentBlock, error) {
 	if message.ToolCallID != "" {
 		content := []bedrocktypes.ToolResultContentBlock{&bedrocktypes.ToolResultContentBlockMemberText{Value: nonEmpty(message.Content)}}
 		for _, image := range message.Images {
-			block, err := bedrockImage(image)
+			block, err := bedrockImage(ctx, image, imageClient)
 			if err != nil {
 				return nil, err
 			}
@@ -334,7 +343,7 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 		content = append(content, &bedrocktypes.ContentBlockMemberText{Value: message.Content})
 	}
 	for _, image := range message.Images {
-		block, err := bedrockImage(image)
+		block, err := bedrockImage(ctx, image, imageClient)
 		if err != nil {
 			return nil, err
 		}
@@ -348,23 +357,140 @@ func bedrockMessageContent(message agent.Message, model string) ([]bedrocktypes.
 	return content, nil
 }
 
-func bedrockImage(value string) (bedrocktypes.ImageBlock, error) {
-	mime, encoded, ok := parseDataImage(value)
+func bedrockImage(ctx context.Context, value string, imageClient *http.Client) (bedrocktypes.ImageBlock, error) {
+	mediaType, encoded, ok := parseDataImage(value)
 	if !ok {
-		return bedrocktypes.ImageBlock{}, errors.New("invalid Bedrock image: expected a data URL")
+		imageURL, err := url.Parse(value)
+		if err != nil || (imageURL.Scheme != "http" && imageURL.Scheme != "https") || imageURL.Host == "" {
+			return bedrocktypes.ImageBlock{}, errors.New("invalid Bedrock image: expected a data URL or HTTP(S) URL")
+		}
+		if imageClient == nil {
+			if err := validateBedrockImageURL(ctx, imageURL); err != nil {
+				return bedrocktypes.ImageBlock{}, err
+			}
+			imageClient = newBedrockImageHTTPClient()
+		} else {
+			imageClient = withBedrockImageRedirectValidation(imageClient)
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL.String(), nil)
+		if err != nil {
+			return bedrocktypes.ImageBlock{}, fmt.Errorf("prepare Bedrock image fetch: %w", err)
+		}
+		response, err := imageClient.Do(request)
+		if err != nil {
+			return bedrocktypes.ImageBlock{}, fmt.Errorf("fetch Bedrock image: %w", err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return bedrocktypes.ImageBlock{}, fmt.Errorf("fetch Bedrock image: HTTP %s", response.Status)
+		}
+		if response.ContentLength > maxBedrockImageBytes {
+			return bedrocktypes.ImageBlock{}, errors.New("Bedrock image exceeds 10 MiB")
+		}
+		data, err := io.ReadAll(io.LimitReader(response.Body, maxBedrockImageBytes+1))
+		if err != nil {
+			return bedrocktypes.ImageBlock{}, fmt.Errorf("read Bedrock image: %w", err)
+		}
+		if int64(len(data)) > maxBedrockImageBytes {
+			return bedrocktypes.ImageBlock{}, errors.New("Bedrock image exceeds 10 MiB")
+		}
+		mimeType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+		if err != nil || !strings.HasPrefix(mimeType, "image/") {
+			return bedrocktypes.ImageBlock{}, errors.New("invalid Bedrock image: HTTP(S) source must have an image content type")
+		}
+		mediaType = mimeType
+		encoded = base64.StdEncoding.EncodeToString(data)
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return bedrocktypes.ImageBlock{}, fmt.Errorf("invalid Bedrock image data: %w", err)
 	}
-	format := bedrocktypes.ImageFormat(strings.TrimPrefix(mime, "image/"))
+	format := bedrocktypes.ImageFormat(strings.TrimPrefix(mediaType, "image/"))
 	if format == bedrocktypes.ImageFormat("jpg") {
 		format = bedrocktypes.ImageFormatJpeg
 	}
 	if format != bedrocktypes.ImageFormatPng && format != bedrocktypes.ImageFormatJpeg && format != bedrocktypes.ImageFormatGif && format != bedrocktypes.ImageFormatWebp {
-		return bedrocktypes.ImageBlock{}, fmt.Errorf("unsupported Bedrock image type %q", mime)
+		return bedrocktypes.ImageBlock{}, fmt.Errorf("unsupported Bedrock image type %q", mediaType)
 	}
 	return bedrocktypes.ImageBlock{Format: format, Source: &bedrocktypes.ImageSourceMemberBytes{Value: data}}, nil
+}
+
+const maxBedrockImageBytes = 10 << 20
+
+func withBedrockImageRedirectValidation(client *http.Client) *http.Client {
+	clone := *client
+	previous := client.CheckRedirect
+	clone.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+		if err := validateBedrockImageURL(request.Context(), request.URL); err != nil {
+			return err
+		}
+		if previous != nil {
+			return previous(request, via)
+		}
+		return nil
+	}
+	return &clone
+}
+
+func newBedrockImageHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy: nil,
+			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				return dialBedrockImage(ctx, network, address)
+			},
+		},
+		CheckRedirect: func(request *http.Request, _ []*http.Request) error {
+			return validateBedrockImageURL(request.Context(), request.URL)
+		},
+	}
+}
+
+func validateBedrockImageURL(ctx context.Context, imageURL *url.URL) error {
+	if imageURL == nil || imageURL.Hostname() == "" {
+		return errors.New("invalid Bedrock image URL host")
+	}
+	if _, err := safeBedrockImageIPs(ctx, imageURL.Hostname()); err != nil {
+		return fmt.Errorf("unsafe Bedrock image URL: %w", err)
+	}
+	return nil
+}
+
+func dialBedrockImage(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Bedrock image address: %w", err)
+	}
+	ips, err := safeBedrockImageIPs(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	dialer := net.Dialer{}
+	var lastErr error
+	for _, ip := range ips {
+		connection, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if dialErr == nil {
+			return connection, nil
+		}
+		lastErr = dialErr
+	}
+	return nil, lastErr
+}
+
+func safeBedrockImageIPs(ctx context.Context, host string) ([]net.IP, error) {
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("resolve %q: no addresses", host)
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() || ip.IsMulticast() {
+			return nil, fmt.Errorf("address %s is private or reserved", ip)
+		}
+	}
+	return ips, nil
 }
 
 func nonEmpty(value string) string {
