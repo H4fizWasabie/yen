@@ -16,6 +16,17 @@ Bedrock auth UI are implemented, and Cloudflare native protocol paths are
 implemented. Their remaining open item is credential-dependent live provider
 acceptance only.
 
+The terminal viewport increment is now closed for the dependency-free screen
+model: real terminal writers provide their current width and height, long
+lines wrap, scrollback is trimmed to the available rows, and title/status,
+extension status, widgets, and input remain in the rendered frame. Non-terminal
+scripted output keeps its previous unbounded behavior. Oracle authority is
+`packages/tui/src/tui-main-screen.ts:182-250` and
+`packages/tui/src/tui.ts:23-29`. Go evidence is `internal/tui/tui.go`,
+`internal/tui/terminal_size_linux.go`, and
+`TestScreenRenderAtKeepsViewportAndRegions`. Native component-specific layout,
+interactive text editing, and live terminal acceptance remain open.
+
 ## Checkpoint update: 2026-09-16
 
 The first interactive CLI TUI increment is now closed: interactive stdin is
