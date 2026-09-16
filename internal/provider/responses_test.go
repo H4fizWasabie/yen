@@ -118,6 +118,9 @@ func TestOpenAICodexWebSocketStreamsResponseCreate(t *testing.T) {
 		if r.Header.Get("OpenAI-Beta") != "responses_websockets=2026-02-06" {
 			t.Fatalf("beta=%q", r.Header.Get("OpenAI-Beta"))
 		}
+		if r.Header.Get("session-id") == "" || r.Header.Get("x-client-request-id") == "" {
+			t.Fatalf("session-id=%q request-id=%q", r.Header.Get("session-id"), r.Header.Get("x-client-request-id"))
+		}
 		for _, event := range []string{
 			`{"type":"response.output_text.delta","delta":"hello"}`,
 			`{"type":"response.completed","response":{"id":"ws-1","model":"gpt-5","status":"completed"}}`,

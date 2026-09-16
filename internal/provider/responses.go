@@ -434,6 +434,12 @@ func openCodexWebSocketResponse(ctx context.Context, p OpenAIResponses, body []b
 	headers.Del("OpenAI-Beta")
 	headers.Set("OpenAI-Beta", "responses_websockets=2026-02-06")
 	headers.Set("Authorization", "Bearer "+p.APIKey)
+	requestID := headers.Get("x-client-request-id")
+	if requestID == "" {
+		requestID = fmt.Sprintf("yen-%d", time.Now().UnixNano())
+	}
+	headers.Set("x-client-request-id", requestID)
+	headers.Set("session-id", requestID)
 	connection, _, err := websocket.Dial(ctx, endpoint.String(), &websocket.DialOptions{HTTPHeader: headers})
 	if err != nil {
 		return nil, err
