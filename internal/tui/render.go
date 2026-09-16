@@ -26,8 +26,11 @@ func RenderMessage(registry *extensions.Registry, message session.Message) (stri
 	if text, ok := value.(string); ok {
 		return text, true
 	}
-	if component, ok := value.(map[string]any); ok && component["type"] == "text" {
-		if text, ok := component["text"].(string); ok {
+	if component, ok := value.(map[string]any); ok {
+		text, textOK := component["text"].(string)
+		_, paddingXOK := component["paddingX"].(float64)
+		_, paddingYOK := component["paddingY"].(float64)
+		if textOK && (component["type"] == "text" || paddingXOK && paddingYOK) {
 			return text, true
 		}
 	}
