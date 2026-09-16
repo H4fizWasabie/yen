@@ -7,6 +7,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/bedrock v1.40.0
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.40.0
+	github.com/coder/websocket v1.8.13
+	github.com/klauspost/compress v1.17.11
 	golang.org/x/text v0.14.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.33.1

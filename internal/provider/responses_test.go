@@ -1,8 +1,10 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,6 +13,8 @@ import (
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/auth"
+	"github.com/coder/websocket"
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestOpenAIResponsesStreamsTextAndFunctionCall(t *testing.T) {
@@ -46,6 +50,124 @@ func TestOpenAIResponsesStreamsTextAndFunctionCall(t *testing.T) {
 	}
 	if _, ok := request["tools"]; !ok {
 		t.Fatalf("tools missing: %#v", request)
+	}
+}
+
+func TestOpenAICodexSSECompressesRequestAndDecodesResponse(t *testing.T) {
+	var request map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Encoding") != "zstd" {
+			t.Fatalf("content-encoding=%q", r.Header.Get("Content-Encoding"))
+		}
+		compressed, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoder, err := zstd.NewReader(bytes.NewReader(compressed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decoder.DecodeAll(compressed, nil)
+		decoder.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(decoded, &request); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Encoding", "zstd")
+		encoder, err := zstd.NewWriter(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := encoder.EncodeAll([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"codex-1\",\"model\":\"gpt-5\",\"status\":\"completed\"}}\n\n"), nil)
+		encoder.Close()
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "codex-token", "gpt-5")
+	provider.ProviderName = "openai-codex"
+	result, err := provider.Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResponseID != "codex-1" || request["store"] != false {
+		t.Fatalf("result=%#v request=%#v", result, request)
+	}
+}
+
+func TestOpenAICodexWebSocketStreamsResponseCreate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "done")
+		typ, body, err := connection.Read(r.Context())
+		if err != nil || typ != websocket.MessageText {
+			t.Fatalf("read type=%v err=%v", typ, err)
+		}
+		var request map[string]any
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		if request["type"] != "response.create" || request["model"] != "gpt-5" {
+			t.Fatalf("request=%#v", request)
+		}
+		if r.Header.Get("OpenAI-Beta") != "responses_websockets=2026-02-06" {
+			t.Fatalf("beta=%q", r.Header.Get("OpenAI-Beta"))
+		}
+		if r.Header.Get("session-id") == "" || r.Header.Get("x-client-request-id") == "" {
+			t.Fatalf("session-id=%q request-id=%q", r.Header.Get("session-id"), r.Header.Get("x-client-request-id"))
+		}
+		for _, event := range []string{
+			`{"type":"response.output_text.delta","delta":"hello"}`,
+			`{"type":"response.completed","response":{"id":"ws-1","model":"gpt-5","status":"completed"}}`,
+		} {
+			if err := connection.Write(r.Context(), websocket.MessageText, []byte(event)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "codex-token", "gpt-5")
+	provider.ProviderName = "openai-codex"
+	provider.Transport = "websocket"
+	provider.Headers = map[string]string{"chatgpt-account-id": "acct-1"}
+	result, err := provider.Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "hello" || result.ResponseID != "ws-1" {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestOpenAICodexFallsBackToSSEWhenWebSocketHandshakeFails(t *testing.T) {
+	var websocketAttempts, sseAttempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Upgrade") == "websocket" {
+			websocketAttempts++
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		sseAttempts++
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"sse-fallback\",\"status\":\"completed\"}}\n\n")
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "codex-token", "gpt-5")
+	provider.ProviderName = "openai-codex"
+	provider.Transport = "websocket"
+	result, err := provider.Next(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResponseID != "sse-fallback" || websocketAttempts != 1 || sseAttempts != 1 {
+		t.Fatalf("result=%#v websocket=%d sse=%d", result, websocketAttempts, sseAttempts)
 	}
 }
 

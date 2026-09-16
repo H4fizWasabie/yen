@@ -475,7 +475,7 @@ implementations and committed tests:
 | Google Vertex credentials and routing | `packages/ai/src/providers/google-vertex.ts`, `packages/ai/src/api/google-vertex.ts` | `9e0ba7b` adds Yen-only Vertex project/location/base URL configuration and native Gemini-compatible streaming; `5bb3475` adds a Yen-owned bearer-token path without an API-key query; `internal/provider/config_test.go` verifies both endpoint forms; installer forwarding is covered by shell syntax validation | partial; full ADC/service-account credential discovery and Vertex catalog remain open |
 | Amazon Bedrock Converse streaming | `packages/ai/src/providers/amazon-bedrock.ts`, `packages/ai/src/api/bedrock-converse-stream.ts`, `packages/ai/src/model-resolver.ts:15`, `packages/ai/src/env-api-keys.ts:167-182` | `internal/provider/bedrock.go` uses the pinned AWS SDK credential chain, profile/region/base-endpoint settings, bearer-token environment support from the SDK, ConverseStream text/tool/reasoning/usage events, cache read/write token accounting, replayable tool calls/results, PNG/JPEG data-image blocks, Claude reasoning signatures, opaque redacted-reasoning replay, and the AWS `ListFoundationModels` catalog; `bedrock_test.go` covers construction, replay, images, usage, catalog mapping, and provider selection | partial; non-data image sources, static catalog metadata/auth UI, and live AWS acceptance remain open |
 | GitHub Copilot headers | `packages/ai/src/providers/github-copilot.ts`, `packages/ai/src/api/github-copilot-headers.ts`, `packages/ai/src/api/openai-completions.ts:730-740`, `packages/ai/src/auth/oauth/github-copilot.ts:22-30,208-325,342-359,430-460` | `d4ce91b` adds Yen-owned `YEN_COPILOT_GITHUB_TOKEN`, OpenAI-compatible endpoint configuration, `X-Initiator`, `Openai-Intent`, and image-aware `Copilot-Vision-Request`; merged `2ef4b82` adds default and validated enterprise-domain device OAuth, `/login github-copilot`, token refresh, persisted enterprise/model metadata, and catalog filtering; `internal/auth/copilot_test.go` and provider configuration tests cover the flow and headers | partial; model enablement and Responses/Anthropic protocol variants remain open |
-| OpenAI Codex Responses routing | `packages/ai/src/providers/openai-codex.ts`, `packages/ai/src/api/openai-codex-responses.ts:220-240,1541-1595`, `packages/ai/src/auth/oauth/openai-codex.ts:26-35,175-239,511-539` | `5c6d153` adds Yen-owned Codex token/base URL configuration, JWT account-claim extraction, `/codex/responses` routing, and account/experimental headers; merged `7e8b00c` adds headless device-code login and `/login openai-codex`; `internal/auth/codex_test.go` covers polling and authorization-code exchange; PR #126 adds expired-token refresh and persistence coverage | partial; WebSocket transport, compression, full model catalog, browser OAuth callback, and live acceptance remain open |
+| OpenAI Codex Responses routing | `packages/ai/src/providers/openai-codex.ts`, `packages/ai/src/api/openai-codex-responses.ts:56-59,220-240,1417-1502,1575-1610`, `packages/ai/src/auth/oauth/openai-codex.ts:26-35,175-239,511-539` | `5c6d153` adds Yen-owned Codex token/base URL configuration, JWT account-claim extraction, `/codex/responses` routing, and account/experimental headers; merged `7e8b00c` adds headless device-code login and `/login openai-codex`; PR #126 adds expired-token refresh and persistence coverage; the Codex client now sends zstd-compressed SSE requests, decodes zstd responses, uses the WebSocket `response.create` transport, and falls back to SSE after a failed handshake; `internal/provider/responses_test.go` covers the wire contracts | partial; continuation caching, full model catalog, browser OAuth callback, and live acceptance remain open |
 | Episodic migration | `a513983` | enriched legacy SQLite rows preserve optional workspace, conversation, channel, and turn metadata; broader historical migration policy remains explicit-only |
 
 ## Checkpoint update: 2026-09-16
@@ -486,6 +486,15 @@ stored credentials, and persists account model availability. Go evidence is
 `internal/auth/copilot.go`, `internal/auth/copilot_test.go`, and the provider
 configuration tests. Model enablement and alternate Copilot protocols remain
 open.
+
+Codex Responses now has the pinned oracle's compressed SSE request/response
+path and WebSocket `response.create` path, with a failed-handshake fallback to
+SSE. Go evidence is `internal/provider/responses.go` and
+`TestOpenAICodexSSECompressesRequestAndDecodesResponse`,
+`TestOpenAICodexWebSocketStreamsResponseCreate`, and
+`TestOpenAICodexFallsBackToSSEWhenWebSocketHandshakeFails`. Continuation
+caching, static catalog metadata, browser OAuth callback, and live Codex
+acceptance remain open.
 
 The current verified code gate is 357 tests, race tests, vet, and diff checks.
 The 2026-09-16 side-by-side VPS read-back places the active pilot release at

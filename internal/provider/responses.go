@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/coder/websocket"
+	"github.com/klauspost/compress/zstd"
 )
 
 // OpenAIResponses implements the native OpenAI Responses streaming protocol.
@@ -28,6 +31,9 @@ type OpenAIResponses struct {
 	ThinkingLevel string
 	Client        *http.Client
 	MaxRetries    int
+	// Transport selects the Codex transport. Empty means the normal HTTP path;
+	// "websocket" enables the Codex WebSocket endpoint.
+	Transport string
 }
 
 func NewOpenAIResponses(baseURL, apiKey, model string) OpenAIResponses {
@@ -117,14 +123,37 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		client = http.DefaultClient
 	}
 	endpoint := p.BaseURL + "/responses"
+	requestBody := body
+	contentEncoding := ""
+	if p.ProviderName == "openai-codex" {
+		if compressed, compressErr := compressCodexBody(body); compressErr == nil {
+			requestBody = compressed
+			contentEncoding = "zstd"
+		}
+	}
 	var response *http.Response
+	if p.ProviderName == "openai-codex" && p.Transport == "websocket" {
+		response, err = openCodexWebSocketResponse(ctx, p, body)
+		if err == nil {
+			defer response.Body.Close()
+		} else {
+			// A failed handshake is safe to retry over the documented SSE path.
+			response = nil
+		}
+	}
 	for attempt := 0; ; attempt++ {
-		request, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if response != nil {
+			break
+		}
+		request, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 		if requestErr != nil {
 			return agent.Response{}, requestErr
 		}
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept", "text/event-stream")
+		if contentEncoding != "" {
+			request.Header.Set("Content-Encoding", contentEncoding)
+		}
 		if p.APIKeyHeader != "" {
 			request.Header.Set(p.APIKeyHeader, p.APIKey)
 		} else {
@@ -156,6 +185,11 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		}
 	}
 	defer response.Body.Close()
+	responseBody, closeResponseBody, err := decodeCodexResponseBody(response)
+	if err != nil {
+		return agent.Response{}, err
+	}
+	defer closeResponseBody()
 	provider := p.name()
 	result := agent.Response{Provider: provider, Model: p.Model}
 	partial := agent.Message{Role: "assistant", Provider: provider, Model: p.Model}
@@ -164,7 +198,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 	if emit != nil {
 		emit(agent.StreamEvent{Type: "start", Partial: partial})
 	}
-	scanner := bufio.NewScanner(response.Body)
+	scanner := bufio.NewScanner(responseBody)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "data:") {
@@ -356,6 +390,109 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		emit(agent.StreamEvent{Type: "done", Partial: partial})
 	}
 	return result, nil
+}
+
+func compressCodexBody(body []byte) ([]byte, error) {
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(3)))
+	if err != nil {
+		return nil, err
+	}
+	defer encoder.Close()
+	return encoder.EncodeAll(body, nil), nil
+}
+
+func decodeCodexResponseBody(response *http.Response) (io.Reader, func(), error) {
+	if !strings.EqualFold(response.Header.Get("Content-Encoding"), "zstd") {
+		return response.Body, func() {}, nil
+	}
+	decoder, err := zstd.NewReader(response.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode Codex zstd response: %w", err)
+	}
+	return decoder, func() { decoder.Close() }, nil
+}
+
+func openCodexWebSocketResponse(ctx context.Context, p OpenAIResponses, body []byte) (*http.Response, error) {
+	endpoint, err := url.Parse(p.BaseURL + "/responses")
+	if err != nil {
+		return nil, err
+	}
+	switch endpoint.Scheme {
+	case "https":
+		endpoint.Scheme = "wss"
+	case "http":
+		endpoint.Scheme = "ws"
+	default:
+		return nil, fmt.Errorf("unsupported Codex WebSocket URL scheme %q", endpoint.Scheme)
+	}
+	headers := make(http.Header)
+	for name, value := range p.Headers {
+		headers.Set(name, value)
+	}
+	headers.Del("Accept")
+	headers.Del("Content-Type")
+	headers.Del("OpenAI-Beta")
+	headers.Set("OpenAI-Beta", "responses_websockets=2026-02-06")
+	headers.Set("Authorization", "Bearer "+p.APIKey)
+	requestID := headers.Get("x-client-request-id")
+	if requestID == "" {
+		requestID = fmt.Sprintf("yen-%d", time.Now().UnixNano())
+	}
+	headers.Set("x-client-request-id", requestID)
+	headers.Set("session-id", requestID)
+	connection, _, err := websocket.Dial(ctx, endpoint.String(), &websocket.DialOptions{HTTPHeader: headers})
+	if err != nil {
+		return nil, err
+	}
+
+	request := map[string]any{"type": "response.create"}
+	var fields map[string]any
+	if err := json.Unmarshal(body, &fields); err != nil {
+		connection.Close(websocket.StatusInternalError, "invalid request")
+		return nil, err
+	}
+	for key, value := range fields {
+		request[key] = value
+	}
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		connection.Close(websocket.StatusInternalError, "invalid request")
+		return nil, err
+	}
+	if err := connection.Write(ctx, websocket.MessageText, encoded); err != nil {
+		connection.Close(websocket.StatusInternalError, "request failed")
+		return nil, err
+	}
+
+	reader, writer := io.Pipe()
+	go func() {
+		defer connection.Close(websocket.StatusNormalClosure, "done")
+		for {
+			typ, message, readErr := connection.Read(ctx)
+			if readErr != nil {
+				_ = writer.CloseWithError(readErr)
+				return
+			}
+			if typ != websocket.MessageText && typ != websocket.MessageBinary {
+				continue
+			}
+			var event struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(message, &event) != nil {
+				_ = writer.CloseWithError(errors.New("invalid Codex WebSocket event"))
+				return
+			}
+			if _, writeErr := fmt.Fprintf(writer, "data: %s\n\n", message); writeErr != nil {
+				return
+			}
+			if event.Type == "response.completed" || event.Type == "response.done" || event.Type == "response.incomplete" || event.Type == "response.failed" {
+				_ = writer.Close()
+				return
+			}
+		}
+	}()
+	return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: reader}, nil
 }
 
 func (p OpenAIResponses) name() string {
