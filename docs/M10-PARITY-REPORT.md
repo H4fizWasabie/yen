@@ -13,6 +13,15 @@ deferred below.
 
 ## Checkpoint update: 2026-09-16
 
+The first interactive CLI TUI increment is now closed: interactive stdin is
+rendered through a dependency-free ANSI screen with scrollback, status, and
+input regions, while `-p` output remains unchanged. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2796-2928`.
+Go evidence is `internal/tui/tui.go`, `cmd/theoses/main.go`, and
+`TestInteractiveRunRendersScrollbackStatusAndInput`. Navigable selectors,
+streaming status/progress, extension UI component rendering, and remaining
+slash commands remain open.
+
 The agent loop now exposes pre-loop and per-provider context interception
 boundaries. Hooks receive cloned message context and may replace it; tool turns
 therefore apply the per-call hook independently to each LLM call without

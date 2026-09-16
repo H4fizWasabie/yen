@@ -27,6 +27,22 @@ func TestRunRejectsMissingPrompt(t *testing.T) {
 	}
 }
 
+func TestInteractiveRunRendersScrollbackStatusAndInput(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("YEN_SESSION_FILE", filepath.Join(dir, "session.jsonl"))
+	t.Setenv("YEN_DATA_DIR", dir)
+	var stdout, stderr bytes.Buffer
+	if code := runWithInput([]string{"-i"}, strings.NewReader("/session\n/quit\n"), &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{"\x1b[2J\x1b[H", "Scrollback", "Input", "Session Info", "> "} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q: %q", want, output)
+		}
+	}
+}
+
 func TestRunMigrationIsExplicit(t *testing.T) {
 	dir := t.TempDir()
 	source, target := filepath.Join(dir, "source"), filepath.Join(dir, "target")
