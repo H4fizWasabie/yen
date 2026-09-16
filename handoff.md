@@ -617,6 +617,11 @@ metadata and live Vertex acceptance remain open.
 
 ## Latest operations evidence
 
+Remote main read-back confirms Bedrock HTTP(S) image sources and response
+metadata are already closed by commits `11a3b4b` (#137) and `92d1d53` (#141).
+The remaining Bedrock gaps are static catalog metadata/auth UI and live AWS
+acceptance; do not duplicate those two merged changes.
+
 The current VPS data was backed up on 2026-09-15 to
 `/var/backups/yen-20260915T093942Z.tgz`. Archive listing validation succeeded;
 the archive is mode `600`, and all Yen and Theoses2 units plus Yen health
