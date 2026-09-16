@@ -397,13 +397,7 @@ func nativeResponsesConfigured(providerID, model string) OpenAIResponses {
 }
 
 func cloudflareConfigured(providerID, model string) OpenAICompletions {
-	baseURL := os.Getenv("YEN_CLOUDFLARE_BASE_URL")
-	if baseURL == "" {
-		baseURL = providerDefaults[providerID]
-	}
-	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_ACCOUNT_ID}", os.Getenv("YEN_CLOUDFLARE_ACCOUNT_ID"))
-	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_GATEWAY_ID}", os.Getenv("YEN_CLOUDFLARE_GATEWAY_ID"))
-	key := os.Getenv("YEN_CLOUDFLARE_API_KEY")
+	baseURL, key := cloudflareConfiguration(providerID)
 	client := NewOpenAICompletions(baseURL, key, model)
 	client.ProviderName = providerID
 	if providerID == "cloudflare-ai-gateway" {
@@ -415,13 +409,7 @@ func cloudflareConfigured(providerID, model string) OpenAICompletions {
 }
 
 func cloudflareGatewayConfigured(model string) agent.Provider {
-	baseURL := os.Getenv("YEN_CLOUDFLARE_BASE_URL")
-	if baseURL == "" {
-		baseURL = providerDefaults["cloudflare-ai-gateway"]
-	}
-	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_ACCOUNT_ID}", os.Getenv("YEN_CLOUDFLARE_ACCOUNT_ID"))
-	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_GATEWAY_ID}", os.Getenv("YEN_CLOUDFLARE_GATEWAY_ID"))
-	key := os.Getenv("YEN_CLOUDFLARE_API_KEY")
+	baseURL, key := cloudflareConfiguration("cloudflare-ai-gateway")
 	protocol := strings.ToLower(strings.TrimSpace(os.Getenv("YEN_CLOUDFLARE_API")))
 	switch protocol {
 	case "openai-responses":
@@ -439,6 +427,41 @@ func cloudflareGatewayConfigured(model string) agent.Provider {
 	default:
 		return cloudflareConfigured("cloudflare-ai-gateway", model)
 	}
+}
+
+func cloudflareConfiguration(providerID string) (string, string) {
+	credential := storedCloudflareCredential(providerID)
+	baseURL := os.Getenv("YEN_CLOUDFLARE_BASE_URL")
+	if baseURL == "" {
+		baseURL = providerDefaults[providerID]
+	}
+	accountID := os.Getenv("YEN_CLOUDFLARE_ACCOUNT_ID")
+	if accountID == "" {
+		accountID = credential.Env["CLOUDFLARE_ACCOUNT_ID"]
+	}
+	gatewayID := os.Getenv("YEN_CLOUDFLARE_GATEWAY_ID")
+	if gatewayID == "" {
+		gatewayID = credential.Env["CLOUDFLARE_GATEWAY_ID"]
+	}
+	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_ACCOUNT_ID}", accountID)
+	baseURL = strings.ReplaceAll(baseURL, "{CLOUDFLARE_GATEWAY_ID}", gatewayID)
+	key := os.Getenv("YEN_CLOUDFLARE_API_KEY")
+	if key == "" {
+		key = credential.Key
+	}
+	return baseURL, key
+}
+
+func storedCloudflareCredential(providerID string) auth.Credential {
+	path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+	if path == "" {
+		return auth.Credential{}
+	}
+	credential, ok, err := auth.Open(path).Read(providerID)
+	if err != nil || !ok {
+		return auth.Credential{}
+	}
+	return credential
 }
 
 func NewFromEnv() OpenAICompletions {

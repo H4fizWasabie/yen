@@ -669,6 +669,10 @@ Responses path accepts header-only Gateway authorization, and
 Anthropic path. Static generated metadata and live native image/API acceptance
 remain open.
 
+Cloudflare configuration also reads stored API-key credentials and their
+account/gateway environment when explicit Yen variables are absent, covered by
+`TestCloudflareUsesStoredCredentialEnvironment`.
+
 ## Latest operations evidence
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response

@@ -75,6 +75,30 @@ func TestCloudflareAIGatewaySelectsConfiguredProtocol(t *testing.T) {
 	}
 }
 
+func TestCloudflareUsesStoredCredentialEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if _, err := auth.Open(path).Modify("cloudflare-ai-gateway", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{
+			Type: "api_key", Key: "stored-cloudflare",
+			Env: map[string]string{"CLOUDFLARE_ACCOUNT_ID": "stored-account", "CLOUDFLARE_GATEWAY_ID": "stored-gateway"},
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("YEN_CLOUDFLARE_API_KEY", "")
+	t.Setenv("YEN_CLOUDFLARE_ACCOUNT_ID", "")
+	t.Setenv("YEN_CLOUDFLARE_GATEWAY_ID", "")
+	configured, err := NewConfigured("cloudflare-ai-gateway", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(OpenAICompletions)
+	if !ok || client.BaseURL != "https://gateway.ai.cloudflare.com/v1/stored-account/stored-gateway/compat" || client.Headers["cf-aig-authorization"] != "Bearer stored-cloudflare" {
+		t.Fatalf("configured=%#v", configured)
+	}
+}
+
 func TestGitHubCopilotUsesStoredYenCredential(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	if _, err := auth.Open(path).Modify("github-copilot", func(*auth.Credential) (*auth.Credential, error) {
