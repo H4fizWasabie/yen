@@ -101,6 +101,11 @@ type ToolResult struct {
 type ToolHooks struct {
 	Before func(context.Context, Message, ToolCall) (block bool, reason string, err error)
 	After  func(context.Context, Message, ToolCall, ToolResult, bool) (ToolResult, bool, error)
+
+	// ProviderBefore can replace the messages and tool names sent to a provider.
+	ProviderBefore func(context.Context, []Message, []string) ([]Message, error)
+	// ProviderAfter runs after a provider response is received.
+	ProviderAfter func(context.Context, Response) error
 }
 
 type RichTool interface {
@@ -276,29 +281,38 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		emitEvent(onEvent, Event{Type: "message_start", Message: &Message{Role: "assistant"}})
 		var response Response
 		var err error
-		if streaming, ok := provider.(StreamingProviderWithEvents); ok {
-			response, err = streaming.NextWithEvents(ctx, result.Messages, toolNames, func(event StreamEvent) {
-				if event.Type == "text_delta" && event.Delta != "" {
-					result.Events = append(result.Events, "message_update")
-					if onUpdate != nil {
-						onUpdate(event.Delta)
+		providerMessages := result.Messages
+		if hooks != nil && hooks.ProviderBefore != nil {
+			providerMessages, err = hooks.ProviderBefore(ctx, providerMessages, toolNames)
+		}
+		if err == nil {
+			if streaming, ok := provider.(StreamingProviderWithEvents); ok {
+				response, err = streaming.NextWithEvents(ctx, providerMessages, toolNames, func(event StreamEvent) {
+					if event.Type == "text_delta" && event.Delta != "" {
+						result.Events = append(result.Events, "message_update")
+						if onUpdate != nil {
+							onUpdate(event.Delta)
+						}
 					}
-				}
-				if onEvent != nil {
-					onEvent(Event{Type: "message_update", AssistantEvent: event.Type, Delta: event.Delta, Message: &event.Partial})
-				}
-			})
-		} else if streaming, ok := provider.(StreamingProvider); ok {
-			response, err = streaming.NextWithUpdates(ctx, result.Messages, toolNames, func(text string) {
-				if text != "" {
-					result.Events = append(result.Events, "message_update")
-					if onUpdate != nil {
-						onUpdate(text)
+					if onEvent != nil {
+						onEvent(Event{Type: "message_update", AssistantEvent: event.Type, Delta: event.Delta, Message: &event.Partial})
 					}
-				}
-			})
-		} else {
-			response, err = provider.Next(ctx, result.Messages, toolNames)
+				})
+			} else if streaming, ok := provider.(StreamingProvider); ok {
+				response, err = streaming.NextWithUpdates(ctx, providerMessages, toolNames, func(text string) {
+					if text != "" {
+						result.Events = append(result.Events, "message_update")
+						if onUpdate != nil {
+							onUpdate(text)
+						}
+					}
+				})
+			} else {
+				response, err = provider.Next(ctx, providerMessages, toolNames)
+			}
+		}
+		if err == nil && hooks != nil && hooks.ProviderAfter != nil {
+			err = hooks.ProviderAfter(ctx, response)
 		}
 		if err != nil {
 			stopReason := "error"

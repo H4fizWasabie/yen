@@ -350,6 +350,50 @@ func TestRunWithEventsIncludesProviderStreamPayload(t *testing.T) {
 	}
 }
 
+func TestRunProviderHooksCanReplaceRequestAndObserveResponse(t *testing.T) {
+	provider := &providerHookProvider{}
+	var gotMessages []Message
+	var gotTools []string
+	var observed Response
+	result, err := RunFromWithQueuesAndEventsAndImagesAndHooks(
+		context.Background(), provider, []Tool{providerHookTool{}}, nil, "prompt", nil, nil, nil, nil,
+		&ToolHooks{
+			ProviderBefore: func(_ context.Context, messages []Message, tools []string) ([]Message, error) {
+				gotMessages = messages
+				gotTools = tools
+				return []Message{{Role: "system", Content: "rewritten"}}, nil
+			},
+			ProviderAfter: func(_ context.Context, response Response) error {
+				observed = response
+				return nil
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || len(gotMessages) == 0 || gotMessages[0].Role != "user" || len(provider.messages) != 1 || provider.messages[0].Content != "rewritten" || len(gotTools) != 1 || gotTools[0] != "original" || observed.Text != "ok" || result.FinalText != "ok" {
+		t.Fatalf("provider calls=%d hookMessages=%#v providerMessages=%#v tools=%#v observed=%#v result=%#v", provider.calls, gotMessages, provider.messages, gotTools, observed, result)
+	}
+}
+
+type providerHookProvider struct {
+	calls    int
+	messages []Message
+}
+
+func (p *providerHookProvider) Next(_ context.Context, messages []Message, _ []string) (Response, error) {
+	p.calls++
+	p.messages = messages
+	return Response{Text: "ok", StopReason: "stop"}, nil
+}
+
+type providerHookTool struct{}
+
+func (providerHookTool) Name() string { return "original" }
+
+func (providerHookTool) Execute(context.Context, map[string]any) (string, error) { return "", nil }
+
 func TestRunWithEventsReportsLifecyclePayloads(t *testing.T) {
 	var events []Event
 	result, err := RunFromWithQueuesAndEvents(context.Background(), updatingProvider{}, nil, nil, "hello", nil, nil, func(event Event) {
