@@ -63,3 +63,54 @@ func TestSelectTreeRawUsesRawByteNavigation(t *testing.T) {
 		t.Fatalf("selected=%q err=%v", selected, err)
 	}
 }
+
+func TestSelectTreeRawFoldHidesDescendants(t *testing.T) {
+	root := "root"
+	child := "child"
+	entries := []session.TreeEntry{
+		{ID: root, Name: "root"},
+		{ID: child, ParentID: &root, Name: "child"},
+		{ID: "grandchild", ParentID: &child, Name: "grandchild"},
+	}
+	var out strings.Builder
+	// Left arrow folds the highlighted root, hiding its descendants, so a
+	// subsequent "j" (move down) has nothing else to select and Enter
+	// confirms root itself instead of a hidden descendant.
+	selected, err := SelectTree(bufio.NewReader(strings.NewReader("\x1b[Dj\r")), &out, "Tree", entries, true)
+	if err != nil || selected != root {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+	if !strings.Contains(out.String(), "⊞") {
+		t.Fatalf("expected fold indicator in rendered output: %q", out.String())
+	}
+}
+
+func TestSelectTreeRawUnfoldRestoresDescendants(t *testing.T) {
+	root := "root"
+	child := "child"
+	entries := []session.TreeEntry{
+		{ID: root, Name: "root"},
+		{ID: child, ParentID: &root, Name: "child"},
+	}
+	// Fold then unfold root, then move down onto the restored child and confirm.
+	selected, err := SelectTree(bufio.NewReader(strings.NewReader("\x1b[D\x1b[Cj\r")), &strings.Builder{}, "Tree", entries, true)
+	if err != nil || selected != child {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+}
+
+func TestSelectTreeLineBufferedFoldAndUnfold(t *testing.T) {
+	root := "root"
+	child := "child"
+	entries := []session.TreeEntry{
+		{ID: root, Name: "root"},
+		{ID: child, ParentID: &root, Name: "child"},
+	}
+	var out strings.Builder
+	// "f" folds root (line-mode approximation of ctrl+left), confirmed by
+	// the child no longer being reachable via "j".
+	selected, err := SelectTree(bufio.NewReader(strings.NewReader("f\nj\n\n")), &out, "Tree", entries, false)
+	if err != nil || selected != root {
+		t.Fatalf("selected=%q err=%v output=%q", selected, err, out.String())
+	}
+}
