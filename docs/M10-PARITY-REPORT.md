@@ -47,6 +47,15 @@ Go evidence is `cmd/theoses/main.go` and
 `TestInteractiveRemainingOracleCommandsAreHandled`; output is text-only where
 the oracle uses native image/UI components.
 
+The interactive CLI now consumes the real extension UI protocol through
+`LoadResult.SetUIRequester`: selectors, dialogs, input/editor requests, and
+status/widget/title/editor-text operations are handled by `internal/tui`.
+Oracle authority is `packages/coding-agent/src/modes/rpc/rpc-types.ts:229-283`
+and `packages/coding-agent/src/modes/rpc/rpc-mode.ts:90-179,201-273`.
+Go evidence is `internal/extensions/loader.go`, `cmd/theoses/main.go`,
+`internal/tui/ui.go`, and `TestHandleExtensionUISelectReturnsProtocolResponse`.
+Native rich component rendering remains open.
+
 The agent loop now exposes pre-loop and per-provider context interception
 boundaries. Hooks receive cloned message context and may replace it; tool turns
 therefore apply the per-call hook independently to each LLM call without

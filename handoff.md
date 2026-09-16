@@ -44,6 +44,17 @@ Go evidence is `cmd/theoses/main.go` and
 `TestInteractiveRemainingOracleCommandsAreHandled`. Native image/UI parity
 for the named components remains open.
 
+The extension UI increment is implemented in the interactive CLI. Startup
+loads the existing extension registry and installs `SetUIRequester`; the TUI
+handles the pinned select/confirm/input/editor and presentation request
+methods. Oracle authority is
+`packages/coding-agent/src/modes/rpc/rpc-types.ts:229-283` and
+`packages/coding-agent/src/modes/rpc/rpc-mode.ts:90-179,201-273`;
+Go evidence is `internal/extensions/loader.go`, `cmd/theoses/main.go`,
+`internal/tui/ui.go`, and
+`TestHandleExtensionUISelectReturnsProtocolResponse`. Native rich component
+rendering remains open.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:

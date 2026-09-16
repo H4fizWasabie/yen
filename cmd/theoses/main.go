@@ -20,6 +20,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/auth"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
@@ -97,6 +98,24 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if current, err := settings.Load(cwd); err == nil {
 		runner.ApplySettings(current)
 	}
+	var interactiveReader *bufio.Reader
+	agentDir, _ := os.UserConfigDir()
+	configured := []string(nil)
+	if current, err := settings.Load(cwd); err == nil {
+		configured = current.Extensions
+	}
+	operatorConfigured := strings.FieldsFunc(os.Getenv("YEN_EXTENSIONS"), func(r rune) bool { return r == os.PathListSeparator || r == ',' })
+	loaded, _ := extensions.DiscoverAndLoadWithOperatorPaths(cwd, filepath.Join(agentDir, "yen"), configured, operatorConfigured)
+	if loaded != nil {
+		defer loaded.Close()
+		runner.ExtensionRegistry = loaded.Registry
+		loaded.SetUIRequester(func(ctx context.Context, request map[string]any) (map[string]any, error) {
+			if interactiveReader == nil {
+				return nil, errors.New("interactive extension UI is unavailable")
+			}
+			return tui.HandleExtensionUI(ctx, request, interactiveReader, stdout)
+		})
+	}
 	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
 		return codingagent.NewToolsForSession(workspace, current)
 	}
@@ -143,7 +162,8 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		if err := screen.Render(stdout); err != nil {
 			return reportError(stderr, err)
 		}
-		reader := bufio.NewReader(stdin)
+		interactiveReader = bufio.NewReader(stdin)
+		reader := interactiveReader
 		for {
 			line, readErr := reader.ReadString('\n')
 			if readErr != nil && len(line) == 0 {
