@@ -32,6 +32,14 @@ Go evidence is `internal/tui/tui.go`, `cmd/theoses/main.go`, and
 component rendering, streaming status/progress, and remaining slash commands
 remain open.
 
+The status-rendering increment is now closed: streamed provider text redraws
+the TUI status region through the existing runtime update callback and returns
+to `Ready` after completion. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:6206-6295`.
+Go evidence is `cmd/theoses/main.go` and
+`TestInteractiveRunRendersProviderStatusUpdates`. Tool-specific progress and
+extension UI component rendering remain open.
+
 The agent loop now exposes pre-loop and per-provider context interception
 boundaries. Hooks receive cloned message context and may replace it; tool turns
 therefore apply the per-call hook independently to each LLM call without
