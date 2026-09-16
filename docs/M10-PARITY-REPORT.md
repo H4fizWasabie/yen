@@ -11,6 +11,11 @@ memory, restart, cancellation, FIFO, backup, and rollback checks. Full
 TypeScript parity is not claimed because several surfaces are intentionally
 deferred below.
 
+The provider rows above are superseded by the evidence below: Vertex and
+Bedrock auth UI are implemented, and Cloudflare native protocol paths are
+implemented. Their remaining open items are static catalog metadata and live
+provider acceptance only.
+
 ## Checkpoint update: 2026-09-16
 
 The first interactive CLI TUI increment is now closed: interactive stdin is
