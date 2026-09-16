@@ -167,6 +167,24 @@ func registerBridge(registry *Registry, b *bridge) {
 				}
 			}
 		},
+		BeforeWebSearch: func(ctx context.Context, query string) (string, bool, error) {
+			var result struct {
+				Result  string `json:"result"`
+				Handled bool   `json:"handled"`
+			}
+			err := b.call(ctx, "event", "before_web_search", map[string]any{"query": query}, &result)
+			return result.Result, result.Handled, err
+		},
+		AfterWebSearch: func(ctx context.Context, query, result string) (string, error) {
+			var output struct {
+				Result string `json:"result"`
+			}
+			err := b.call(ctx, "event", "after_web_search", map[string]any{"query": query, "result": result}, &output)
+			if output.Result != "" {
+				return output.Result, err
+			}
+			return result, err
+		},
 	})
 	for customType := range b.messageRenderers {
 		customType := customType

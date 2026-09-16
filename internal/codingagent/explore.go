@@ -15,6 +15,7 @@ var explorerSlots = make(chan struct{}, 3)
 type exploreTool struct {
 	cwd      string
 	provider agent.Provider
+	hooks    *agent.ToolHooks
 }
 
 func (exploreTool) Name() string { return "explore" }
@@ -42,12 +43,8 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 	}
 	history := []agent.Message{{Role: "system", Content: explorerPrompt(tier, lines, turns, maxInputTokens)}}
 	limited := &turnLimitedProvider{provider: t.provider, limit: turns, maxInputTokens: maxInputTokens, tier: tier}
-	result, err := agent.RunFrom(ctx, limited, []agent.Tool{
-		tools.NewReadTool(t.cwd),
-		tools.NewGrepTool(t.cwd),
-		tools.NewFindTool(t.cwd),
-		tools.NewListTool(t.cwd),
-	}, history, question)
+	result, err := agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, limited, explorerToolCatalog(t.cwd),
+		history, question, nil, nil, nil, nil, t.hooks)
 	if err != nil {
 		return "", err
 	}
@@ -59,10 +56,23 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 		return answer + fmt.Sprintf("\n~%dK in, %d/%d turns", (limited.inputTokens+500)/1000, limited.calls, turns), nil
 	}
 	answer = capExplorerAnswer(answer, lines)
-	if !strings.HasSuffix(answer, " turns") || !strings.Contains(answer[strings.LastIndex(answer, "\n")+1:], "/") {
+	if !explorerFooter(answer) {
 		answer += fmt.Sprintf("\n~%dK in, %d/%d turns", (limited.inputTokens+500)/1000, limited.calls, turns)
 	}
 	return answer, nil
+}
+
+func explorerToolCatalog(cwd string) []agent.Tool {
+	return []agent.Tool{tools.NewReadTool(cwd), tools.NewGrepTool(cwd), tools.NewFindTool(cwd), tools.NewListTool(cwd)}
+}
+
+func explorerFooter(answer string) bool {
+	line := answer[strings.LastIndex(answer, "\n")+1:]
+	if !strings.HasSuffix(line, " turns") {
+		return false
+	}
+	_, err := fmt.Sscanf(line, "~%dK in, %d/%d turns", new(int), new(int), new(int))
+	return err == nil
 }
 
 func explorerPrompt(tier string, lines, turns, maxInputTokens int) string {
@@ -113,6 +123,10 @@ func capExplorerAnswer(answer string, limit int) string {
 
 func newExploreTool(workspace string, provider agent.Provider) agent.Tool {
 	return exploreTool{cwd: workspace, provider: provider}
+}
+
+func newExploreToolWithHooks(workspace string, provider agent.Provider, hooks *agent.ToolHooks) agent.Tool {
+	return exploreTool{cwd: workspace, provider: provider, hooks: hooks}
 }
 
 type codingToolOptions struct {

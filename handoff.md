@@ -2,6 +2,26 @@
 
 Date: 2026-09-15
 
+## Checkpoint: Goal 6 built-in tool edge cases
+
+Goal 6 is implemented on `feat/goal-6-builtin-tools`. `convert_doc` now
+preserves markitdown stderr for command, read, and output-limit failures;
+`web_search` supports replacement and result interception through the real
+extension registry; context discovery keeps the oracle's per-directory
+precedence and exposes shadow diagnostics; and explorer uses an explicit
+read-only catalog, strict budget-footer validation, and registry provider
+hooks for its nested calls. Oracle citations are
+`packages/coding-agent/src/core/tools/convert-doc.ts:18-35`,
+`packages/coding-agent/src/core/tools/web-search.ts:17-71`,
+`packages/coding-agent/src/core/resource-loader.ts:87-105,211-258`, and
+`packages/coding-agent/src/core/explorer.ts:36-38,117-123,246-328` from the
+later oracle addition; the Goal 6 pinned hash does not contain `explorer.ts`.
+Go evidence is in `internal/codingagent/{convert_doc,web_search,prompt,explore}`
+and `internal/extensions/{registry,loader}.go`, with focused tests beside
+each seam. `go test ./...` and `go test -race ./...` pass (469 tests), as do
+`go vet ./...`, `go build ./...`, and `git diff --check`. No deployment was
+performed.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:

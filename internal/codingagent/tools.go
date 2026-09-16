@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/session"
 	"github.com/H4fizWasabie/yen/internal/settings"
@@ -26,6 +27,10 @@ func NewToolsForSessionWithProvider(workspace string, current *session.Session, 
 	return newTools(workspace, current, provider, true)
 }
 
+func NewToolsForSessionWithProviderAndRegistry(workspace string, current *session.Session, provider agent.Provider, registry *extensions.Registry) []agent.Tool {
+	return newToolsWithRegistry(workspace, current, provider, true, registry)
+}
+
 // NewToolsForSessionWithProviderWithoutExternal returns the turn-scoped
 // built-ins. Use NewExternalTools separately when external resources should
 // live for the session instead of being recreated on every turn.
@@ -36,6 +41,10 @@ func NewToolsForSessionWithProviderWithoutExternal(workspace string, current *se
 func NewExternalTools() []agent.Tool { return loadExternalTools() }
 
 func newTools(workspace string, current *session.Session, provider agent.Provider, includeExternal bool) []agent.Tool {
+	return newToolsWithRegistry(workspace, current, provider, includeExternal, nil)
+}
+
+func newToolsWithRegistry(workspace string, current *session.Session, provider agent.Provider, includeExternal bool, registry *extensions.Registry) []agent.Tool {
 	resourceSettings, _ := settings.Load(workspace)
 	bashOptions := tools.BashOptions{ShellPath: resourceSettings.ShellPath, CommandPrefix: resourceSettings.ShellCommandPrefix}
 	result := []agent.Tool{
@@ -48,13 +57,17 @@ func newTools(workspace string, current *session.Session, provider agent.Provide
 		tools.NewFindTool(workspace),
 		tools.NewListTool(workspace),
 		convertDocTool{cwd: workspace},
-		NewWebSearchTool(),
+		NewWebSearchToolWithRegistry(registry),
 		generateImageTool{client: nil, session: current},
 	}
 	if provider != nil {
 		explorer := providerpkg.NewExplorerProvider()
 		if explorer.APIKey != "" {
-			result = append(result, newExploreTool(workspace, explorer))
+			var hooks *agent.ToolHooks
+			if registry != nil {
+				hooks = registry.AgentHooks(nil)
+			}
+			result = append(result, newExploreToolWithHooks(workspace, explorer, hooks))
 		}
 	}
 	if current != nil {

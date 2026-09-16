@@ -50,6 +50,11 @@ func ArtifactCatalogMessage(catalog string) agent.Message {
 
 const contextPromptPrefix = "<project_context>\nThe following project guidance was loaded from context files; follow it unless current evidence requires otherwise.\n"
 
+type ContextDiagnostic struct {
+	Path    string
+	Message string
+}
+
 func stripUTF8BOM(content string) string { return strings.TrimPrefix(content, "\ufeff") }
 
 var contextFileNames = []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD", "CONTEXT.md"}
@@ -144,14 +149,20 @@ func isWithin(path, parent string) bool {
 // ContextMessage loads the small, repository-local instruction surface used by
 // the coding-agent layer. Files are ordered from the workspace root downward.
 func ContextMessage(workspace string) (agent.Message, bool) {
+	message, ok, _ := ContextMessageWithDiagnostics(workspace)
+	return message, ok
+}
+
+func ContextMessageWithDiagnostics(workspace string) (agent.Message, bool, []ContextDiagnostic) {
 	workspace, err := filepath.Abs(workspace)
 	if err != nil {
-		return agent.Message{}, false
+		return agent.Message{}, false, nil
 	}
 	resourceSettings, _ := settings.Load(workspace)
 	if resourceSettings.Trusted != nil && !*resourceSettings.Trusted && os.Getenv("YEN_TRUST_PROJECT") != "1" {
-		return agent.Message{}, false
+		return agent.Message{}, false, nil
 	}
+	diagnostics := contextDiagnostics(workspace)
 	var dirs []string
 	for dir := workspace; ; dir = filepath.Dir(dir) {
 		dirs = append(dirs, dir)
@@ -189,14 +200,37 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 		}
 	}
 	if len(sections) == 0 {
-		return agent.Message{}, false
+		return agent.Message{}, false, diagnostics
 	}
 	content := contextPromptPrefix + strings.Join(sections, "\n\n") + "\n</project_context>"
 	if len([]rune(content)) > 12000 {
 		runes := []rune(content)
 		content = string(runes[:12000]) + "\n</project_context>"
 	}
-	return agent.Message{Role: "system", Content: content}, true
+	return agent.Message{Role: "system", Content: content}, true, diagnostics
+}
+
+func contextDiagnostics(workspace string) []ContextDiagnostic {
+	var result []ContextDiagnostic
+	for dir := workspace; ; dir = filepath.Dir(dir) {
+		selected := ""
+		for _, name := range contextFileNames {
+			path := filepath.Join(dir, name)
+			info, err := os.Stat(path)
+			if err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			if selected == "" {
+				selected = path
+				continue
+			}
+			result = append(result, ContextDiagnostic{Path: path, Message: "shadowed by higher-priority context file " + selected})
+		}
+		if dir == filepath.Dir(dir) {
+			break
+		}
+	}
+	return result
 }
 
 func contextAgentDir() string {

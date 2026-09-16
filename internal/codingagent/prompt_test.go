@@ -100,6 +100,22 @@ func TestContextMessageUsesOnlyHighestPriorityContextFilePerDirectory(t *testing
 	}
 }
 
+func TestContextMessageReportsShadowedContextFile(t *testing.T) {
+	workspace := t.TempDir()
+	preferred := filepath.Join(workspace, "AGENTS.md")
+	lower := filepath.Join(workspace, "CLAUDE.md")
+	if err := os.WriteFile(preferred, []byte("preferred"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lower, []byte("lower"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, diagnostics := ContextMessageWithDiagnostics(workspace)
+	if len(diagnostics) != 1 || diagnostics[0].Path != lower || !strings.Contains(diagnostics[0].Message, preferred) {
+		t.Fatalf("diagnostics=%#v", diagnostics)
+	}
+}
+
 func TestContextMessageEmptyHigherPriorityFileShadowsLowerPriority(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.override.md"), nil, 0o600); err != nil {
@@ -111,6 +127,20 @@ func TestContextMessageEmptyHigherPriorityFileShadowsLowerPriority(t *testing.T)
 
 	message, ok := ContextMessage(workspace)
 	if ok || strings.Contains(message.Content, "lower priority guidance") {
+		t.Fatalf("message=%#v", message)
+	}
+}
+
+func TestContextMessageSkipsDirectoryContextCandidate(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, "AGENTS.override.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("fallback"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := ContextMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "fallback") {
 		t.Fatalf("message=%#v", message)
 	}
 }

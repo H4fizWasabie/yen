@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/H4fizWasabie/yen/internal/extensions"
 )
 
 func TestWebSearchSnapshotsKeysAndFallsBack(t *testing.T) {
@@ -37,6 +39,20 @@ func TestWebSearchSnapshotsKeysAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestWebSearchRegistryCanReplaceProviderCall(t *testing.T) {
+	registry := extensions.New()
+	if err := registry.RegisterHooks(extensions.Hooks{BeforeWebSearch: func(_ context.Context, query string) (string, bool, error) {
+		return "extension result for " + query, true, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewWebSearchToolWithRegistry(registry)
+	result, err := tool.Execute(context.Background(), map[string]any{"query": "yen"})
+	if err != nil || result != "extension result for yen" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
 func TestWebSearchDoesNotReadEnvironmentAfterConstruction(t *testing.T) {
 	t.Setenv("YEN_TAVILY_API_KEY", "before")
 	t.Setenv("YEN_TAVILY_API_KEY_2", "")
@@ -44,5 +60,20 @@ func TestWebSearchDoesNotReadEnvironmentAfterConstruction(t *testing.T) {
 	t.Setenv("YEN_TAVILY_API_KEY", "after")
 	if len(tool.keys) != 1 || tool.keys[0] != "before" {
 		t.Fatalf("keys=%v", tool.keys)
+	}
+}
+
+func TestWebSearchUsesInjectedSearchOperation(t *testing.T) {
+	called := false
+	tool := webSearchTool{keys: []string{"configured"}, search: func(_ context.Context, query string) (tavilyResponse, error) {
+		called = true
+		if query != "injected" {
+			t.Fatalf("query=%q", query)
+		}
+		return tavilyResponse{Answer: "intercepted"}, nil
+	}}
+	result, err := tool.Execute(context.Background(), map[string]any{"query": "injected"})
+	if err != nil || result != "intercepted" || !called {
+		t.Fatalf("result=%q err=%v called=%v", result, err, called)
 	}
 }

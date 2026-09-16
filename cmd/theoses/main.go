@@ -19,6 +19,7 @@ import (
 	"github.com/H4fizWasabie/yen/internal/auth"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/runtime"
@@ -96,6 +97,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	runner.SessionToolFactoryWithProvider = func(workspace string, current *session.Session, client agent.Provider) []agent.Tool {
 		return codingagent.NewToolsForSessionWithProviderWithoutExternal(workspace, current, client)
+	}
+	runner.SessionToolFactoryWithProviderAndRegistry = func(workspace string, current *session.Session, client agent.Provider, registry *extensions.Registry) []agent.Tool {
+		return codingagent.NewToolsForSessionWithProviderAndRegistry(workspace, current, client, registry)
 	}
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()

@@ -11,12 +11,15 @@ import (
 	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 )
 
 type webSearchTool struct {
 	client   *http.Client
 	endpoint string
 	keys     []string
+	search   func(context.Context, string) (tavilyResponse, error)
+	hook     func(context.Context, string, func(context.Context, string) (string, error)) (string, error)
 }
 
 type tavilyResponse struct {
@@ -29,15 +32,27 @@ type tavilyResponse struct {
 }
 
 func NewWebSearchTool() agent.Tool {
+	return newWebSearchTool(nil)
+}
+
+func NewWebSearchToolWithRegistry(registry *extensions.Registry) agent.Tool {
+	return newWebSearchTool(registry)
+}
+
+func newWebSearchTool(registry *extensions.Registry) agent.Tool {
 	endpoint := os.Getenv("YEN_TAVILY_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "https://api.tavily.com/search"
 	}
-	return webSearchTool{
+	tool := webSearchTool{
 		client:   http.DefaultClient,
 		endpoint: endpoint,
 		keys:     configuredTavilyKeys(),
 	}
+	if registry != nil {
+		tool.hook = registry.WebSearchHook()
+	}
+	return tool
 }
 
 func configuredTavilyKeys() []string {
@@ -62,6 +77,23 @@ func (t webSearchTool) Execute(ctx context.Context, args map[string]any) (string
 	if keys == nil {
 		keys = configuredTavilyKeys()
 	}
+	if t.search != nil {
+		result, err := t.search(ctx, query)
+		if err != nil {
+			return "", err
+		}
+		return formatWebResults(result), nil
+	}
+	fallback := func(ctx context.Context, query string) (string, error) {
+		return t.searchTavily(ctx, query, keys)
+	}
+	if t.hook != nil {
+		return t.hook(ctx, query, fallback)
+	}
+	return fallback(ctx, query)
+}
+
+func (t webSearchTool) searchTavily(ctx context.Context, query string, keys []string) (string, error) {
 	var last error
 	for _, key := range keys {
 		body, _ := json.Marshal(map[string]any{"query": query, "max_results": 5})

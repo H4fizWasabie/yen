@@ -49,6 +49,9 @@ func main() {
 	runner.SessionToolFactoryWithProvider = func(workspace string, current *session.Session, client agent.Provider) []agent.Tool {
 		return codingagent.NewToolsForSessionWithProviderWithoutExternal(workspace, current, client)
 	}
+	runner.SessionToolFactoryWithProviderAndRegistry = func(workspace string, current *session.Session, client agent.Provider, registry *extensions.Registry) []agent.Tool {
+		return codingagent.NewToolsForSessionWithProviderAndRegistry(workspace, current, client, registry)
+	}
 	runner.AutoCompactTurns = runtime.AutoCompactTurnsFromEnv()
 	runner.AutoCompactMaxHistoryTurns = runtime.AutoCompactMaxHistoryTurnsFromEnv()
 	runner.AutoCompactKeepRecentTokens = runtime.AutoCompactKeepRecentTokensFromEnv()

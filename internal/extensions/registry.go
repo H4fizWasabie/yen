@@ -33,6 +33,41 @@ type Hooks struct {
 	AfterProvider    func(context.Context, agent.Response) error
 	ProviderHeaders  agent.ProviderHeaderHook
 	ProviderResponse agent.ProviderResponseHook
+	BeforeWebSearch  func(context.Context, string) (string, bool, error)
+	AfterWebSearch   func(context.Context, string, string) (string, error)
+}
+
+func (r *Registry) WebSearchHook() func(context.Context, string, func(context.Context, string) (string, error)) (string, error) {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	registered := append([]Hooks(nil), r.hooks...)
+	r.mu.RUnlock()
+	return func(ctx context.Context, query string, fallback func(context.Context, string) (string, error)) (string, error) {
+		for _, hook := range registered {
+			if hook.BeforeWebSearch == nil {
+				continue
+			}
+			result, handled, err := hook.BeforeWebSearch(ctx, query)
+			if err != nil || handled {
+				return result, err
+			}
+		}
+		result, err := fallback(ctx, query)
+		if err != nil {
+			return "", err
+		}
+		for _, hook := range registered {
+			if hook.AfterWebSearch != nil {
+				result, err = hook.AfterWebSearch(ctx, query, result)
+				if err != nil {
+					return "", err
+				}
+			}
+		}
+		return result, nil
+	}
 }
 
 type Registry struct {

@@ -24,32 +24,33 @@ import (
 )
 
 type Runner struct {
-	Queue                          *conversation.Queue
-	Provider                       agent.Provider
-	SummarizationProvider          agent.Provider
-	ToolFactory                    func(workspace string) []agent.Tool
-	SessionToolFactory             func(workspace string, current *session.Session) []agent.Tool
-	SessionToolFactoryWithProvider func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
-	PersistentTools                []agent.Tool
-	ToolHooks                      *agent.ToolHooks
-	ExtensionRegistry              *extensions.Registry
-	SessionPath                    func(turn conversation.Turn) string
-	Checkpoints                    *memory.Checkpoints
-	Memory                         *memory.Engine
-	SharedMemory                   bool
-	AutoCompactTurns               int
-	AutoCompactMaxHistoryTurns     int
-	AutoCompactKeepRecentTokens    int
-	AutoCompactContextWindow       int
-	AutoCompactReserveTokens       int
-	AutoCompactDisabled            bool
-	AutoCompactOnOverflow          bool
-	AutoConsolidate                bool
-	AutoRetryEnabled               bool
-	AutoRetryMaxRetries            int
-	AutoRetryBaseDelay             time.Duration
-	SteeringMode                   string
-	FollowUpMode                   string
+	Queue                                     *conversation.Queue
+	Provider                                  agent.Provider
+	SummarizationProvider                     agent.Provider
+	ToolFactory                               func(workspace string) []agent.Tool
+	SessionToolFactory                        func(workspace string, current *session.Session) []agent.Tool
+	SessionToolFactoryWithProvider            func(workspace string, current *session.Session, provider agent.Provider) []agent.Tool
+	SessionToolFactoryWithProviderAndRegistry func(workspace string, current *session.Session, provider agent.Provider, registry *extensions.Registry) []agent.Tool
+	PersistentTools                           []agent.Tool
+	ToolHooks                                 *agent.ToolHooks
+	ExtensionRegistry                         *extensions.Registry
+	SessionPath                               func(turn conversation.Turn) string
+	Checkpoints                               *memory.Checkpoints
+	Memory                                    *memory.Engine
+	SharedMemory                              bool
+	AutoCompactTurns                          int
+	AutoCompactMaxHistoryTurns                int
+	AutoCompactKeepRecentTokens               int
+	AutoCompactContextWindow                  int
+	AutoCompactReserveTokens                  int
+	AutoCompactDisabled                       bool
+	AutoCompactOnOverflow                     bool
+	AutoConsolidate                           bool
+	AutoRetryEnabled                          bool
+	AutoRetryMaxRetries                       int
+	AutoRetryBaseDelay                        time.Duration
+	SteeringMode                              string
+	FollowUpMode                              string
 
 	mu         sync.Mutex
 	active     map[string]context.CancelFunc
@@ -539,24 +540,6 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	if catalog := current.ArtifactCatalog(2000); catalog != "" {
 		history = append([]agent.Message{codingagent.ArtifactCatalogMessage(catalog)}, history...)
 	}
-	var tools []agent.Tool
-	if r.SessionToolFactoryWithProvider != nil {
-		tools = r.SessionToolFactoryWithProvider(turn.WorkspaceID, current, r.Provider)
-	} else if r.SessionToolFactory != nil {
-		tools = r.SessionToolFactory(turn.WorkspaceID, current)
-	} else if r.ToolFactory != nil {
-		tools = r.ToolFactory(turn.WorkspaceID)
-	}
-	turnTools := tools
-	defer func() { _ = codingagent.CloseTools(turnTools) }()
-	tools = append(tools, r.PersistentTools...)
-	if r.Memory != nil {
-		r.Memory.ConversationScoped = r.SharedMemory
-		ctx := memory.Context{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, ConversationScoped: r.SharedMemory}
-		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
-	}
-	tools = append(tools, recallTurnsTool{history: history})
-	history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
 	hooks := r.ToolHooks
 	registry := r.ExtensionRegistry
 	if registry == nil {
@@ -576,6 +559,26 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	if registry != nil {
 		hooks = registry.AgentHooks(hooks)
 	}
+	var tools []agent.Tool
+	if r.SessionToolFactoryWithProviderAndRegistry != nil {
+		tools = r.SessionToolFactoryWithProviderAndRegistry(turn.WorkspaceID, current, r.Provider, registry)
+	} else if r.SessionToolFactoryWithProvider != nil {
+		tools = r.SessionToolFactoryWithProvider(turn.WorkspaceID, current, r.Provider)
+	} else if r.SessionToolFactory != nil {
+		tools = r.SessionToolFactory(turn.WorkspaceID, current)
+	} else if r.ToolFactory != nil {
+		tools = r.ToolFactory(turn.WorkspaceID)
+	}
+	turnTools := tools
+	defer func() { _ = codingagent.CloseTools(turnTools) }()
+	tools = append(tools, r.PersistentTools...)
+	if r.Memory != nil {
+		r.Memory.ConversationScoped = r.SharedMemory
+		ctx := memory.Context{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, ConversationScoped: r.SharedMemory}
+		tools = append(tools, memory.RememberTool{Engine: r.Memory, Context: ctx}, memory.SaveNoteTool{Engine: r.Memory, Context: ctx})
+	}
+	tools = append(tools, recallTurnsTool{history: history})
+	history = append([]agent.Message{codingagent.SystemPromptMessage(turn.WorkspaceID, tools)}, history...)
 	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, hooks)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && (recoverableLengthStop(result) || silentContextOverflow(result, r.AutoCompactContextWindow))) {
 		keepRecentTurns := r.AutoCompactTurns
