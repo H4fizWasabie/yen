@@ -421,6 +421,22 @@ func TestInteractiveCodexBrowserLoginRequiresAuthFile(t *testing.T) {
 	}
 }
 
+func TestInteractiveBedrockLoginStoresSelectedCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	t.Setenv("YEN_AUTH_FILE", path)
+	current := session.New(filepath.Join(t.TempDir(), "session.jsonl"), session.Header{ID: "session-1"})
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveCommand("/login amazon-bedrock aws-profile stored-profile", current, &runtime.Runner{}, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || !strings.Contains(output.String(), "Logged in: amazon-bedrock") {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	credential, ok, err := auth.Open(path).Read("amazon-bedrock")
+	if err != nil || !ok || credential.Type != "api_key" || credential.Key != "" || credential.Env["AWS_PROFILE"] != "stored-profile" {
+		t.Fatalf("credential=%#v ok=%v err=%v", credential, ok, err)
+	}
+}
+
 func TestInteractiveSettingsAndReloadCommands(t *testing.T) {
 	dir := t.TempDir()
 	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1", CWD: dir})

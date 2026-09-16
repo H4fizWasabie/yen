@@ -559,8 +559,11 @@ Bedrock configuration now reads stored Yen credential bearer tokens and AWS
 profile/region environment values when explicit Yen or ambient AWS settings are
 absent. Oracle authority: `packages/ai/src/providers/amazon-bedrock.ts:7-78`.
 Go evidence: `internal/provider/config.go` and
-`TestBedrockUsesStoredCredentialEnvironment`. Static model metadata, interactive
-auth UI, and live AWS acceptance remain open.
+`TestBedrockUsesStoredCredentialEnvironment`. The interactive CLI now persists
+the oracle's bearer-token, AWS-profile, and credential-chain choices through
+`/login amazon-bedrock`; `TestInteractiveBedrockLoginStoresSelectedCredential`
+covers the profile path. Static model metadata and live AWS acceptance remain
+open.
 
 The current verified code gate is 463 tests, race tests, vet, and diff checks.
 The 2026-09-16 side-by-side VPS read-back places the active pilot release at
