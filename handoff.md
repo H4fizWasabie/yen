@@ -2,6 +2,16 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Goal 4 serialized Box rendering
+
+Registered extension renderers that return serialized `Box` components now
+project their nested `Text` children into terminal scrollback with horizontal
+and vertical padding; unsupported component shapes retain the JSON fallback.
+Oracle authority is `packages/tui/src/components/box.ts:14-18,64-108`. Go
+evidence is `internal/tui/render.go` and
+`TestRenderMessageFormatsSerializedBoxComponent`. Full gates pass. This
+main-based slice is prepared for review and must not be merged by this agent.
+
 ## Checkpoint: Goal 4 native tree component layout
 
 On `feat/tui-component-layout`, `/tree` now renders a git-log-style ASCII

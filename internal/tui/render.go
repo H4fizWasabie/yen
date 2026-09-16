@@ -28,9 +28,8 @@ func RenderMessage(registry *extensions.Registry, message session.Message) (stri
 		return text, true
 	}
 	if component, ok := value.(map[string]any); ok {
-		text, textOK := component["text"].(string)
-		if textOK && (component["type"] == "text" || component["paddingX"] != nil && component["paddingY"] != nil) {
-			return renderTextComponent(text, component["paddingX"], component["paddingY"]), true
+		if rendered, componentOK := renderComponent(component); componentOK {
+			return rendered, true
 		}
 	}
 	data, err := json.Marshal(value)
@@ -38,6 +37,40 @@ func RenderMessage(registry *extensions.Registry, message session.Message) (stri
 		return fmt.Sprint(value), false
 	}
 	return string(data), true
+}
+
+func renderComponent(component map[string]any) (string, bool) {
+	text, textOK := component["text"].(string)
+	if textOK && (component["type"] == "text" || component["paddingX"] != nil && component["paddingY"] != nil) {
+		return renderTextComponent(text, component["paddingX"], component["paddingY"]), true
+	}
+	if component["type"] != "box" {
+		return "", false
+	}
+	children, ok := component["children"].([]any)
+	if !ok || len(children) == 0 {
+		return "", false
+	}
+	lines := make([]string, 0, len(children))
+	for _, child := range children {
+		childMap, ok := child.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		rendered, ok := renderComponent(childMap)
+		if !ok {
+			return "", false
+		}
+		lines = append(lines, rendered)
+	}
+	paddingX, paddingY := componentPadding(component["paddingX"]), componentPadding(component["paddingY"])
+	if component["paddingX"] == nil {
+		paddingX = 1
+	}
+	if component["paddingY"] == nil {
+		paddingY = 1
+	}
+	return renderTextComponent(strings.Join(lines, "\n"), paddingX, paddingY), true
 }
 
 func renderTextComponent(text string, rawPaddingX, rawPaddingY any) string {
