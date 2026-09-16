@@ -2,6 +2,19 @@
 
 Date: 2026-09-15
 
+## Checkpoint: Goal 4 interactive CLI TUI increment
+
+The first Goal 4 slice is implemented on `feat/goal-4-tui`: interactive
+stdin is injected for scripted acceptance and rendered through the
+dependency-free ANSI `internal/tui` screen model with scrollback, status, and
+input regions. Non-interactive `-p` output remains unchanged. Oracle authority
+is `packages/coding-agent/src/modes/interactive/interactive-mode.ts:2796-2928`;
+Go evidence is `cmd/theoses/main.go`, `internal/tui/tui.go`, and
+`TestInteractiveRunRendersScrollbackStatusAndInput`. Selectors, streaming
+status/progress, extension UI component rendering, and remaining slash
+commands remain open. Repository gates pass: `go test ./...`,
+`go test -race ./...`, `go vet ./...`, `go build ./...`, and `git diff --check`.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:

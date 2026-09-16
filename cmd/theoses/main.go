@@ -25,13 +25,18 @@ import (
 	"github.com/H4fizWasabie/yen/internal/session"
 	"github.com/H4fizWasabie/yen/internal/settings"
 	"github.com/H4fizWasabie/yen/internal/tools"
+	"github.com/H4fizWasabie/yen/internal/tui"
 )
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(runWithInput(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runWithInput(args, os.Stdin, stdout, stderr)
+}
+
+func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("theoses", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	prompt := flags.String("p", "", "run one non-interactive prompt")
@@ -120,36 +125,55 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	runPrompt := func(prompt string) error {
+	runPrompt := func(prompt string, out io.Writer) (string, error) {
 		turn, err := runner.Submit(link, prompt)
 		if err != nil {
-			return err
+			return "", err
 		}
 		_, result, err := runner.RunSubmitted(context.Background(), turn)
 		if err != nil {
-			return err
+			return "", err
 		}
-		_, err = fmt.Fprintln(stdout, result.FinalText)
-		return err
+		_, err = fmt.Fprintln(out, result.FinalText)
+		return result.FinalText, err
 	}
 	if *interactive {
-		scanner := bufio.NewScanner(os.Stdin)
+		screen := tui.Screen{Status: "Ready"}
+		if err := screen.Render(stdout); err != nil {
+			return reportError(stderr, err)
+		}
+		scanner := bufio.NewScanner(stdin)
 		for scanner.Scan() {
 			prompt := scanner.Text()
+			screen.Input = prompt
 			if prompt == "/quit" || prompt == "/exit" {
 				break
 			}
 			if strings.TrimSpace(prompt) == "" {
 				continue
 			}
-			handled, err := handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, stdout)
+			var response strings.Builder
+			handled, err := handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, &response)
 			if err != nil {
 				return reportError(stderr, err)
 			}
 			if handled {
+				if response.Len() > 0 {
+					screen.Scrollback = append(screen.Scrollback, strings.TrimSuffix(response.String(), "\n"))
+				}
+				screen.Input = ""
+				if err := screen.Render(stdout); err != nil {
+					return reportError(stderr, err)
+				}
 				continue
 			}
-			if err := runPrompt(prompt); err != nil {
+			result, err := runPrompt(prompt, &response)
+			if err != nil {
+				return reportError(stderr, err)
+			}
+			screen.Scrollback = append(screen.Scrollback, prompt, result)
+			screen.Input = ""
+			if err := screen.Render(stdout); err != nil {
 				return reportError(stderr, err)
 			}
 		}
@@ -158,7 +182,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	if err := runPrompt(*prompt); err != nil {
+	if _, err := runPrompt(*prompt, stdout); err != nil {
 		return reportError(stderr, err)
 	}
 	return 0
