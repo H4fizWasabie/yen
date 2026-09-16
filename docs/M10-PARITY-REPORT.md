@@ -4,6 +4,32 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+A new `internal/tui.RenderDynamicBorder(width int) string` reproduces the
+oracle's `DynamicBorder` full-width horizontal rule line ("─" repeated,
+clamped to at least one rune). Oracle authority is
+`packages/coding-agent/src/modes/interactive/components/dynamic-border.ts:22-24`.
+This is a standalone, tested rendering primitive only: the oracle wires
+`DynamicBorder` into a `Component`/`Container` tree
+(`chatContainer.addChild(new DynamicBorder())`) to separate chat message
+groups and boxed notifications, and this Go TUI's `Screen` is a flat
+scrollback/footer model with no equivalent container tree, so there is no
+low-risk existing call site to wire this into without changing
+`Screen.layout`'s established viewport-trimming behavior (which has its own
+tested contract in `TestScreenRenderAtKeepsViewportAndRegions`). The
+oracle's optional per-call color function is also not reproduced, since it
+depends on the same not-yet-built color/theme subsystem noted for
+`RenderDiff`. Go evidence is `internal/tui/border.go`,
+`TestRenderDynamicBorderRepeatsRuleToWidth`, and
+`TestRenderDynamicBorderClampsToAtLeastOneRune`. Full repository gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass. A container/section model to host separators,
+color/theme support, Mermaid rendering (explicitly deferred — it depends on
+an external diagram-layout engine, not a portable pure function),
+status-indicator spinner behavior, ctrl/alt modifier-key parsing, and live
+terminal acceptance remain open and are not claimed here.
+
+## Checkpoint update: 2026-09-16
+
 Navigating the interactive `/tree` selector to a non-leaf entry now prompts
 "Summarize branch?" with "No summary" / "Summarize" / "Summarize with
 custom prompt", matching the oracle's summarize-before-navigate flow.

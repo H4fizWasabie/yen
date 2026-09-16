@@ -2,6 +2,40 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Goal 4 dynamic borders
+
+On `feat/goal-4-dynamic-borders` (branched from `origin/main` after #198
+merged), a new `internal/tui.RenderDynamicBorder(width int) string`
+reproduces the oracle's `DynamicBorder.render` full-width horizontal rule
+("─".repeat(max(1, width))). Oracle authority is
+`packages/coding-agent/src/modes/interactive/components/dynamic-border.ts:22-24`.
+Go evidence is `internal/tui/border.go`,
+`TestRenderDynamicBorderRepeatsRuleToWidth`, and
+`TestRenderDynamicBorderClampsToAtLeastOneRune`. All required gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass locally.
+
+Documented scope narrowing, chosen deliberately to avoid destabilizing
+`Screen.layout`'s established, separately-tested viewport-trimming contract
+(`TestScreenRenderAtKeepsViewportAndRegions`): this is a standalone tested
+primitive, not wired into `Screen` yet. The oracle wires `DynamicBorder`
+into a `Component`/`Container` tree
+(`chatContainer.addChild(new DynamicBorder())`) to separate chat message
+groups and boxed notifications; this Go TUI's `Screen` is a flat
+scrollback/footer model with no equivalent container/section concept, so
+adding one is a separate, larger architectural change, not a "smallest
+implementation" fit for this slice. The oracle's optional per-call color
+function is also not reproduced (same missing color/theme subsystem noted
+for `RenderDiff`). This increment is opened as a PR against `main`, CI
+checked, and self-merged once green per the user's standing instruction.
+Mermaid rendering is explicitly skipped for now per user direction (it
+depends on an external diagram-layout engine — `grok-mermaid` — not a
+portable pure function, and needs its own scoping conversation before
+attempting). A container/section model, color/theme support, Mermaid
+rendering, status-indicator spinner behavior, ctrl/alt modifier-key
+parsing, and live terminal acceptance remain open Goal 4 slices, each
+requiring its own failing seam test and PR.
+
 ## Checkpoint: Goal 4 branch-summary prompt/navigation
 
 On `feat/goal-4-branch-summary-prompt` (branched from `origin/main` after
