@@ -2,8 +2,10 @@ package memory
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -105,5 +107,30 @@ func TestMigrationImportsLegacySemanticJSONLAdditively(t *testing.T) {
 	}
 	if got, err := os.ReadFile(source); err != nil || string(got) != raw {
 		t.Fatalf("source changed: %q err=%v", got, err)
+	}
+}
+
+func TestMigrationImportsLargeLegacySemanticRecord(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "memory.jsonl")
+	raw, err := json.Marshal(map[string]string{
+		"id":        "large-legacy",
+		"createdAt": "2026-01-01T00:00:00Z",
+		"text":      strings.Repeat("legacy memory ", 10000),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, append(raw, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := NewStore(filepath.Join(dir, "target"))
+	count, err := MigrateSemantic(source, target, ScopeWorkspace, Context{WorkspaceID: "work-1"})
+	if err != nil || count != 1 {
+		t.Fatalf("migration count=%d err=%v", count, err)
+	}
+	node, ok, err := target.Get("large-legacy")
+	if err != nil || !ok || len(node.Subject) < 100000 {
+		t.Fatalf("node=%#v ok=%v err=%v", node, ok, err)
 	}
 }

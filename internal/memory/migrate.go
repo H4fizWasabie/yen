@@ -71,6 +71,7 @@ func migrateLegacyJSONL(sourcePath string, target *Store, scope Scope, ctx Conte
 	defer file.Close()
 	count := 0
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4<<20)
 	for scanner.Scan() {
 		var legacy legacyMemoryRecord
 		if json.Unmarshal(scanner.Bytes(), &legacy) != nil || strings.TrimSpace(legacy.Text) == "" {

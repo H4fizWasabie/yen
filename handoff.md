@@ -341,6 +341,13 @@ The installer acceptance was rerun after the consolidation wrapper change:
 temporary root/fake systemctl, both binaries and wrappers, service units,
 mode-600 channel env, and no service start all passed.
 
+## Latest pickup: bounded legacy semantic migration
+
+Explicit semantic-memory migration now uses the same 4 MiB JSONL line bound as
+session import, so large historical records are not rejected by Scanner's
+default 64 KiB limit. `internal/memory/migrate_test.go` covers a large record;
+focused memory tests and the full test, race, vet, and diff gates pass.
+
 ## Latest pickup: RPC bash persistence
 
 On 2026-09-15, direct JSONL RPC `bash` now persists a TypeScript-compatible
