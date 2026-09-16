@@ -675,6 +675,20 @@ account/gateway environment when explicit Yen variables are absent, covered by
 
 ## Latest operations evidence
 
+## Checkpoint: RPC command matrix and extension UI
+
+Against current `main`, RPC now carries the complete pinned command matrix,
+including compact custom instructions, and `get_commands` exposes commands
+from the real loaded extension registry. The Node bridge forwards
+`extension_ui_request` messages and receives correlated
+`extension_ui_response` messages for dialog, status, widget, title, and editor
+operations. Oracle authority:
+`packages/coding-agent/src/modes/rpc/rpc-mode.ts:90-179,201-273` and
+`packages/coding-agent/src/modes/rpc/rpc-types.ts:229-283`. Go evidence:
+`internal/rpc/server.go`, `internal/rpc/server_test.go`,
+`internal/extensions/loader.go`, and `internal/extensions/loader_test.go`.
+Native TUI-only extension components remain unsupported.
+
 Remote main read-back confirms Bedrock HTTP(S) image sources and response
 metadata are already closed by commits `11a3b4b` (#137) and `92d1d53` (#141).
 The remaining Bedrock gaps are static catalog metadata/auth UI and live AWS

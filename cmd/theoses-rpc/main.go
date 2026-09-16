@@ -5,10 +5,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
 	"github.com/H4fizWasabie/yen/internal/codingagent"
 	"github.com/H4fizWasabie/yen/internal/conversation"
+	"github.com/H4fizWasabie/yen/internal/extensions"
 	"github.com/H4fizWasabie/yen/internal/memory"
 	"github.com/H4fizWasabie/yen/internal/provider"
 	"github.com/H4fizWasabie/yen/internal/rpc"
@@ -73,7 +75,23 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	agentDir, _ := os.UserConfigDir()
+	agentDir = filepath.Join(agentDir, "yen")
+	configured := []string(nil)
+	if current, err := settings.Load(workspace); err == nil {
+		configured = current.Extensions
+	}
+	operatorConfigured := strings.FieldsFunc(os.Getenv("YEN_EXTENSIONS"), func(r rune) bool { return r == os.PathListSeparator || r == ',' })
+	loaded, _ := extensions.DiscoverAndLoadWithOperatorPaths(workspace, agentDir, configured, operatorConfigured)
+	if loaded != nil {
+		defer loaded.Close()
+		runner.ExtensionRegistry = loaded.Registry
+	}
 	server := &rpc.Server{Runner: runner, Link: link}
+	if loaded != nil {
+		server.Extensions = loaded.Registry
+		loaded.SetUIRequester(server.RequestExtensionUI)
+	}
 	if socket := os.Getenv("YEN_RPC_UNIX_SOCKET"); socket != "" {
 		if err := rpc.ServeUnix(context.Background(), socket, server); err != nil {
 			log.Fatal(err)

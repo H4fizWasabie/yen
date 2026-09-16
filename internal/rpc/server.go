@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -36,6 +37,10 @@ type Server struct {
 	active                     map[string]conversation.Turn
 	modeMu                     sync.RWMutex
 	steeringMode, followUpMode string
+	uiMu                       sync.Mutex
+	uiOutput                   io.Writer
+	uiPending                  map[string]chan map[string]any
+	uiSequence                 uint64
 	wg                         sync.WaitGroup
 }
 
@@ -58,6 +63,7 @@ type command struct {
 	Direction          string     `json:"direction,omitempty"`
 	Mode               string     `json:"mode,omitempty"`
 	KeepRecentTurns    int        `json:"keepRecentTurns,omitempty"`
+	CustomInstructions string     `json:"customInstructions,omitempty"`
 	Enabled            *bool      `json:"enabled,omitempty"`
 	ExcludeFromContext bool       `json:"excludeFromContext,omitempty"`
 }
@@ -75,6 +81,12 @@ func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) e
 	if s.active == nil {
 		s.active = make(map[string]conversation.Turn)
 	}
+	s.uiMu.Lock()
+	s.uiOutput = output
+	if s.uiPending == nil {
+		s.uiPending = make(map[string]chan map[string]any)
+	}
+	s.uiMu.Unlock()
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), 4<<20)
 	for scanner.Scan() {
@@ -82,8 +94,23 @@ func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) e
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			if err := s.response(output, "", "", false, nil, err); err != nil {
+				return err
+			}
+			continue
+		}
+		if raw["type"] == "extension_ui_response" {
+			s.deliverExtensionUIResponse(raw)
+			continue
+		}
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return err
+		}
 		var request command
-		if err := json.Unmarshal([]byte(line), &request); err != nil {
+		if err := json.Unmarshal(encoded, &request); err != nil {
 			if err := s.response(output, "", "", false, nil, err); err != nil {
 				return err
 			}
@@ -371,7 +398,7 @@ func (s *Server) handle(ctx context.Context, output io.Writer, request command) 
 		if keep < 1 {
 			keep = 2
 		}
-		if err := s.Runner.Compact(ctx, link.ConversationID, keep); err != nil {
+		if err := s.Runner.Compact(ctx, link.ConversationID, keep, request.CustomInstructions); err != nil {
 			return err
 		}
 		return s.response(output, request.ID, request.Type, true, map[string]any{"keepRecentTurns": keep}, nil)
@@ -659,6 +686,63 @@ func (s *Server) response(output io.Writer, id, command string, success bool, da
 
 func (s *Server) event(output io.Writer, event string, data any) error {
 	return s.write(output, map[string]any{"type": "event", "event": event, "data": data})
+}
+
+// RequestExtensionUI emits an oracle-compatible extension_ui_request and waits
+// for the matching extension_ui_response from the connected client.
+func (s *Server) RequestExtensionUI(ctx context.Context, request map[string]any) (map[string]any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.uiMu.Lock()
+	output := s.uiOutput
+	if output == nil {
+		s.uiMu.Unlock()
+		return nil, errors.New("rpc extension UI is not connected")
+	}
+	id := fmt.Sprintf("extension-ui-%d", atomic.AddUint64(&s.uiSequence, 1))
+	if requested, ok := request["id"].(string); ok && requested != "" {
+		id = requested
+	}
+	request = mapsClone(request)
+	request["type"], request["id"] = "extension_ui_request", id
+	response := make(chan map[string]any, 1)
+	s.uiPending[id] = response
+	s.uiMu.Unlock()
+	if err := s.write(output, request); err != nil {
+		s.uiMu.Lock()
+		delete(s.uiPending, id)
+		s.uiMu.Unlock()
+		return nil, err
+	}
+	select {
+	case result := <-response:
+		return result, nil
+	case <-ctx.Done():
+		s.uiMu.Lock()
+		delete(s.uiPending, id)
+		s.uiMu.Unlock()
+		return nil, ctx.Err()
+	}
+}
+
+func (s *Server) deliverExtensionUIResponse(response map[string]any) {
+	id, _ := response["id"].(string)
+	s.uiMu.Lock()
+	pending := s.uiPending[id]
+	delete(s.uiPending, id)
+	s.uiMu.Unlock()
+	if pending != nil {
+		pending <- response
+	}
+}
+
+func mapsClone(source map[string]any) map[string]any {
+	clone := make(map[string]any, len(source)+2)
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
 }
 
 func (s *Server) write(output io.Writer, value any) error {

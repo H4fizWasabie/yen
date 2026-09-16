@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,43 @@ type rpcProvider struct{}
 
 func (rpcProvider) Next(context.Context, []agent.Message, []string) (agent.Response, error) {
 	return agent.Response{Text: "rpc reply", StopReason: "stop"}, nil
+}
+
+func TestExtensionUIRequestRoundTripsThroughJSONL(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Runner: runtime.New(queue, rpcProvider{}, nil), Link: conversation.Link{ConversationID: "ui"}}
+	inReader, inWriter := io.Pipe()
+	outReader, outWriter := io.Pipe()
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(context.Background(), inReader, outWriter) }()
+	time.Sleep(10 * time.Millisecond)
+	result := make(chan map[string]any, 1)
+	go func() {
+		value, _ := server.RequestExtensionUI(context.Background(), map[string]any{"method": "confirm", "title": "Continue?"})
+		result <- value
+	}()
+	var request map[string]any
+	if err := json.NewDecoder(outReader).Decode(&request); err != nil {
+		t.Fatal(err)
+	}
+	if request["type"] != "extension_ui_request" || request["method"] != "confirm" {
+		t.Fatalf("request=%#v", request)
+	}
+	response, _ := json.Marshal(map[string]any{"type": "extension_ui_response", "id": request["id"], "confirmed": true})
+	if _, err := inWriter.Write(append(response, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-result; got["confirmed"] != true {
+		t.Fatalf("response=%#v", got)
+	}
+	_ = inWriter.Close()
+	if err := <-serveDone; err != nil {
+		t.Fatal(err)
+	}
 }
 
 type blockingRPCProvider struct {
