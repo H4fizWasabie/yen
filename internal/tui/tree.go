@@ -1,6 +1,12 @@
 package tui
 
-import "github.com/H4fizWasabie/yen/internal/session"
+import (
+	"bufio"
+	"io"
+	"strings"
+
+	"github.com/H4fizWasabie/yen/internal/session"
+)
 
 // RenderTree lays out a session's entries as a git-log-style ASCII branch
 // tree, matching the oracle's TreeSelectorComponent connector/gutter layout
@@ -57,4 +63,37 @@ func RenderTree(entries []session.TreeEntry, activeID string) []string {
 		walk(root, "", i == len(roots)-1, true)
 	}
 	return lines
+}
+
+// SelectTree presents the session tree as a navigable selector and returns
+// the selected entry ID. It keeps the static RenderTree output available for
+// callers that only need a report.
+func SelectTree(r *bufio.Reader, w io.Writer, title string, entries []session.TreeEntry) (string, error) {
+	if len(entries) == 0 {
+		return "", nil
+	}
+	byID := make(map[string]session.TreeEntry, len(entries))
+	for _, entry := range entries {
+		byID[entry.ID] = entry
+	}
+	options := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		depth := 0
+		for steps, parent := 0, entry.ParentID; parent != nil && steps < len(entries); steps, parent = steps+1, byID[*parent].ParentID {
+			if _, ok := byID[*parent]; !ok {
+				break
+			}
+			depth++
+		}
+		label := entry.Name
+		if label == "" {
+			label = entry.ID
+		}
+		options = append(options, strings.Repeat("  ", depth)+label)
+	}
+	selected, err := Select(r, w, title, options)
+	if err != nil || selected < 0 {
+		return "", err
+	}
+	return entries[selected].ID, nil
 }

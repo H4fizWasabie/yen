@@ -2,6 +2,20 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Goal 4 interactive tree selection
+
+Interactive `/tree` now presents the existing session tree entries through a
+navigable selector, accepts the existing number/j/k/arrow/Enter semantics, and
+branches from the chosen entry using `Session.Branch`; the static ASCII tree
+report remains unchanged for direct command callers. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4953-4996`
+and `packages/coding-agent/src/modes/interactive/components/tree-selector.ts:703-746,980-1020`.
+Go evidence is `internal/tui/tree.go`, `cmd/theoses/main.go`,
+`TestSelectTreeReturnsNavigatedEntry`, and
+`TestInteractiveTreeSelectorBranchesFromChosenEntry`. Full gates pass. Fold,
+viewport panning, and branch-summary prompts remain open; this slice must not
+be merged by the agent.
+
 ## Checkpoint: Goal 4 serialized Box rendering
 
 Registered extension renderers that return serialized `Box` components now

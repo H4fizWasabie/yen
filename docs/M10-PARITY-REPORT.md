@@ -4,6 +4,19 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+Interactive `/tree` now presents session entries through a navigable selector,
+accepts number/j/k/arrow/Enter input, and branches from the chosen entry using
+the existing `Session.Branch` capability. The static ASCII tree report is
+unchanged. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4953-4996`
+and `packages/coding-agent/src/modes/interactive/components/tree-selector.ts:703-746,980-1020`.
+Go evidence is `internal/tui/tree.go`, `cmd/theoses/main.go`,
+`TestSelectTreeReturnsNavigatedEntry`, and
+`TestInteractiveTreeSelectorBranchesFromChosenEntry`. Full repository gates
+pass. Fold, viewport panning, and branch-summary prompts remain open.
+
+## Checkpoint update: 2026-09-16
+
 Serialized `Box` components returned by registered extension message
 renderers now render nested text children with the oracle's horizontal and
 vertical padding defaults; unsupported components continue to use the JSON
