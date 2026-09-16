@@ -575,6 +575,11 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	}
 	if registry != nil {
 		hooks = registry.AgentHooks(hooks)
+		for _, tool := range tools {
+			if explorer, ok := tool.(interface{ SetHooks(*agent.ToolHooks) }); ok {
+				explorer.SetHooks(registry.AgentHooks(nil))
+			}
+		}
 	}
 	result, runErr := r.runAgentWithRetry(ctx, r.Provider, tools, history, expandedPrompt, images, queues, onUpdate, onEvent, hooks)
 	if !r.AutoCompactDisabled && r.AutoCompactOnOverflow && (runErr != nil && providerpkg.IsContextOverflowError(runErr.Error()) || runErr == nil && (recoverableLengthStop(result) || silentContextOverflow(result, r.AutoCompactContextWindow))) {

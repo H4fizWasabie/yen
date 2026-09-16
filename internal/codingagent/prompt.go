@@ -54,17 +54,32 @@ func stripUTF8BOM(content string) string { return strings.TrimPrefix(content, "\
 
 var contextFileNames = []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD", "CONTEXT.md"}
 
-func appendContextFiles(sections []string, dir string) []string {
+type ContextDiagnostic struct {
+	Path       string
+	Message    string
+	ShadowedBy string
+}
+
+func appendContextFilesWithDiagnostics(sections []string, dir string) ([]string, []ContextDiagnostic) {
+	var diagnostics []ContextDiagnostic
+	var selected string
 	for _, name := range contextFileNames {
 		path := filepath.Join(dir, name)
-		data, err := os.ReadFile(path)
-		content := stripUTF8BOM(string(data))
-		if err == nil {
-			if strings.TrimSpace(content) != "" {
-				sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
-			}
-			break
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
 		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			diagnostics = append(diagnostics, ContextDiagnostic{Path: path, Message: err.Error()})
+			continue
+		}
+		selected = path
+		content := stripUTF8BOM(string(data))
+		if strings.TrimSpace(content) != "" {
+			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
+		}
+		break
 	}
 	path := filepath.Join(dir, "YEN.md")
 	if data, err := os.ReadFile(path); err == nil {
@@ -73,7 +88,18 @@ func appendContextFiles(sections []string, dir string) []string {
 			sections = append(sections, "["+path+"]\n"+strings.TrimSpace(content))
 		}
 	}
-	return sections
+	if selected != "" {
+		for _, name := range contextFileNames {
+			path := filepath.Join(dir, name)
+			if path == selected {
+				continue
+			}
+			if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+				diagnostics = append(diagnostics, ContextDiagnostic{Path: path, Message: "context file shadowed", ShadowedBy: selected})
+			}
+		}
+	}
+	return sections, diagnostics
 }
 
 func shadowedWorktreeContextFile(cwd string) string {
@@ -144,13 +170,18 @@ func isWithin(path, parent string) bool {
 // ContextMessage loads the small, repository-local instruction surface used by
 // the coding-agent layer. Files are ordered from the workspace root downward.
 func ContextMessage(workspace string) (agent.Message, bool) {
+	message, ok, _ := ContextMessageWithDiagnostics(workspace)
+	return message, ok
+}
+
+func ContextMessageWithDiagnostics(workspace string) (agent.Message, bool, []ContextDiagnostic) {
 	workspace, err := filepath.Abs(workspace)
 	if err != nil {
-		return agent.Message{}, false
+		return agent.Message{}, false, nil
 	}
 	resourceSettings, _ := settings.Load(workspace)
 	if resourceSettings.Trusted != nil && !*resourceSettings.Trusted && os.Getenv("YEN_TRUST_PROJECT") != "1" {
-		return agent.Message{}, false
+		return agent.Message{}, false, nil
 	}
 	var dirs []string
 	for dir := workspace; ; dir = filepath.Dir(dir) {
@@ -160,12 +191,15 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 		}
 	}
 	var sections []string
+	var diagnostics []ContextDiagnostic
 	if agentDir := contextAgentDir(); agentDir != "" {
-		sections = appendContextFiles(sections, agentDir)
+		sections, diagnostics = appendContextFilesWithDiagnostics(sections, agentDir)
 	}
 	shadowed := shadowedWorktreeContextFile(workspace)
 	for i := len(dirs) - 1; i >= 0; i-- {
-		sections = appendContextFiles(sections, dirs[i])
+		var current []ContextDiagnostic
+		sections, current = appendContextFilesWithDiagnostics(sections, dirs[i])
+		diagnostics = append(diagnostics, current...)
 	}
 	if shadowed != "" {
 		prefix := "[" + shadowed + "]\n"
@@ -189,14 +223,14 @@ func ContextMessage(workspace string) (agent.Message, bool) {
 		}
 	}
 	if len(sections) == 0 {
-		return agent.Message{}, false
+		return agent.Message{}, false, diagnostics
 	}
 	content := contextPromptPrefix + strings.Join(sections, "\n\n") + "\n</project_context>"
 	if len([]rune(content)) > 12000 {
 		runes := []rune(content)
 		content = string(runes[:12000]) + "\n</project_context>"
 	}
-	return agent.Message{Role: "system", Content: content}, true
+	return agent.Message{Role: "system", Content: content}, true, diagnostics
 }
 
 func contextAgentDir() string {

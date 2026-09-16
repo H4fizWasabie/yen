@@ -10,11 +10,28 @@ import (
 
 type exploreProvider struct {
 	tools []string
+	seen  []agent.Message
 }
 
-func (p *exploreProvider) Next(_ context.Context, _ []agent.Message, tools []string) (agent.Response, error) {
+func (p *exploreProvider) Next(_ context.Context, messages []agent.Message, tools []string) (agent.Response, error) {
+	p.seen = append([]agent.Message(nil), messages...)
 	p.tools = append([]string(nil), tools...)
 	return agent.Response{Text: strings.Repeat("finding\n", 40), StopReason: "stop"}, nil
+}
+
+func TestExploreAppliesExtensionProviderHook(t *testing.T) {
+	provider := &exploreProvider{}
+	tool := newExploreToolWithHooks(t.TempDir(), provider, &agent.ToolHooks{
+		ProviderBefore: func(_ context.Context, messages []agent.Message, _ []string) ([]agent.Message, error) {
+			return append(messages, agent.Message{Role: "system", Content: "intercepted"}), nil
+		},
+	})
+	if _, err := tool.Execute(context.Background(), map[string]any{"question": "map it"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.seen) < 2 || provider.seen[len(provider.seen)-1].Content != "intercepted" {
+		t.Fatalf("messages=%#v", provider.seen)
+	}
 }
 
 func TestExploreIsReadOnlyAndCapsQuickScan(t *testing.T) {
