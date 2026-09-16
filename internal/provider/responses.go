@@ -121,7 +121,7 @@ func (p OpenAIResponses) NextWithEvents(ctx context.Context, messages []agent.Me
 }
 
 func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
-	if p.APIKey == "" {
+	if p.APIKey == "" && strings.TrimSpace(p.Headers["cf-aig-authorization"]) == "" {
 		return agent.Response{}, fmt.Errorf("no API key for provider: %s", p.name())
 	}
 	payload := map[string]any{
@@ -178,7 +178,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 		}
 		if p.APIKeyHeader != "" {
 			request.Header.Set(p.APIKeyHeader, p.APIKey)
-		} else {
+		} else if p.APIKey != "" {
 			request.Header.Set("Authorization", "Bearer "+p.APIKey)
 		}
 		for name, value := range p.Headers {

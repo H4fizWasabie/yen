@@ -663,7 +663,9 @@ native image/API acceptance remain open.
 
 `TestCloudflareAIGatewayListsConfiguredModelCatalog` now verifies the Gateway
 `/models` path, `cf-aig-authorization`, provider identity, and model IDs.
-Static generated metadata and live native image/API acceptance remain open.
+`TestCloudflareAIGatewayResponsesUsesGatewayAuthorization` verifies the native
+Responses path accepts header-only Gateway authorization. Static generated
+metadata and live native image/API acceptance remain open.
 
 ## Latest operations evidence
 
