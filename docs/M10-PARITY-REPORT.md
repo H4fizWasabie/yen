@@ -590,3 +590,14 @@ and `TestInteractiveAnthropicLoginRequiresAuthFile`. Provider configuration
 already uses the stored `anthropic` credential when
 `YEN_ANTHROPIC_API_KEY` is absent. Live account acceptance remains a manual
 step.
+
+Google Vertex ADC configuration now also accepts the oracle's `GCLOUD_PROJECT`
+fallback when `YEN_GOOGLE_CLOUD_PROJECT` is unset, while retaining Yen-owned
+credentials, service-account/authorized-user token exchange, and
+`generateContent` model filtering. Oracle authority:
+`packages/ai/src/providers/google-vertex.ts:6-12,64-88,92-99` and
+`packages/ai/src/api/google-vertex.ts:99-109`. Go evidence:
+`internal/provider/config.go`, `internal/provider/google_auth.go`,
+`internal/provider/google.go`, and
+`TestGoogleVertexUsesGCLOUDProjectForADCConfiguration`. Static catalog/auth
+UI metadata and live Vertex acceptance remain open.

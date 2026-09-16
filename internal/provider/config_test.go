@@ -98,6 +98,22 @@ func TestGoogleVertexUsesProjectEndpointAndYenAPIKey(t *testing.T) {
 	}
 }
 
+func TestGoogleVertexUsesGCLOUDProjectForADCConfiguration(t *testing.T) {
+	t.Setenv("YEN_GOOGLE_VERTEX_BASE_URL", "")
+	t.Setenv("YEN_GOOGLE_CLOUD_PROJECT", "")
+	t.Setenv("GCLOUD_PROJECT", "gcloud-project")
+	t.Setenv("YEN_GOOGLE_CLOUD_LOCATION", "us-central1")
+	t.Setenv("YEN_GOOGLE_CLOUD_API_KEY", "vertex-key")
+	configured, err := NewConfigured("google-vertex", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(GoogleGenerativeAI)
+	if !ok || client.BaseURL != "https://aiplatform.googleapis.com/v1/projects/gcloud-project/locations/us-central1/publishers/google" || client.APIKey != "vertex-key" {
+		t.Fatalf("configured=%#v", configured)
+	}
+}
+
 func TestGoogleVertexUsesYenBearerTokenWithoutAPIKeyQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("key") != "" || r.Header.Get("Authorization") != "Bearer access-token" {

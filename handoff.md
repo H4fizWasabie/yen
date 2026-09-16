@@ -604,6 +604,17 @@ auth-file boundary. Stored `anthropic` OAuth access is already selected by
 the provider config fallback. Real-account login and live Anthropic acceptance
 remain manual and open.
 
+Google Vertex ADC configuration now accepts `GCLOUD_PROJECT` as the project
+fallback, matching the pinned oracle, in addition to the existing
+Yen-configured project/location, service-account and authorized-user token
+exchange, and native model catalog filtering. Oracle evidence:
+`packages/ai/src/providers/google-vertex.ts:6-12,64-88,92-99` and
+`packages/ai/src/api/google-vertex.ts:99-109`. Go evidence is
+`internal/provider/config.go`, `internal/provider/google_auth.go`,
+`internal/provider/google.go`, and
+`TestGoogleVertexUsesGCLOUDProjectForADCConfiguration`. Static catalog/auth UI
+metadata and live Vertex acceptance remain open.
+
 ## Latest operations evidence
 
 The current VPS data was backed up on 2026-09-15 to
