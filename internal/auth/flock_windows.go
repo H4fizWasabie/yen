@@ -1,11 +1,12 @@
-//go:build !windows
+//go:build windows
 
 package auth
 
 import (
 	"os"
 	"path/filepath"
-	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 func (s *Store) withFileLock(exclusive bool, fn func() error) error {
@@ -17,14 +18,14 @@ func (s *Store) withFileLock(exclusive bool, fn func() error) error {
 		return err
 	}
 	defer lock.Close()
-	mode := syscall.LOCK_SH
+	var flags uint32
 	if exclusive {
-		mode = syscall.LOCK_EX
+		flags = windows.LOCKFILE_EXCLUSIVE_LOCK
 	}
-	// ponytail: one credential-file lock; split per provider only if contention is measured.
-	if err := syscall.Flock(int(lock.Fd()), mode); err != nil {
+	overlap := new(windows.Overlapped)
+	if err := windows.LockFileEx(windows.Handle(lock.Fd()), flags, 0, 1, 0, overlap); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer windows.UnlockFileEx(windows.Handle(lock.Fd()), 0, 1, 0, overlap)
 	return fn()
 }

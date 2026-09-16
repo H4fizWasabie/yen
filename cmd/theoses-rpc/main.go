@@ -98,6 +98,12 @@ func main() {
 		}
 		return
 	}
+	if address := os.Getenv("YEN_RPC_TCP_ADDR"); address != "" {
+		if err := rpc.ServeTCP(context.Background(), address, server); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := server.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
 		log.Fatal(err)
 	}
