@@ -2,6 +2,35 @@
 
 Date: 2026-09-16
 
+## Checkpoint: Goal 4 interactive tree fold/unfold
+
+On `feat/goal-4-tree-fold-unfold` (branched from `origin/main` after #194
+merged), `internal/tui.SelectTree` gained fold/unfold: the highlighted node
+can hide its descendants (fold) and restore them (unfold), reusing the same
+`visible()`/`optionFor()`/render loop for both the raw-byte and
+line-buffered paths rather than two separate implementations. Oracle
+authority is
+`packages/coding-agent/src/modes/interactive/components/tree-selector.ts:1002-1017,1109-1116`
+and `packages/coding-agent/src/core/keybindings.ts:145-152`. Go evidence is
+`internal/tui/tree.go`, `TestSelectTreeRawFoldHidesDescendants`,
+`TestSelectTreeRawUnfoldRestoresDescendants`, and
+`TestSelectTreeLineBufferedFoldAndUnfold`. All required gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass locally.
+
+Documented scope narrowing: this slice implements only the fold/unfold
+toggle, not the oracle's "move to nearest branch segment" fallback for
+non-foldable nodes, and not ctrl/alt modifier-key escape parsing (the Go raw
+reader only understands plain arrow bytes today) — raw terminals use plain
+Left/Right arrows and line-buffered callers use "f"/"u" as an explicit,
+documented approximation of the oracle's ctrl+left/alt+left and
+ctrl+right/alt+right bindings. This increment is opened as a PR against
+`main` and must not be merged by this agent. Tree viewport/page panning,
+branch-summary prompt/navigation behavior, native diff rendering, Mermaid
+rendering, dynamic borders, status-indicator spinner behavior, ctrl/alt
+modifier-key parsing, and live terminal acceptance remain open Goal 4
+slices, each requiring its own failing seam test and PR.
+
 ## Checkpoint: Goal 4 raw tree selector integration
 
 `feat/tui-selector-raw-input` is rebased onto current `origin/main` (which

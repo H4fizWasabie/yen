@@ -4,6 +4,31 @@ Date: 2026-09-16
 
 ## Checkpoint update: 2026-09-16
 
+`internal/tui.SelectTree` now supports folding a highlighted node (hiding its
+descendants from the option list) and unfolding it again, matching the
+oracle's `app.tree.foldOrUp`/`app.tree.unfoldOrDown` toggle. Oracle authority
+is `packages/coding-agent/src/modes/interactive/components/tree-selector.ts:1002-1017,1109-1116`
+(fold/unfold toggle and `isFoldable`) and
+`packages/coding-agent/src/core/keybindings.ts:145-152` (default bindings:
+ctrl+left/alt+left to fold, ctrl+right/alt+right to unfold). This slice
+covers only the fold/unfold toggle itself, not the oracle's additional
+"move to nearest branch segment" fallback when the highlighted node isn't
+foldable, and not the oracle's ctrl/alt modifier-key escape sequences: the
+Go raw-byte reader has no parser for modified arrow sequences yet, so raw
+terminals use plain Left/Right arrows and line-buffered (scripted/piped)
+callers use "f"/"u" as documented approximations of the same two actions.
+Go evidence is `internal/tui/tree.go`,
+`TestSelectTreeRawFoldHidesDescendants`,
+`TestSelectTreeRawUnfoldRestoresDescendants`, and
+`TestSelectTreeLineBufferedFoldAndUnfold`. Full repository gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass. Tree viewport/page panning, branch-summary
+prompt/navigation behavior, native diff rendering, Mermaid rendering,
+dynamic borders, status-indicator spinner behavior, ctrl/alt modifier-key
+parsing, and live terminal acceptance remain open and are not claimed here.
+
+## Checkpoint update: 2026-09-16
+
 The interactive `/tree` selector now shares the raw-byte navigation path with
 `/resume` and `/model`: `internal/tui.SelectTree` takes a `rawInput` flag and
 dispatches to the existing `SelectRaw` (byte-at-a-time j/k/arrow/Enter) or
