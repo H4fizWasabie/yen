@@ -14,3 +14,14 @@ func TestHandleExtensionUISelectReturnsProtocolResponse(t *testing.T) {
 		t.Fatalf("response=%#v err=%v", response, err)
 	}
 }
+
+func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
+	var output strings.Builder
+	selected, err := Select(bufio.NewReader(strings.NewReader("j\n\n")), &output, "Pick", []string{"first", "second"})
+	if err != nil || selected != 1 {
+		t.Fatalf("selected=%d err=%v", selected, err)
+	}
+	if !strings.Contains(output.String(), "> 2) second") {
+		t.Fatalf("highlighted option missing from output: %q", output.String())
+	}
+}

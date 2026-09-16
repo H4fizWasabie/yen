@@ -57,6 +57,14 @@ Go evidence is `internal/tui/tui.go`, `cmd/theoses/main.go`, and
 extension UI component rendering, streaming status/progress, and the oracle's
 remaining slash commands.
 
+Selector review follow-up is implemented: Enter confirms the highlighted
+selection, q/Escape cancel, and navigation redraws the list with the selected
+row marked. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4281-4305`;
+Go evidence is `internal/tui/tui.go` and
+`TestSelectJThenEnterReturnsHighlightedOption`. The PR is intentionally open
+for Claude review and has not been merged.
+
 The status-rendering increment is now implemented: streamed provider text is
 shown in the TUI status region via `RunSubmittedWithUpdates`, with render
 errors propagated and the status returning to `Ready` after completion.
