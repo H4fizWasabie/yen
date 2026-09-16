@@ -26,8 +26,8 @@ import (
 )
 
 type Server struct {
-	Runner *runtime.Runner
-	Link   conversation.Link
+	Runner     *runtime.Runner
+	Link       conversation.Link
 	Extensions *extensions.Registry
 
 	writeMu                    sync.Mutex
