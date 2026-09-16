@@ -166,14 +166,13 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		interactiveReader = bufio.NewReader(stdin)
 		reader := interactiveReader
 		for {
-			line, readErr := reader.ReadString('\n')
-			if readErr != nil && len(line) == 0 {
+			prompt, readErr := tui.ReadLine(reader)
+			if readErr != nil {
 				if readErr != io.EOF {
 					return reportError(stderr, readErr)
 				}
 				break
 			}
-			prompt := strings.TrimSuffix(line, "\n")
 			screen.Input = prompt
 			if prompt == "/quit" || prompt == "/exit" {
 				break
