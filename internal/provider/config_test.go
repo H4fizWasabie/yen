@@ -99,6 +99,32 @@ func TestCloudflareUsesStoredCredentialEnvironment(t *testing.T) {
 	}
 }
 
+func TestBedrockUsesStoredCredentialEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if _, err := auth.Open(path).Modify("amazon-bedrock", func(*auth.Credential) (*auth.Credential, error) {
+		return &auth.Credential{
+			Type: "api_key", Key: "stored-bearer",
+			Env: map[string]string{"AWS_PROFILE": "stored-profile", "AWS_REGION": "eu-west-1"},
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_AUTH_FILE", path)
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+	t.Setenv("YEN_AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	configured, err := NewConfigured("amazon-bedrock", "fixture-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := configured.(BedrockConverse)
+	if !ok || client.Profile != "stored-profile" || client.Region != "eu-west-1" || client.BearerToken != "stored-bearer" {
+		t.Fatalf("configured=%#v", configured)
+	}
+}
+
 func TestGitHubCopilotUsesStoredYenCredential(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	if _, err := auth.Open(path).Modify("github-copilot", func(*auth.Credential) (*auth.Credential, error) {
