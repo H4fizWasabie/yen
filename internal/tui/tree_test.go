@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bufio"
 	"strings"
 	"testing"
 
@@ -36,5 +37,17 @@ func TestRenderTreeHandlesMultipleRoots(t *testing.T) {
 	lines := RenderTree(entries, "")
 	if len(lines) != 2 || lines[0] != "a" || lines[1] != "b" {
 		t.Fatalf("lines=%#v", lines)
+	}
+}
+
+func TestSelectTreeReturnsNavigatedEntry(t *testing.T) {
+	root := "root"
+	entries := []session.TreeEntry{
+		{ID: root, Name: "root"},
+		{ID: "child", ParentID: &root, Name: "child"},
+	}
+	selected, err := SelectTree(bufio.NewReader(strings.NewReader("j\n\n")), &strings.Builder{}, "Tree", entries)
+	if err != nil || selected != "child" {
+		t.Fatalf("selected=%q err=%v", selected, err)
 	}
 }

@@ -383,6 +383,25 @@ func TestInteractiveTreeRendersAsciiBranchConnectors(t *testing.T) {
 	}
 }
 
+func TestInteractiveTreeSelectorBranchesFromChosenEntry(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1"})
+	if _, err := current.Append(session.Message{Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	entryID := current.LeafID()
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\n")), current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	if current.LeafID() == entryID {
+		t.Fatalf("tree selector did not create a branch")
+	}
+}
+
 func TestInteractiveCopyCopiesLastAssistantMessage(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")

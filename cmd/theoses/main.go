@@ -182,7 +182,10 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				continue
 			}
 			var response strings.Builder
-			handled, err := handleInteractiveSelector(prompt, reader, currentSession, runner, link, &sessionPath, &response)
+			handled, err := handleInteractiveTree(prompt, reader, currentSession, &response)
+			if !handled && err == nil {
+				handled, err = handleInteractiveSelector(prompt, reader, currentSession, runner, link, &sessionPath, &response)
+			}
 			if !handled && err == nil {
 				handled, err = handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, &response)
 			}
@@ -288,6 +291,25 @@ func interactiveToolResult(event agent.Event) string {
 		result = string(runes[:137]) + "..."
 	}
 	return "Tool " + event.Name + ": " + result
+}
+
+func handleInteractiveTree(input string, reader *bufio.Reader, current *session.Session, stdout io.Writer) (bool, error) {
+	if strings.TrimSpace(input) != "/tree" {
+		return false, nil
+	}
+	selected, err := tui.SelectTree(reader, stdout, "Select tree entry", current.Tree())
+	if err != nil || selected == "" {
+		return true, err
+	}
+	if selected == current.LeafID() {
+		_, err = fmt.Fprintln(stdout, "Already at this point")
+		return true, err
+	}
+	if err := current.Branch(selected); err != nil {
+		return true, err
+	}
+	_, err = fmt.Fprintf(stdout, "Branched from: %s\n", selected)
+	return true, err
 }
 
 func handleInteractiveSelector(input string, reader *bufio.Reader, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
