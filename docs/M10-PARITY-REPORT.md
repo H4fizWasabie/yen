@@ -2,6 +2,16 @@
 
 Date: 2026-09-16
 
+## Checkpoint update: 2026-09-16
+
+Serialized `Box` components returned by registered extension message
+renderers now render nested text children with the oracle's horizontal and
+vertical padding defaults; unsupported components continue to use the JSON
+fallback. Oracle authority is `packages/tui/src/components/box.ts:14-18,64-108`.
+Go evidence is `internal/tui/render.go` and
+`TestRenderMessageFormatsSerializedBoxComponent`. Full repository gates pass.
+
+
 ## Decision
 
 Do not cut over from TypeScript yet. Keep the Go Telegram and dashboard
