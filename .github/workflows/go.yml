@@ -21,6 +21,10 @@ jobs:
       - run: go test ./...
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Install browser acceptance runtime
+        run: sudo apt-get update && sudo apt-get install -y chromium
+      - name: Run dashboard browser acceptance
+        run: YEN_DASHBOARD_BROWSER=chromium go test ./internal/adapters -run TestDashboardBrowserAcceptance -count=1
       - name: Check diff
         shell: bash
         run: |
