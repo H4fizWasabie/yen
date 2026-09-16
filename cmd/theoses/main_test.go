@@ -64,6 +64,51 @@ func TestInteractiveRunRendersProviderStatusUpdates(t *testing.T) {
 	}
 }
 
+func TestInteractiveToolStatusIncludesBoundedCallPreview(t *testing.T) {
+	status := interactiveToolStatus(agent.Event{Type: "tool_execution_start", Name: "read", Args: map[string]any{"path": "/tmp/example.txt"}})
+	if status != "Running read: /tmp/example.txt" {
+		t.Fatalf("status=%q", status)
+	}
+}
+
+func TestInteractiveRunRendersToolProgress(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("fixture README\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldCWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if requests.Add(1) == 1 {
+			fmt.Fprintln(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"read-1","function":{"name":"read","arguments":"{\"path\":"}}]}}]}`)
+			fmt.Fprintln(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"README.md\"}"}}]},"finish_reason":"tool_calls"}]}`)
+		} else {
+			fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
+		}
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+	dataDir := filepath.Join(dir, "data")
+	t.Setenv("YEN_SESSION_FILE", filepath.Join(dataDir, "session.jsonl"))
+	t.Setenv("YEN_DATA_DIR", dataDir)
+	t.Setenv("YEN_OPENAI_BASE_URL", server.URL)
+	var stdout, stderr bytes.Buffer
+	if code := runWithInput([]string{"-i"}, strings.NewReader("read README\n/quit\n"), &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Status: Running read: README.md") {
+		t.Fatalf("tool progress missing: %q", stdout.String())
+	}
+}
+
 func TestInteractiveRunRendersExtensionMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

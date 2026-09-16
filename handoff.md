@@ -106,6 +106,14 @@ Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
 `TestHandleExtensionUIUpdatesScreenPresentation`. Native component layout and
 interactive widget behavior remain open.
 
+The interactive tool-progress increment is implemented: the CLI consumes
+runtime `agent.Event` callbacks, shows bounded `Running <tool>: <preview>`
+status during tool execution, and returns to streaming status after results.
+Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:1984-2003`;
+Go evidence is `cmd/theoses/main.go` and
+`TestInteractiveRunRendersToolProgress`. Native tool components remain open.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:
