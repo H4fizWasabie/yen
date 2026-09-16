@@ -109,6 +109,13 @@ func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
 	}
 }
 
+func TestSelectWithNoOptionsCancels(t *testing.T) {
+	selected, err := Select(bufio.NewReader(strings.NewReader("\n")), &strings.Builder{}, "Pick", nil)
+	if err != nil || selected != -1 {
+		t.Fatalf("selected=%d err=%v", selected, err)
+	}
+}
+
 func TestRenderMessageUsesExtensionRenderer(t *testing.T) {
 	registry := extensions.New()
 	if err := registry.RegisterMessageRenderer("custom", func(value any, _ extensions.RenderOptions) (any, bool) {

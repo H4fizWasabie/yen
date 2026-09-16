@@ -89,6 +89,9 @@ func Select(r *bufio.Reader, w io.Writer, title string, options []string) (int, 
 	if _, err := fmt.Fprintln(w, title); err != nil {
 		return -1, err
 	}
+	if len(options) == 0 {
+		return -1, nil
+	}
 	selected := 0
 	render := func() error {
 		for i, option := range options {
