@@ -705,6 +705,14 @@ available.
 
 ## Goal 1 provider audit: 2026-09-16
 
+Codex continuation now reuses the prior assistant `ResponseID` as
+`previous_response_id` and sends only messages after that response, covered by
+`TestOpenAICodexSendsPreviousResponseIDWithNewInput`. This follows the oracle's
+request-body continuation fields and input-delta construction at
+`packages/ai/src/api/openai-codex-responses.ts:87-99,1349-1400`. The full
+oracle WebSocket connection-scoped cache remains open; live Codex acceptance is
+also pending without credentials.
+
 The pinned local oracle contains provider wrapper files and generated-model
 imports, but no tracked `packages/ai/src/providers/data/*.json` files. Yen now
 has tested protocol/auth parity for Anthropic OAuth, Copilot protocol variants,

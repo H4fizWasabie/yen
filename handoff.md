@@ -812,6 +812,16 @@ implemented. Static catalog metadata and live provider acceptance remain open.
 
 ## Latest operations evidence
 
+## Latest Codex continuation checkpoint
+
+Codex requests now use the prior assistant `ResponseID` as
+`previous_response_id` and send only the new input suffix. Evidence:
+`internal/provider/responses.go`, `internal/provider/responses_test.go`, and
+`TestOpenAICodexSendsPreviousResponseIDWithNewInput`. Oracle authority is
+`packages/ai/src/api/openai-codex-responses.ts:87-99,1349-1400`. This is the
+SSE-compatible continuation seam; the oracle's reusable WebSocket connection
+cache remains open, as does live-account acceptance.
+
 ## Latest provider catalog checkpoint
 
 The approved current Theoses2 catalog snapshot is embedded from commit
