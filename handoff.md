@@ -642,6 +642,12 @@ Oracle evidence: `packages/ai/src/auth/oauth/openai-codex.ts:26-38,300-311,320-3
 `cmd/theoses/main_test.go` covers the CLI auth-file boundary. Real-account
 login and live Codex acceptance remain manual and open.
 
+Codex model catalog read-back now has an explicit provider contract test:
+`TestOpenAICodexListsPaginatedCatalogWithAccountHeaders` verifies pagination,
+provider identity, bearer auth, and `chatgpt-account-id`. Generated static
+model metadata and WebSocket continuation caching remain open; do not invent
+catalog entries because the pinned oracle tree does not contain generated data.
+
 GitHub Copilot now preserves the default OpenAI Completions route and accepts
 explicit `YEN_COPILOT_API` values `openai-completions`, `openai-responses`, or
 `anthropic-messages`; dynamic Copilot headers are applied to all three. The
