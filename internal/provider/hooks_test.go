@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	smithymiddleware "github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 func TestApplyProviderHeaderHookPreservesAndMutatesHeaders(t *testing.T) {
@@ -36,5 +39,36 @@ func TestApplyProviderResponseHookCopiesStatusAndHeaders(t *testing.T) {
 	}
 	if _, ok := response.Header["X-Hook"]; ok {
 		t.Fatalf("hook mutated transport headers: %v", response.Header)
+	}
+}
+
+func TestBedrockResponseHookReadsSDKRawResponseMetadata(t *testing.T) {
+	var gotStatus int
+	ctx := agent.WithProviderResponseHook(context.Background(), func(_ context.Context, status int, _ map[string][]string) {
+		gotStatus = status
+	})
+	raw := &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusCreated, Header: http.Header{"X-Request-ID": []string{"bedrock"}}}}
+	output, metadata, err := (&awsmiddleware.AddRawResponse{}).HandleDeserialize(context.Background(), smithymiddleware.DeserializeInput{}, smithymiddleware.DeserializeHandlerFunc(func(context.Context, smithymiddleware.DeserializeInput) (smithymiddleware.DeserializeOutput, smithymiddleware.Metadata, error) {
+		return smithymiddleware.DeserializeOutput{RawResponse: raw}, smithymiddleware.Metadata{}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = output
+	applyBedrockResponseHook(ctx, metadata)
+	if gotStatus != http.StatusCreated {
+		t.Fatalf("status=%d, want %d", gotStatus, http.StatusCreated)
+	}
+}
+
+func TestBedrockErrorResponseHookReadsSDKResponseError(t *testing.T) {
+	var gotStatus int
+	ctx := agent.WithProviderResponseHook(context.Background(), func(_ context.Context, status int, _ map[string][]string) {
+		gotStatus = status
+	})
+	err := &smithyhttp.ResponseError{Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusBadGateway}}}
+	applyBedrockErrorResponseHook(ctx, err)
+	if gotStatus != http.StatusBadGateway {
+		t.Fatalf("status=%d, want %d", gotStatus, http.StatusBadGateway)
 	}
 }

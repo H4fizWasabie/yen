@@ -24,6 +24,7 @@ import (
 	bedrockdocument "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	smithybearer "github.com/aws/smithy-go/auth/bearer"
+	smithymiddleware "github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -110,15 +111,10 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 	}
 	out, err := client.ConverseStream(ctx, in)
 	if err != nil {
-		var responseErr *smithyhttp.ResponseError
-		if errors.As(err, &responseErr) && responseErr.Response != nil {
-			applyProviderResponseHook(ctx, responseErr.Response.Response)
-		}
+		applyBedrockErrorResponseHook(ctx, err)
 		return agent.Response{}, err
 	}
-	if raw, ok := awsmiddleware.GetRawResponse(out.ResultMetadata).(*smithyhttp.Response); ok && raw != nil {
-		applyProviderResponseHook(ctx, raw.Response)
-	}
+	applyBedrockResponseHook(ctx, out.ResultMetadata)
 	providerName := p.ProviderName
 	if providerName == "" {
 		providerName = "amazon-bedrock"
@@ -224,6 +220,20 @@ func (p BedrockConverse) next(ctx context.Context, messages []agent.Message, too
 		emit(agent.StreamEvent{Type: "done", Partial: partial})
 	}
 	return result, nil
+}
+
+func applyBedrockResponseHook(ctx context.Context, metadata smithymiddleware.Metadata) {
+	raw, ok := awsmiddleware.GetRawResponse(metadata).(*smithyhttp.Response)
+	if ok && raw != nil {
+		applyProviderResponseHook(ctx, raw.Response)
+	}
+}
+
+func applyBedrockErrorResponseHook(ctx context.Context, err error) {
+	var responseErr *smithyhttp.ResponseError
+	if errors.As(err, &responseErr) && responseErr.Response != nil {
+		applyProviderResponseHook(ctx, responseErr.Response.Response)
+	}
 }
 
 func applyBedrockUsage(result *agent.Response, usage *bedrocktypes.TokenUsage) {
