@@ -142,9 +142,16 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		if err := screen.Render(stdout); err != nil {
 			return reportError(stderr, err)
 		}
-		scanner := bufio.NewScanner(stdin)
-		for scanner.Scan() {
-			prompt := scanner.Text()
+		reader := bufio.NewReader(stdin)
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil && len(line) == 0 {
+				if readErr != io.EOF {
+					return reportError(stderr, readErr)
+				}
+				break
+			}
+			prompt := strings.TrimSuffix(line, "\n")
 			screen.Input = prompt
 			if prompt == "/quit" || prompt == "/exit" {
 				break
@@ -153,7 +160,10 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				continue
 			}
 			var response strings.Builder
-			handled, err := handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, &response)
+			handled, err := handleInteractiveSelector(prompt, reader, currentSession, runner, link, &sessionPath, &response)
+			if !handled && err == nil {
+				handled, err = handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, &response)
+			}
 			if err != nil {
 				return reportError(stderr, err)
 			}
@@ -177,15 +187,66 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				return reportError(stderr, err)
 			}
 		}
-		if err := scanner.Err(); err != nil {
-			return reportError(stderr, err)
-		}
 		return 0
 	}
 	if _, err := runPrompt(*prompt, stdout); err != nil {
 		return reportError(stderr, err)
 	}
 	return 0
+}
+
+func handleInteractiveSelector(input string, reader *bufio.Reader, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
+	switch strings.TrimSpace(input) {
+	case "/model":
+		models, err := provider.AvailableModels(context.Background(), runner.Provider)
+		if err != nil {
+			return true, err
+		}
+		options := make([]string, len(models))
+		for i, model := range models {
+			options[i] = model.Provider + "/" + model.ID
+		}
+		selected, err := tui.Select(reader, stdout, "Select model", options)
+		if err != nil || selected < 0 {
+			return true, err
+		}
+		configured, err := provider.SetModel(runner.Provider, models[selected].ID)
+		if err != nil {
+			return true, err
+		}
+		runner.Provider = configured
+		_, err = fmt.Fprintf(stdout, "Model set: %s\n", models[selected].ID)
+		return true, err
+	case "/resume":
+		paths, err := filepath.Glob(filepath.Join(filepath.Dir(current.Path()), "*.jsonl"))
+		if err != nil {
+			return true, err
+		}
+		validPaths := paths[:0]
+		for _, path := range paths {
+			if _, err := session.Open(path); err == nil {
+				validPaths = append(validPaths, path)
+			}
+		}
+		paths = validPaths
+		sort.Strings(paths)
+		options := make([]string, len(paths))
+		for i, path := range paths {
+			options[i] = filepath.Base(path)
+		}
+		selected, err := tui.Select(reader, stdout, "Select session", options)
+		if err != nil || selected < 0 {
+			return true, err
+		}
+		if err := current.ReplaceFrom(paths[selected]); err != nil {
+			return true, err
+		}
+		*sessionPath = current.Path()
+		_, err = fmt.Fprintf(stdout, "Session resumed: %s\n", current.Path())
+		return true, err
+	default:
+		return false, nil
+	}
 }
 
 func handleInteractiveCommand(input string, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
