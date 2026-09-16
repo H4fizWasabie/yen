@@ -37,6 +37,8 @@ type ContentPart struct {
 	ID                string `json:"id,omitempty"`
 	Name              string `json:"name,omitempty"`
 	Arguments         any    `json:"arguments,omitempty"`
+	ThoughtSignature  string `json:"thoughtSignature,omitempty"`
+	Namespace         string `json:"namespace,omitempty"`
 }
 
 type Usage struct {
@@ -63,27 +65,31 @@ type CompactionPlan struct {
 }
 
 type Message struct {
-	Role               string   `json:"role"`
-	Content            any      `json:"content"`
-	Images             []string `json:"images,omitempty"`
-	ToolCallID         string   `json:"toolCallId,omitempty"`
-	ToolName           string   `json:"toolName,omitempty"`
-	StopReason         string   `json:"stopReason,omitempty"`
-	ErrorMessage       string   `json:"errorMessage,omitempty"`
-	ResponseID         string   `json:"responseId,omitempty"`
-	ResponseModel      string   `json:"responseModel,omitempty"`
-	RawStopReason      string   `json:"rawStopReason,omitempty"`
-	Provider           string   `json:"provider,omitempty"`
-	Model              string   `json:"model,omitempty"`
-	Usage              *Usage   `json:"usage,omitempty"`
-	Command            string   `json:"command,omitempty"`
-	Output             string   `json:"output,omitempty"`
-	ExitCode           *int     `json:"exitCode,omitempty"`
-	Cancelled          bool     `json:"cancelled,omitempty"`
-	Truncated          bool     `json:"truncated,omitempty"`
-	FullOutputPath     string   `json:"fullOutputPath,omitempty"`
-	ExcludeFromContext bool     `json:"excludeFromContext,omitempty"`
-	Summary            string   `json:"summary,omitempty"`
+	Role                string   `json:"role"`
+	Content             any      `json:"content"`
+	Images              []string `json:"images,omitempty"`
+	ToolCallID          string   `json:"toolCallId,omitempty"`
+	ToolName            string   `json:"toolName,omitempty"`
+	StopReason          string   `json:"stopReason,omitempty"`
+	ErrorMessage        string   `json:"errorMessage,omitempty"`
+	ResponseID          string   `json:"responseId,omitempty"`
+	ResponseModel       string   `json:"responseModel,omitempty"`
+	RawStopReason       string   `json:"rawStopReason,omitempty"`
+	Provider            string   `json:"provider,omitempty"`
+	Model               string   `json:"model,omitempty"`
+	Usage               *Usage   `json:"usage,omitempty"`
+	ToolResultDetails   any      `json:"toolResultDetails,omitempty"`
+	ToolResultUsage     *Usage   `json:"toolResultUsage,omitempty"`
+	AddedToolNames      []string `json:"addedToolNames,omitempty"`
+	ToolResultTerminate bool     `json:"toolResultTerminate,omitempty"`
+	Command             string   `json:"command,omitempty"`
+	Output              string   `json:"output,omitempty"`
+	ExitCode            *int     `json:"exitCode,omitempty"`
+	Cancelled           bool     `json:"cancelled,omitempty"`
+	Truncated           bool     `json:"truncated,omitempty"`
+	FullOutputPath      string   `json:"fullOutputPath,omitempty"`
+	ExcludeFromContext  bool     `json:"excludeFromContext,omitempty"`
+	Summary             string   `json:"summary,omitempty"`
 }
 
 type Artifact struct {

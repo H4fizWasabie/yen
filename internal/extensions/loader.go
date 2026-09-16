@@ -21,10 +21,34 @@ import (
 type LoadError struct{ Path, Error string }
 type LoadedExtension struct{ Path, Name string }
 type LoadResult struct {
-	Registry   *Registry
-	Extensions []LoadedExtension
-	Errors     []LoadError
-	bridges    []*bridge
+	Registry                       *Registry
+	Extensions                     []LoadedExtension
+	Errors                         []LoadError
+	bridges                        []*bridge
+	workspace, agentDir            string
+	configured, operatorConfigured []string
+	uiRequester                    func(context.Context, map[string]any) (map[string]any, error)
+}
+
+// Reload re-discovers extensions and replaces the registry atomically from the
+// caller's perspective. Existing bridges are closed after the new set loads.
+func (r *LoadResult) Reload() error {
+	if r == nil {
+		return errors.New("extension load result is required")
+	}
+	next, err := discoverAndLoad(r.workspace, r.agentDir, r.configured, r.operatorConfigured)
+	if err != nil {
+		return err
+	}
+	if r.uiRequester != nil {
+		next.SetUIRequester(r.uiRequester)
+	}
+	old := r.bridges
+	*r = *next
+	for _, bridge := range old {
+		_ = bridge.close()
+	}
+	return nil
 }
 
 func (r *LoadResult) Close() error {
@@ -38,6 +62,7 @@ func (r *LoadResult) Close() error {
 }
 
 func (r *LoadResult) SetUIRequester(requester func(context.Context, map[string]any) (map[string]any, error)) {
+	r.uiRequester = requester
 	for _, b := range r.bridges {
 		b.ui = requester
 	}
@@ -92,7 +117,7 @@ func discoverAndLoad(workspace, agentDir string, configured, operatorConfigured 
 		addConfigured(raw, true)
 	}
 	trusted := settings.IsTrusted(workspace)
-	result := &LoadResult{Registry: New()}
+	result := &LoadResult{Registry: New(), workspace: workspace, agentDir: agentDir, configured: append([]string(nil), configured...), operatorConfigured: append([]string(nil), operatorConfigured...)}
 	seen := map[string]bool{}
 	for _, path := range paths {
 		path, _ = filepath.Abs(path)
@@ -362,8 +387,13 @@ func (b *bridge) close() error {
 	return b.cmd.Wait()
 }
 
-const bridgeScript = `import readline from "node:readline"; import crypto from "node:crypto"; import { pathToFileURL } from "node:url";
+const baseBridgeScript = `import readline from "node:readline"; import crypto from "node:crypto"; import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.argv[1]).href); const factory = mod.default ?? mod;
+const baseBridgeScript = "";
 const handlers = new Map(), commands = [], commandHandlers = new Map(), renderers = new Map(), uiPending = new Map(); const requestUI = (method, fields = {}) => new Promise(resolve => { const id = crypto.randomUUID(); uiPending.set(id, resolve); console.log(JSON.stringify({type:"extension_ui_request", id, method, ...fields})); }); const api = { on: (name, fn) => { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); }, registerCommand: (name, opts) => { commands.push({name, description: opts?.description ?? ""}); commandHandlers.set(name, opts?.handler); }, registerMessageRenderer: (name, fn) => renderers.set("message:" + name, fn), registerEntryRenderer: (name, fn) => renderers.set("entry:" + name, fn), registerTool: () => {}, select: (title, options, opts) => requestUI("select", {title, options, timeout: opts?.timeout}), confirm: (title, message, opts) => requestUI("confirm", {title, message, timeout: opts?.timeout}), input: (title, placeholder, opts) => requestUI("input", {title, placeholder, timeout: opts?.timeout}), notify: (message, type) => { requestUI("notify", {message, notifyType:type}); }, setStatus: (key, text) => { requestUI("setStatus", {statusKey:key, statusText:text}); }, setWidget: (key, lines, opts) => { requestUI("setWidget", {widgetKey:key, widgetLines:lines, widgetPlacement:opts?.placement}); }, setTitle: title => { requestUI("setTitle", {title}); }, setEditorText: text => { requestUI("set_editor_text", {text}); } };
 await factory(api); console.log(JSON.stringify({name: process.argv[1], commands, messageRenderers: [...renderers.keys()].filter(k => k.startsWith("message:")).map(k => k.slice(8)), entryRenderers: [...renderers.keys()].filter(k => k.startsWith("entry:")).map(k => k.slice(6))}));
+const bridgeScript = baseBridgeScript.replace("registerTool: () => {}", "registerTool: (name, opts) => { tools.set(name, {name, description: opts?.description ?? '', label: opts?.label ?? name, parameters: opts?.parameters ?? {type:'object'}}); toolHandlers.set(name, opts?.execute); }").replace("const handlers = new Map(), commands = [], commandHandlers = new Map(), renderers = new Map(), uiPending = new Map()", "const handlers = new Map(), commands = [], commandHandlers = new Map(), renderers = new Map(), tools = new Map(), toolHandlers = new Map(), uiPending = new Map()").replace("} else if (req.kind === \"command\")", "} else if (req.kind === \"tool\") { const fn = toolHandlers.get(req.name); value = fn ? await fn(value, {}) : \"\"; } else if (req.kind === \"command\")").replace("commands, messageRenderers", "commands, tools: [...tools.values()], messageRenderers");
+
 const rl = readline.createInterface({input: process.stdin}); rl.on("line", line => { void (async () => { try { const req = JSON.parse(line); if (req.kind === "ui_response") { uiPending.get(req.id)?.(req); uiPending.delete(req.id); return; } let value = req.payload; if (req.kind === "render") { const fn = renderers.get(req.name === "entry:" + req.name ? req.name : "message:" + req.name) ?? renderers.get(req.name); value = fn ? await fn(value, {}) : value; } else if (req.kind === "command") { const fn = commandHandlers.get(req.name); value = fn ? await fn(value, {}) : ""; } else { for (const fn of handlers.get(req.name) ?? []) { const next = await fn({type:req.name, ...value}); if (next !== undefined) value = next; } if (req.name === "before_provider_headers") value = value.headers; } console.log(JSON.stringify({result:value})); } catch (e) { console.log(JSON.stringify({error:String(e?.message ?? e)})); } })(); }); await new Promise(() => {});`
+
+var bridgeScript = baseBridgeScript

@@ -279,6 +279,26 @@ func TestOpenAICompletionsSendsPromptCacheSettings(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsClampsPromptCacheKeyTo64Runes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if got := payload["prompt_cache_key"]; got != strings.Repeat("x", 64) {
+			t.Fatalf("cache key=%q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	p := NewOpenAICompletions(server.URL, "key", "model")
+	p.ProviderName = "openrouter"
+	if _, err := p.Next(WithSessionID(context.Background(), strings.Repeat("x", 80)), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMistralUsesNativeReasoningEffortField(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {

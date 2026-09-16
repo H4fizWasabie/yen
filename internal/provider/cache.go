@@ -26,9 +26,17 @@ func promptCacheSettings(ctx context.Context) (string, string) {
 		return "", ""
 	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("YEN_CACHE_RETENTION")), "long") {
-		return id, "24h"
+		return clampPromptCacheKey(id), "24h"
 	}
-	return id, ""
+	return clampPromptCacheKey(id), ""
+}
+
+func clampPromptCacheKey(key string) string {
+	runes := []rune(key)
+	if len(runes) > 64 {
+		runes = runes[:64]
+	}
+	return string(runes)
 }
 
 func supportsPromptCaching(providerName, baseURL string) bool {

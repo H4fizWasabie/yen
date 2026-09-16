@@ -452,9 +452,7 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 	}
 	transcript.WriteString("<conversation>\n")
 	for _, message := range plan.Messages {
-		transcript.WriteString(message.Role)
-		transcript.WriteString(": ")
-		transcript.WriteString(fmt.Sprint(message.Content))
+		transcript.WriteString(compactionMessageText(message))
 		transcript.WriteByte('\n')
 	}
 	transcript.WriteString("</conversation>\n\nSummarize the conversation for a later agent. Preserve goals, constraints, decisions, progress, and next steps.")
@@ -482,6 +480,25 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		go r.distillDroppedMemory(ctx, conversationID, turns)
 	}
 	return err
+}
+
+func compactionMessageText(message session.Message) string {
+	var text strings.Builder
+	text.WriteString(message.Role)
+	text.WriteString(": ")
+	text.WriteString(fmt.Sprint(message.Content))
+	for _, image := range message.Images {
+		text.WriteString("\n[image: ")
+		text.WriteString(image)
+		text.WriteByte(']')
+	}
+	if message.ToolResultDetails != nil {
+		data, _ := json.Marshal(message.ToolResultDetails)
+		text.WriteString("\n[tool details: ")
+		text.Write(data)
+		text.WriteByte(']')
+	}
+	return text.String()
 }
 
 func (r *Runner) distillDroppedMemory(ctx context.Context, conversationID string, turns []memory.ConsolidationTurn) {
@@ -847,12 +864,15 @@ func openOrCreate(path string, turn conversation.Turn) (*session.Session, error)
 func toAgentMessages(messages []session.Message) []agent.Message {
 	result := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
-		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, ToolName: message.ToolName, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model}
+		converted := agent.Message{Role: message.Role, Images: message.Images, ToolCallID: message.ToolCallID, ToolName: message.ToolName, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model, AddedToolNames: message.AddedToolNames, ToolResultDetails: message.ToolResultDetails, ToolResultTerminate: message.ToolResultTerminate}
 		if message.Usage != nil {
 			converted.Usage = &agent.Usage{
 				Input: message.Usage.Input, Output: message.Usage.Output, Reasoning: message.Usage.Reasoning,
 				CacheRead: message.Usage.CacheRead, CacheWrite: message.Usage.CacheWrite, TotalTokens: message.Usage.TotalTokens,
 			}
+		}
+		if message.ToolResultUsage != nil {
+			converted.ToolResultUsage = &agent.Usage{Input: message.ToolResultUsage.Input, Output: message.ToolResultUsage.Output, Reasoning: message.ToolResultUsage.Reasoning, CacheRead: message.ToolResultUsage.CacheRead, CacheWrite: message.ToolResultUsage.CacheWrite, TotalTokens: message.ToolResultUsage.TotalTokens}
 		}
 		switch message.Role {
 		case "bashExecution":
@@ -903,7 +923,7 @@ func toAgentMessages(messages []session.Message) []agent.Message {
 			}
 			if part.Type == "toolCall" {
 				args, _ := part.Arguments.(map[string]any)
-				converted.ToolCalls = append(converted.ToolCalls, agent.ToolCall{ID: part.ID, Name: part.Name, Args: args})
+				converted.ToolCalls = append(converted.ToolCalls, agent.ToolCall{ID: part.ID, Name: part.Name, Args: args, ThoughtSignature: part.ThoughtSignature, Namespace: part.Namespace})
 			}
 		}
 		result = append(result, converted)
@@ -938,7 +958,11 @@ func toSessionMessage(message agent.Message) session.Message {
 		}
 	}
 	if message.Role == "tool" {
-		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, ToolName: message.ToolName, Images: message.Images, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage}
+		var toolUsage *session.Usage
+		if message.ToolResultUsage != nil {
+			toolUsage = &session.Usage{Input: message.ToolResultUsage.Input, Output: message.ToolResultUsage.Output, Reasoning: message.ToolResultUsage.Reasoning, CacheRead: message.ToolResultUsage.CacheRead, CacheWrite: message.ToolResultUsage.CacheWrite, TotalTokens: message.ToolResultUsage.TotalTokens}
+		}
+		return session.Message{Role: "toolResult", ToolCallID: message.ToolCallID, ToolName: message.ToolName, Images: message.Images, Content: []session.ContentPart{{Type: "text", Text: message.Content}}, Usage: usage, ToolResultDetails: message.ToolResultDetails, ToolResultUsage: toolUsage, AddedToolNames: message.AddedToolNames, ToolResultTerminate: message.ToolResultTerminate}
 	}
 	if len(message.ToolCalls) > 0 || message.TextSignature != "" || message.Thinking != "" || message.ThinkingSignature != "" {
 		parts := make([]session.ContentPart, 0, len(message.ToolCalls)+2)
@@ -949,7 +973,7 @@ func toSessionMessage(message agent.Message) session.Message {
 			parts = append(parts, session.ContentPart{Type: "text", Text: message.Content, TextSignature: message.TextSignature})
 		}
 		for _, call := range message.ToolCalls {
-			parts = append(parts, session.ContentPart{Type: "toolCall", ID: call.ID, Name: call.Name, Arguments: call.Args})
+			parts = append(parts, session.ContentPart{Type: "toolCall", ID: call.ID, Name: call.Name, Arguments: call.Args, ThoughtSignature: call.ThoughtSignature, Namespace: call.Namespace})
 		}
 		return session.Message{Role: message.Role, Content: parts, StopReason: message.StopReason, ErrorMessage: message.ErrorMessage, ResponseID: message.ResponseID, ResponseModel: message.ResponseModel, RawStopReason: message.RawStopReason, Provider: message.Provider, Model: message.Model, Usage: usage}
 	}
