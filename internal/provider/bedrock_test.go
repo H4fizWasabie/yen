@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestBedrockInputSeparatesSystemPromptAndToolSchemas(t *testing.T) {
-	input, err := bedrockInput([]agent.Message{
+	input, err := bedrockInput(context.Background(), []agent.Message{
 		{Role: "system", Content: "You are precise."},
 		{Role: "user", Content: "Read this file."},
 	}, []string{"read"}, "model-1")
@@ -109,7 +110,7 @@ func TestBedrockSkipAuthUsesDummyCredentials(t *testing.T) {
 }
 
 func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
-	input, err := bedrockInput([]agent.Message{
+	input, err := bedrockInput(context.Background(), []agent.Message{
 		{Role: "assistant", ToolCalls: []agent.ToolCall{{ID: "call-1", Name: "read", Args: map[string]any{"path": "x"}}}, Thinking: "inspect", ThinkingSignature: "sig"},
 		{Role: "tool", ToolCallID: "call-1", Content: "contents", Images: []string{"data:image/png;base64,AQ=="}},
 	}, nil, "anthropic.claude-3-7-sonnet")
@@ -139,7 +140,9 @@ func TestBedrockInputReplaysToolResultsImagesAndClaudeReasoning(t *testing.T) {
 
 func TestBedrockInputReplaysRedactedReasoningBytes(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte{1, 2, 3})
-	input, err := bedrockInput([]agent.Message{{Role: "assistant", Thinking: "[Reasoning redacted]", ThinkingSignature: encoded, ToolCalls: []agent.ToolCall{{ID: "call-2", Name: "read", Args: map[string]any{"path": "x"}}}}}, nil, "openai.gpt-5")
+	input, err := bedrockInput(context.Background(), []agent.Message{
+		{Role: "assistant", Thinking: "[Reasoning redacted]", ThinkingSignature: encoded, ToolCalls: []agent.ToolCall{{ID: "call-2", Name: "read", Args: map[string]any{"path": "x"}}}},
+	}, nil, "openai.gpt-5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +166,7 @@ func TestBedrockInputRejectsUnsupportedOrInvalidImages(t *testing.T) {
 		"not-an-image",
 	} {
 		t.Run(image, func(t *testing.T) {
-			_, err := bedrockInput([]agent.Message{{Role: "user", Content: "look", Images: []string{image}}}, nil, "model-1")
+			_, err := bedrockInput(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{image}}}, nil, "model-1")
 			if err == nil {
 				t.Fatalf("bedrockInput accepted invalid image %q", image)
 			}
@@ -174,7 +177,7 @@ func TestBedrockInputRejectsUnsupportedOrInvalidImages(t *testing.T) {
 func TestBedrockInputAcceptsGIFAndWEBPImages(t *testing.T) {
 	for _, image := range []string{"data:image/gif;base64,AQ==", "data:image/webp;base64,Ag=="} {
 		t.Run(image, func(t *testing.T) {
-			input, err := bedrockInput([]agent.Message{{Role: "user", Content: "look", Images: []string{image}}}, nil, "model-1")
+			input, err := bedrockInput(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{image}}}, nil, "model-1")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -193,13 +196,49 @@ func TestBedrockInputAcceptsGIFAndWEBPImages(t *testing.T) {
 }
 
 func TestBedrockInputAcceptsJPGImageAlias(t *testing.T) {
-	input, err := bedrockInput([]agent.Message{{Role: "user", Content: "look", Images: []string{"data:image/jpg;base64,AQ=="}}}, nil, "model-1")
+	input, err := bedrockInput(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{"data:image/jpg;base64,AQ=="}}}, nil, "model-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	image, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberImage)
 	if !ok || image.Value.Format != bedrocktypes.ImageFormatJpeg {
 		t.Fatalf("image=%#v", input.Messages[0].Content)
+	}
+}
+
+func TestBedrockInputFetchesHTTPImageSources(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{1, 2, 3})
+	}))
+	defer server.Close()
+
+	input, err := bedrockInputWithImageClient(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{server.URL + "/image"}}}, nil, "model-1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, ok := input.Messages[0].Content[1].(*bedrocktypes.ContentBlockMemberImage)
+	if !ok || image.Value.Format != bedrocktypes.ImageFormatPng || string(image.Value.Source.(*bedrocktypes.ImageSourceMemberBytes).Value) != "\x01\x02\x03" {
+		t.Fatalf("image=%#v", input.Messages[0].Content)
+	}
+}
+
+func TestBedrockInputRejectsPrivateHTTPImageSource(t *testing.T) {
+	_, err := bedrockInput(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{"http://127.0.0.1/image"}}}, nil, "model-1")
+	if err == nil || !strings.Contains(err.Error(), "private or reserved") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestBedrockInputRejectsRedirectToPrivateHTTPImageSource(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.1/image", http.StatusFound)
+	}))
+	defer server.Close()
+
+	_, err := bedrockInputWithImageClient(context.Background(), []agent.Message{{Role: "user", Content: "look", Images: []string{server.URL + "/redirect"}}}, nil, "model-1", server.Client())
+	if err == nil || !strings.Contains(err.Error(), "private or reserved") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
