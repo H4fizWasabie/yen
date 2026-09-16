@@ -73,7 +73,19 @@ func HandleExtensionUIWithScreen(_ context.Context, request map[string]any, read
 		}
 	case "setStatus":
 		if screen != nil {
-			screen.Status = fmt.Sprint(request["statusText"])
+			if request["statusKey"] == nil {
+				screen.Status = fmt.Sprint(request["statusText"])
+			} else {
+				if screen.ExtensionStatuses == nil {
+					screen.ExtensionStatuses = make(map[string]string)
+				}
+				key := fmt.Sprint(request["statusKey"])
+				if request["statusText"] == nil {
+					delete(screen.ExtensionStatuses, key)
+				} else {
+					screen.ExtensionStatuses[key] = fmt.Sprint(request["statusText"])
+				}
+			}
 			if err := screen.Render(writer); err != nil {
 				return nil, err
 			}

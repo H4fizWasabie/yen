@@ -35,6 +35,33 @@ func TestHandleExtensionUIUpdatesScreenPresentation(t *testing.T) {
 	}
 }
 
+func TestHandleExtensionUIKeepsExtensionStatusesByKey(t *testing.T) {
+	screen := &Screen{Status: "Ready"}
+	var output strings.Builder
+	for _, request := range []map[string]any{
+		{"method": "setStatus", "statusKey": "z", "statusText": "zeta"},
+		{"method": "setStatus", "statusKey": "a", "statusText": "alpha"},
+	} {
+		if _, err := HandleExtensionUIWithScreen(nil, request, bufio.NewReader(strings.NewReader("")), &output, screen); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := screen.ExtensionStatuses["a"]; got != "alpha" {
+		t.Fatalf("a status=%q", got)
+	}
+	if !strings.Contains(output.String(), "alpha zeta") {
+		t.Fatalf("sorted extension statuses missing: %q", output.String())
+	}
+	if _, err := HandleExtensionUIWithScreen(nil, map[string]any{
+		"method": "setStatus", "statusKey": "a", "statusText": nil,
+	}, bufio.NewReader(strings.NewReader("")), &output, screen); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := screen.ExtensionStatuses["a"]; ok {
+		t.Fatalf("cleared extension status remains: %#v", screen.ExtensionStatuses)
+	}
+}
+
 func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
 	var output strings.Builder
 	selected, err := Select(bufio.NewReader(strings.NewReader("j\n\n")), &output, "Pick", []string{"first", "second"})
