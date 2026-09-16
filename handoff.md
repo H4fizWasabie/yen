@@ -644,8 +644,10 @@ exchange, and native model catalog filtering. Oracle evidence:
 `packages/ai/src/api/google-vertex.ts:99-109`. Go evidence is
 `internal/provider/config.go`, `internal/provider/google_auth.go`,
 `internal/provider/google.go`, and
-`TestGoogleVertexUsesGCLOUDProjectForADCConfiguration`. Static catalog/auth UI
-metadata and live Vertex acceptance remain open.
+`TestGoogleVertexUsesGCLOUDProjectForADCConfiguration`. `/login google-vertex`
+now persists the oracle's API-key, ADC, and service-account choices, covered by
+`TestInteractiveVertexLoginStoresSelectedCredential`. Static catalog metadata
+and live Vertex acceptance remain open.
 
 OpenAI Codex browser OAuth is now implemented in `internal/auth/codex.go` with
 PKCE, localhost `:1455/auth/callback` state validation, authorization-code
@@ -721,8 +723,11 @@ Native TUI-only extension components remain unsupported.
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response
 metadata are already closed by commits `11a3b4b` (#137) and `92d1d53` (#141).
-The remaining Bedrock gaps are static catalog metadata/auth UI and live AWS
-acceptance; do not duplicate those two merged changes.
+The remaining Bedrock gaps are static catalog metadata and live AWS acceptance;
+interactive auth choices and stored credential resolution are now covered by
+`TestInteractiveBedrockLoginStoresSelectedCredential` and
+`TestBedrockUsesStoredCredentialEnvironment`. Do not duplicate the merged
+image/metadata changes.
 
 The current VPS data was backed up on 2026-09-15 to
 `/var/backups/yen-20260915T093942Z.tgz`. Archive listing validation succeeded;
