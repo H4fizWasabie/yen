@@ -47,23 +47,27 @@ func (t convertDocTool) Execute(ctx context.Context, args map[string]any) (strin
 	if len(output) > convertDocMaxOutput {
 		_ = command.Process.Kill()
 		_ = command.Wait()
-		return "", fmt.Errorf("markitdown failed: output exceeds %d bytes", convertDocMaxOutput)
+		return "", markitdownError(fmt.Sprintf("output exceeds %d bytes", convertDocMaxOutput), stderr.String())
 	}
 	if readErr != nil {
 		_ = command.Wait()
-		return "", fmt.Errorf("markitdown failed: %w", readErr)
+		return "", markitdownError(readErr.Error(), stderr.String())
 	}
 	if err := command.Wait(); err != nil {
-		if message := strings.TrimSpace(stderr.String()); message != "" {
-			return "", fmt.Errorf("markitdown failed: %s: %w", message, err)
-		}
-		return "", fmt.Errorf("markitdown failed: %w", err)
+		return "", markitdownError(err.Error(), stderr.String())
 	}
 	text := strings.TrimSpace(string(output))
 	if text == "" {
 		return "The document contained no extractable text.", nil
 	}
 	return text, nil
+}
+
+func markitdownError(detail, stderr string) error {
+	if message := strings.TrimSpace(stderr); message != "" {
+		return fmt.Errorf("markitdown failed: %s: %s", message, detail)
+	}
+	return fmt.Errorf("markitdown failed: %s", detail)
 }
 
 var _ agent.Tool = convertDocTool{}

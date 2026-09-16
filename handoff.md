@@ -2,6 +2,37 @@
 
 Date: 2026-09-15
 
+## Checkpoint: Goal 6 built-in tool edges
+
+On `feat/goal-6-tool-edges`, convert_doc now includes markitdown stderr for
+bounded-output failures as well as ordinary command failures. Oracle:
+`packages/coding-agent/src/core/tools/convert-doc.ts:18-35`. Go evidence:
+`internal/codingagent/convert_doc.go`,
+`TestConvertDocIncludesMarkitdownStderrWhenOutputExceedsLimit`.
+
+The existing extension registry interception path is now explicitly applied
+inside explorer's nested provider loop. Oracle web-search operation boundary:
+`packages/coding-agent/src/core/tools/web-search.ts:34-90`; tool interception:
+`packages/coding-agent/src/core/extensions/types.ts:921-935`. Go evidence:
+`internal/codingagent/explore.go`, `internal/runtime/runtime.go`, and
+`TestExploreAppliesExtensionProviderHook`; web_search result interception is
+covered by `TestWebSearchUsesExtensionToolResultInterception`.
+
+Context discovery now skips directory candidates, keeps empty higher-priority
+files shadowing lower files, and reports collisions through
+`ContextMessageWithDiagnostics`. Oracle:
+`packages/coding-agent/src/core/resource-loader.ts:87-120,211-258`. Go evidence:
+`internal/codingagent/prompt.go` and its context precedence/diagnostic tests.
+
+All local gates pass: `go test ./...`, `go test -race ./...`, `go vet ./...`,
+`go build ./...`, and `git diff --check`.
+
+Remaining blocker: the pinned oracle tree has no
+`packages/coding-agent/src/core/explorer.ts`, so catalog hydration and footer
+accounting cannot receive the required oracle file:line evidence. Do not
+invent a citation; resolve the oracle path/commit before claiming Goal 6
+complete.
+
 ## Checkpoint: Goal 4 interactive CLI TUI increment
 
 The first Goal 4 slice is implemented on `feat/goal-4-tui`: interactive

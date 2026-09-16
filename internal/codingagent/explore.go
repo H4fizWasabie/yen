@@ -15,7 +15,10 @@ var explorerSlots = make(chan struct{}, 3)
 type exploreTool struct {
 	cwd      string
 	provider agent.Provider
+	hooks    *agent.ToolHooks
 }
+
+func (t *exploreTool) SetHooks(hooks *agent.ToolHooks) { t.hooks = hooks }
 
 func (exploreTool) Name() string { return "explore" }
 
@@ -42,12 +45,12 @@ func (t exploreTool) Execute(ctx context.Context, args map[string]any) (string, 
 	}
 	history := []agent.Message{{Role: "system", Content: explorerPrompt(tier, lines, turns, maxInputTokens)}}
 	limited := &turnLimitedProvider{provider: t.provider, limit: turns, maxInputTokens: maxInputTokens, tier: tier}
-	result, err := agent.RunFrom(ctx, limited, []agent.Tool{
+	result, err := agent.RunFromWithQueuesAndEventsAndImagesAndHooks(ctx, limited, []agent.Tool{
 		tools.NewReadTool(t.cwd),
 		tools.NewGrepTool(t.cwd),
 		tools.NewFindTool(t.cwd),
 		tools.NewListTool(t.cwd),
-	}, history, question)
+	}, history, question, nil, nil, nil, nil, t.hooks)
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +115,11 @@ func capExplorerAnswer(answer string, limit int) string {
 }
 
 func newExploreTool(workspace string, provider agent.Provider) agent.Tool {
-	return exploreTool{cwd: workspace, provider: provider}
+	return &exploreTool{cwd: workspace, provider: provider}
+}
+
+func newExploreToolWithHooks(workspace string, provider agent.Provider, hooks *agent.ToolHooks) agent.Tool {
+	return &exploreTool{cwd: workspace, provider: provider, hooks: hooks}
 }
 
 type codingToolOptions struct {

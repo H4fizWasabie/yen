@@ -115,6 +115,38 @@ func TestContextMessageEmptyHigherPriorityFileShadowsLowerPriority(t *testing.T)
 	}
 }
 
+func TestContextMessageSkipsDirectoryCandidateForLowerPriorityFile(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, "AGENTS.override.md"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("fallback guidance"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	message, ok := ContextMessage(workspace)
+	if !ok || !strings.Contains(message.Content, "fallback guidance") {
+		t.Fatalf("message=%#v", message)
+	}
+}
+
+func TestContextMessageReportsShadowedContextFiles(t *testing.T) {
+	workspace := t.TempDir()
+	preferred := filepath.Join(workspace, "AGENTS.md")
+	lower := filepath.Join(workspace, "CLAUDE.md")
+	if err := os.WriteFile(preferred, []byte("preferred"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lower, []byte("lower"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, ok, diagnostics := ContextMessageWithDiagnostics(workspace)
+	if !ok || len(diagnostics) != 1 || diagnostics[0].Path != lower || diagnostics[0].ShadowedBy != preferred {
+		t.Fatalf("ok=%v diagnostics=%#v", ok, diagnostics)
+	}
+}
+
 func TestContextMessageSkipsMainWorktreeContextFromLinkedWorktree(t *testing.T) {
 	root := t.TempDir()
 	runGit := func(args ...string) {

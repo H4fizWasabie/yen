@@ -118,8 +118,27 @@ The Go `convert_doc` tool now preserves non-empty `markitdown` stderr when the
 conversion command fails, matching the oracle's `execFile` error propagation.
 TypeScript authority: `packages/coding-agent/src/core/tools/convert-doc.ts:18-35`;
 Go evidence: `internal/codingagent/convert_doc.go` and
-`TestConvertDocIncludesMarkitdownStderrOnFailure`. The focused test and full
-363-test race/vet/diff gates pass.
+`TestConvertDocIncludesMarkitdownStderrOnFailure`, plus bounded-output stderr
+coverage in `TestConvertDocIncludesMarkitdownStderrWhenOutputExceedsLimit`.
+The focused test and full suite, race, vet, build, and diff gates pass.
+
+Built-in `web_search` remains on the real extension tool interception seam:
+the pinned oracle defines its Tavily operation boundary at
+`packages/coding-agent/src/core/tools/web-search.ts:34-90`, while tool-call
+interception is defined at `packages/coding-agent/src/core/extensions/types.ts:921-935`.
+Go evidence is the existing `internal/extensions/loader.go` registration and
+`internal/agent/loop.go` execution path, covered for web_search by
+`TestWebSearchUsesExtensionToolResultInterception`; explorer's nested provider
+now also receives the same registry-composed provider hook, covered by
+`TestExploreAppliesExtensionProviderHook`.
+
+Context discovery now skips directory candidates, preserves empty-file
+shadowing, and exposes collision diagnostics through
+`ContextMessageWithDiagnostics`. TypeScript authority:
+`packages/coding-agent/src/core/resource-loader.ts:87-120,211-258`;
+Go evidence: `internal/codingagent/prompt.go`,
+`TestContextMessageSkipsDirectoryCandidateForLowerPriorityFile`, and
+`TestContextMessageReportsShadowedContextFiles`.
 
 Explorer runs now enforce the oracle's input-token ceilings in addition to
 turn ceilings: 200,000 tokens for `quick-scan` and 400,000 for `deep-map`.
@@ -129,6 +148,13 @@ matching `packages/coding-agent/src/core/explorer.ts:37-38,280-296` and its
 `internal/codingagent/explore.go`, `internal/agent/loop.go`, and
 `TestExploreStopsAfterBudgetedToolTurn`; 368 tests, race, vet, and diff gates
 pass.
+
+Explorer catalog hydration/footer accounting cannot be oracle-signed for this
+goal: the pinned commit's repository tree contains no
+`packages/coding-agent/src/core/explorer.ts`, despite the goal specification
+requiring that path. The Go read-only catalog and footer behavior remains
+covered by `internal/codingagent/explore.go` and its explorer tests; provider
+interception is covered by `TestExploreAppliesExtensionProviderHook`.
 
 ## Checkpoint update: 2026-09-16
 
