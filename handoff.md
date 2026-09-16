@@ -673,6 +673,13 @@ Cloudflare configuration also reads stored API-key credentials and their
 account/gateway environment when explicit Yen variables are absent, covered by
 `TestCloudflareUsesStoredCredentialEnvironment`.
 
+Cloudflare Gateway native Responses and Anthropic configurations now use the
+pinned oracle's `/openai` and `/anthropic` passthrough bases; the default
+OpenAI Completions route remains `/compat`. This is covered by
+`TestCloudflareAIGatewaySelectsNativeProtocolBaseURL` and cites
+`packages/ai/src/api/cloudflare.ts:1-18`. Static model metadata and live native
+image/API acceptance remain open.
+
 Bedrock configuration now reads the stored `amazon-bedrock` credential when
 explicit Yen or ambient AWS settings are absent: `Credential.Key` supplies the
 bearer token, while `Credential.Env` supplies `AWS_PROFILE` and region. This

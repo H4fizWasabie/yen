@@ -75,6 +75,40 @@ func TestCloudflareAIGatewaySelectsConfiguredProtocol(t *testing.T) {
 	}
 }
 
+func TestCloudflareAIGatewaySelectsNativeProtocolBaseURL(t *testing.T) {
+	t.Setenv("YEN_CLOUDFLARE_BASE_URL", "")
+	t.Setenv("YEN_CLOUDFLARE_ACCOUNT_ID", "account")
+	t.Setenv("YEN_CLOUDFLARE_GATEWAY_ID", "gateway")
+	for _, test := range []struct {
+		name string
+		api  string
+		want string
+	}{
+		{name: "responses", api: "openai-responses", want: "https://gateway.ai.cloudflare.com/v1/account/gateway/openai"},
+		{name: "anthropic", api: "anthropic-messages", want: "https://gateway.ai.cloudflare.com/v1/account/gateway/anthropic"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("YEN_CLOUDFLARE_API", test.api)
+			configured, err := NewConfigured("cloudflare-ai-gateway", "fixture-model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch client := configured.(type) {
+			case OpenAIResponses:
+				if client.BaseURL != test.want {
+					t.Fatalf("base URL=%q, want %q", client.BaseURL, test.want)
+				}
+			case AnthropicMessages:
+				if client.BaseURL != test.want {
+					t.Fatalf("base URL=%q, want %q", client.BaseURL, test.want)
+				}
+			default:
+				t.Fatalf("configured=%T", configured)
+			}
+		})
+	}
+}
+
 func TestCloudflareUsesStoredCredentialEnvironment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	if _, err := auth.Open(path).Modify("cloudflare-ai-gateway", func(*auth.Credential) (*auth.Credential, error) {
