@@ -455,26 +455,43 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 		transcript.WriteString(compactionMessageText(message))
 		transcript.WriteByte('\n')
 	}
+	if plan.IsSplitTurn && len(plan.TurnPrefixMessages) > 0 {
+		transcript.WriteString("<turn-prefix>\n")
+		for _, message := range plan.TurnPrefixMessages {
+			transcript.WriteString(compactionMessageText(message))
+			transcript.WriteByte('\n')
+		}
+		transcript.WriteString("</turn-prefix>\n")
+	}
 	transcript.WriteString("</conversation>\n\nSummarize the conversation for a later agent. Preserve goals, constraints, decisions, progress, and next steps.")
+	if fileOps := formatCompactionFileOps(plan.FileOps); fileOps != "" {
+		transcript.WriteString("\n\n")
+		transcript.WriteString(fileOps)
+	}
 	if len(instructions) > 0 && strings.TrimSpace(instructions[0]) != "" {
 		transcript.WriteString("\n\nAdditional summarization instructions:\n")
 		transcript.WriteString(strings.TrimSpace(instructions[0]))
 	}
 	transcript.WriteString("\nReturn only the summary.")
-	response, err := compactionProvider.Next(ctx, []agent.Message{{Role: "user", Content: transcript.String()}}, nil)
-	if err != nil {
-		return err
+	var response agent.Response
+	if len(plan.Messages) > 0 || plan.PreviousSummary != "" {
+		response, err = compactionProvider.Next(ctx, []agent.Message{{Role: "user", Content: transcript.String()}}, nil)
+		if err != nil {
+			return err
+		}
+		if response.StopReason == "error" || response.StopReason == "aborted" {
+			return errors.New("compaction stopped: " + response.StopReason)
+		}
+		if strings.TrimSpace(response.Text) == "" || len(response.ToolCalls) > 0 {
+			return errors.New("compaction returned an invalid summary")
+		}
 	}
-	if response.StopReason == "error" || response.StopReason == "aborted" {
-		return errors.New("compaction stopped: " + response.StopReason)
-	}
-	if strings.TrimSpace(response.Text) == "" || len(response.ToolCalls) > 0 {
-		return errors.New("compaction returned an invalid summary")
-	}
-	_, err = current.AppendCompaction(strings.TrimSpace(response.Text), plan.FirstKeptEntryID, plan.TokensBefore, &session.Usage{
-		Input: response.Usage.Input, Output: response.Usage.Output, Reasoning: response.Usage.Reasoning,
-		CacheRead: response.Usage.CacheRead, CacheWrite: response.Usage.CacheWrite, TotalTokens: response.Usage.TotalTokens,
-	})
+	summary := strings.TrimSpace(response.Text)
+	usage := response.Usage
+	_, err = current.AppendCompactionWithDetails(summary+formatCompactionFileOps(plan.FileOps), plan.FirstKeptEntryID, plan.TokensBefore, &session.Usage{
+		Input: usage.Input, Output: usage.Output, Reasoning: usage.Reasoning,
+		CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite, TotalTokens: usage.TotalTokens,
+	}, plan.FileOps)
 	if err == nil && r.Memory != nil && len(plan.Messages) > 0 {
 		turns := toDistillationTurns(plan.Messages)
 		go r.distillDroppedMemory(ctx, conversationID, turns)
@@ -499,6 +516,20 @@ func compactionMessageText(message session.Message) string {
 		text.WriteByte(']')
 	}
 	return text.String()
+}
+
+func formatCompactionFileOps(ops session.CompactionFileOps) string {
+	var sections []string
+	if len(ops.ReadFiles) > 0 {
+		sections = append(sections, "<read-files>\n"+strings.Join(ops.ReadFiles, "\n")+"\n</read-files>")
+	}
+	if len(ops.ModifiedFiles) > 0 {
+		sections = append(sections, "<modified-files>\n"+strings.Join(ops.ModifiedFiles, "\n")+"\n</modified-files>")
+	}
+	if len(sections) == 0 {
+		return ""
+	}
+	return "\n\n" + strings.Join(sections, "\n\n")
 }
 
 func (r *Runner) distillDroppedMemory(ctx context.Context, conversationID string, turns []memory.ConsolidationTurn) {
@@ -576,6 +607,9 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		tools = r.SessionToolFactory(turn.WorkspaceID, current)
 	} else if r.ToolFactory != nil {
 		tools = r.ToolFactory(turn.WorkspaceID)
+	}
+	if r.ExtensionRegistry != nil {
+		tools = append(tools, r.ExtensionRegistry.Tools()...)
 	}
 	turnTools := tools
 	defer func() { _ = codingagent.CloseTools(turnTools) }()

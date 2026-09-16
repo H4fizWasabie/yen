@@ -213,6 +213,37 @@ func registerBridge(registry *Registry, b *bridge) {
 			return result, true
 		})
 	}
+	for _, tool := range b.tools {
+		tool := tool
+		_ = registry.RegisterTool(extensionTool{definition: agent.ToolDefinition{Name: tool.Name, Description: tool.Description, Label: tool.Label, Parameters: tool.Parameters}, bridge: b})
+	}
+}
+
+type extensionTool struct {
+	definition agent.ToolDefinition
+	bridge     *bridge
+}
+
+func (t extensionTool) Name() string                         { return t.definition.Name }
+func (t extensionTool) ToolDefinition() agent.ToolDefinition { return t.definition }
+func (t extensionTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	var result any
+	if err := t.bridge.call(ctx, "tool", t.Name(), args, &result); err != nil {
+		return "", err
+	}
+	if value, ok := result.(string); ok {
+		return value, nil
+	}
+	if object, ok := result.(map[string]any); ok {
+		if value, ok := object["content"].(string); ok {
+			return value, nil
+		}
+		if value, ok := object["result"].(string); ok {
+			return value, nil
+		}
+	}
+	data, _ := json.Marshal(result)
+	return string(data), nil
 }
 
 func isUnder(path, root string) bool {
@@ -274,8 +305,12 @@ func extensionEntries(dir string) []string {
 }
 
 type bridge struct {
-	name                             string
-	commands                         []struct{ Name, Description string }
+	name     string
+	commands []struct{ Name, Description string }
+	tools    []struct {
+		Name, Description, Label string
+		Parameters               map[string]any
+	}
 	messageRenderers, entryRenderers map[string]bool
 	in                               io.WriteCloser
 	out                              *bufio.Reader
@@ -300,16 +335,20 @@ func startBridge(path string) (*bridge, error) {
 	}
 	b := &bridge{in: stdin, out: bufio.NewReader(stdout), cmd: cmd, messageRenderers: map[string]bool{}, entryRenderers: map[string]bool{}}
 	var hello struct {
-		Name             string                               `json:"name"`
-		Commands         []struct{ Name, Description string } `json:"commands"`
-		MessageRenderers []string                             `json:"messageRenderers"`
-		EntryRenderers   []string                             `json:"entryRenderers"`
+		Name     string                               `json:"name"`
+		Commands []struct{ Name, Description string } `json:"commands"`
+		Tools    []struct {
+			Name, Description, Label string
+			Parameters               map[string]any
+		} `json:"tools"`
+		MessageRenderers []string `json:"messageRenderers"`
+		EntryRenderers   []string `json:"entryRenderers"`
 	}
 	if err := b.read(&hello); err != nil {
 		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("load extension: %w", err)
 	}
-	b.name, b.commands = hello.Name, hello.Commands
+	b.name, b.commands, b.tools = hello.Name, hello.Commands, hello.Tools
 	for _, name := range hello.MessageRenderers {
 		b.messageRenderers[name] = true
 	}
@@ -396,4 +435,9 @@ const bridgeScript = baseBridgeScript.replace("registerTool: () => {}", "registe
 
 const rl = readline.createInterface({input: process.stdin}); rl.on("line", line => { void (async () => { try { const req = JSON.parse(line); if (req.kind === "ui_response") { uiPending.get(req.id)?.(req); uiPending.delete(req.id); return; } let value = req.payload; if (req.kind === "render") { const fn = renderers.get(req.name === "entry:" + req.name ? req.name : "message:" + req.name) ?? renderers.get(req.name); value = fn ? await fn(value, {}) : value; } else if (req.kind === "command") { const fn = commandHandlers.get(req.name); value = fn ? await fn(value, {}) : ""; } else { for (const fn of handlers.get(req.name) ?? []) { const next = await fn({type:req.name, ...value}); if (next !== undefined) value = next; } if (req.name === "before_provider_headers") value = value.headers; } console.log(JSON.stringify({result:value})); } catch (e) { console.log(JSON.stringify({error:String(e?.message ?? e)})); } })(); }); await new Promise(() => {});`
 
-var bridgeScript = baseBridgeScript
+var bridgeScript = strings.NewReplacer(
+	"registerTool: () => {}", "registerTool: (name, opts) => { tools.set(name, {name, description: opts?.description ?? '', label: opts?.label ?? name, parameters: opts?.parameters ?? {type:'object'}}); toolHandlers.set(name, opts?.execute); }",
+	"const handlers = new Map(), commands = [], commandHandlers = new Map(), renderers = new Map(), uiPending = new Map()", "const handlers = new Map(), commands = [], commandHandlers = new Map(), renderers = new Map(), tools = new Map(), toolHandlers = new Map(), uiPending = new Map()",
+	"} else if (req.kind === \"command\")", "} else if (req.kind === \"tool\") { const fn = toolHandlers.get(req.name); value = fn ? await fn(value, {}) : \"\"; } else if (req.kind === \"command\")",
+	"commands, messageRenderers", "commands, tools: [...tools.values()], messageRenderers",
+).Replace(baseBridgeScript)

@@ -472,6 +472,44 @@ func TestSessionPreparesCompactionFromRecentTurns(t *testing.T) {
 	}
 }
 
+func TestSessionCompactionTracksFileOperationsInAssistantToolCalls(t *testing.T) {
+	s := New(filepath.Join(t.TempDir(), "session.jsonl"), Header{ID: "file-ops", CWD: "/workspace", Channel: "cli"})
+	for _, message := range []Message{
+		{Role: "user", Content: "inspect"},
+		{Role: "assistant", Content: []ContentPart{{Type: "toolCall", Name: "read", Arguments: map[string]any{"path": "a.go"}}, {Type: "toolCall", Name: "edit", Arguments: map[string]any{"path": "b.go"}}}},
+		{Role: "user", Content: "next"},
+		{Role: "assistant", Content: "done"},
+		{Role: "user", Content: "latest"},
+	} {
+		if _, err := s.Append(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := s.PrepareCompaction(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.FileOps.ReadFiles) != 1 || plan.FileOps.ReadFiles[0] != "a.go" || len(plan.FileOps.ModifiedFiles) != 1 || plan.FileOps.ModifiedFiles[0] != "b.go" {
+		t.Fatalf("file ops=%#v", plan.FileOps)
+	}
+}
+
+func TestSessionTokenCompactionExposesSplitTurnPrefix(t *testing.T) {
+	s := New(filepath.Join(t.TempDir(), "session.jsonl"), Header{ID: "split", CWD: "/workspace", Channel: "cli"})
+	for _, message := range []Message{{Role: "user", Content: "old request"}, {Role: "assistant", Content: strings.Repeat("old work ", 20)}, {Role: "user", Content: "recent request"}, {Role: "assistant", Content: "recent reply"}} {
+		if _, err := s.Append(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := s.PrepareCompactionByTokens(15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.IsSplitTurn || len(plan.TurnPrefixMessages) != 1 || plan.TurnPrefixMessages[0].Content != "old request" {
+		t.Fatalf("plan=%#v", plan)
+	}
+}
+
 func TestSessionPreparesCompactionFromRecentTokenBudget(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token-compact.jsonl")
 	s := New(path, Header{ID: "token-compact", CWD: t.TempDir(), Channel: "cli"})
