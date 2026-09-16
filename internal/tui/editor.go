@@ -12,6 +12,45 @@ type LineEditor struct {
 	cursor int
 }
 
+// LineHistory retains submitted non-empty prompts for interactive recall.
+type LineHistory struct {
+	entries  []string
+	position int
+}
+
+func NewLineHistory() *LineHistory { return &LineHistory{position: -1} }
+
+func (h *LineHistory) add(line string) {
+	if line == "" {
+		h.position = len(h.entries)
+		return
+	}
+	if len(h.entries) == 0 || h.entries[len(h.entries)-1] != line {
+		h.entries = append(h.entries, line)
+	}
+	h.position = len(h.entries)
+}
+
+func (h *LineHistory) previous() string {
+	if h.position > 0 {
+		h.position--
+	}
+	if h.position >= 0 && h.position < len(h.entries) {
+		return h.entries[h.position]
+	}
+	return ""
+}
+
+func (h *LineHistory) next() string {
+	if h.position < len(h.entries) {
+		h.position++
+	}
+	if h.position < len(h.entries) {
+		return h.entries[h.position]
+	}
+	return ""
+}
+
 func (e *LineEditor) Text() string { return string(e.value) }
 
 func (e *LineEditor) insert(value rune) {
@@ -52,10 +91,24 @@ func (e *LineEditor) home() { e.cursor = 0 }
 
 func (e *LineEditor) end() { e.cursor = len(e.value) }
 
+func (e *LineEditor) setText(value string) {
+	e.value = []rune(value)
+	e.cursor = len(e.value)
+}
+
 // ReadLine reads one interactive line and applies ANSI cursor-editing keys.
 // It deliberately does not echo: the caller owns screen redraws and ordinary
 // terminals continue to provide canonical input echo.
 func ReadLine(r *bufio.Reader) (string, error) {
+	return readLine(r, nil)
+}
+
+// ReadLineWithHistory reads a line and supports Up/Down prompt history.
+func ReadLineWithHistory(r *bufio.Reader, history *LineHistory) (string, error) {
+	return readLine(r, history)
+}
+
+func readLine(r *bufio.Reader, history *LineHistory) (string, error) {
 	var editor LineEditor
 	for {
 		value, _, err := r.ReadRune()
@@ -72,7 +125,11 @@ func ReadLine(r *bufio.Reader) (string, error) {
 					_, _ = r.ReadByte()
 				}
 			}
-			return editor.Text(), nil
+			line := editor.Text()
+			if history != nil {
+				history.add(line)
+			}
+			return line, nil
 		case 0x04: // Ctrl-D
 			if len(editor.value) == 0 {
 				return "", io.EOF
@@ -89,7 +146,16 @@ func ReadLine(r *bufio.Reader) (string, error) {
 		case 0x06: // Ctrl-F
 			editor.right()
 		case 0x1b:
-			editor.applyEscape(r)
+			switch editor.applyEscape(r) {
+			case 'A':
+				if history != nil {
+					editor.setText(history.previous())
+				}
+			case 'B':
+				if history != nil {
+					editor.setText(history.next())
+				}
+			}
 		default:
 			if value >= 0x20 {
 				editor.insert(value)
@@ -98,17 +164,19 @@ func ReadLine(r *bufio.Reader) (string, error) {
 	}
 }
 
-func (e *LineEditor) applyEscape(r *bufio.Reader) {
+func (e *LineEditor) applyEscape(r *bufio.Reader) byte {
 	first, err := r.ReadByte()
 	if err != nil {
-		return
+		return 0
 	}
 	if first == '[' || first == 'O' {
 		last, err := r.ReadByte()
 		if err != nil {
-			return
+			return 0
 		}
 		switch last {
+		case 'A', 'B':
+			return last
 		case 'D':
 			e.left()
 		case 'C':
@@ -126,4 +194,5 @@ func (e *LineEditor) applyEscape(r *bufio.Reader) {
 			}
 		}
 	}
+	return 0
 }

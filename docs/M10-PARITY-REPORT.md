@@ -12,6 +12,16 @@ Go evidence is `internal/tui/render.go` and
 `TestRenderMessageFormatsSerializedBoxComponent`. Full repository gates pass.
 
 
+## Checkpoint update: 2026-09-16
+
+Interactive line input now retains submitted non-empty prompts and supports
+ANSI Up/Down history navigation while preserving existing cursor editing and
+the unchanged `-p` path. Oracle authority is
+`packages/tui/src/components/editor.ts:603-862`. Go evidence is
+`internal/tui/editor.go`, `cmd/theoses/main.go`, and
+`TestReadLineWithHistoryNavigatesPreviousEntries`. Full repository gates pass.
+Raw-terminal history redraw remains coupled to the pending raw-input slice.
+
 ## Decision
 
 Do not cut over from TypeScript yet. Keep the Go Telegram and dashboard

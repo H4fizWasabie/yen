@@ -12,6 +12,17 @@ evidence is `internal/tui/render.go` and
 `TestRenderMessageFormatsSerializedBoxComponent`. Full gates pass. This
 main-based slice is prepared for review and must not be merged by this agent.
 
+## Checkpoint: Goal 4 interactive input history
+
+Interactive line input now retains submitted non-empty prompts and supports
+ANSI Up/Down history navigation; the existing cursor editing and `-p` path are
+unchanged. Oracle authority is
+`packages/tui/src/components/editor.ts:603-862`, including history-key
+handling. Go evidence is `internal/tui/editor.go`, `cmd/theoses/main.go`, and
+`TestReadLineWithHistoryNavigatesPreviousEntries`. Full gates pass. This
+increment is independent of PR #190 and must remain open for review; it must
+not be merged by this agent.
+
 ## Checkpoint: Goal 4 native tree component layout
 
 On `feat/tui-component-layout`, `/tree` now renders a git-log-style ASCII

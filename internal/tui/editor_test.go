@@ -15,3 +15,14 @@ func TestReadLineAppliesCursorEditingKeys(t *testing.T) {
 		t.Fatalf("line=%q", got)
 	}
 }
+
+func TestReadLineWithHistoryNavigatesPreviousEntries(t *testing.T) {
+	history := NewLineHistory()
+	reader := bufio.NewReader(strings.NewReader("first\nsecond\n\x1b[A\n"))
+	for _, want := range []string{"first", "second", "second"} {
+		got, err := ReadLineWithHistory(reader, history)
+		if err != nil || got != want {
+			t.Fatalf("line=%q want=%q err=%v", got, want, err)
+		}
+	}
+}
