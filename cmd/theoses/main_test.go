@@ -204,6 +204,21 @@ func TestInteractiveModelSelectorChangesProviderFromScriptedInput(t *testing.T) 
 	}
 }
 
+func TestInteractiveModelSelectorRawInputConfirmsHighlightedProvider(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"one"},{"id":"two"}]}`)
+	}))
+	defer server.Close()
+	current := session.New(filepath.Join(t.TempDir(), "session.jsonl"), session.Header{ID: "current"})
+	runner := &runtime.Runner{Provider: provider.OpenAICompletions{BaseURL: server.URL, Model: "one", ProviderName: "test"}}
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveSelector("/model", bufio.NewReader(strings.NewReader("j\n")), true, current, runner, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || providerModel(runner.Provider) != "two" {
+		t.Fatalf("handled=%v err=%v model=%q output=%q", handled, err, providerModel(runner.Provider), output.String())
+	}
+}
+
 func TestInteractiveRemainingOracleCommandsAreHandled(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte("# What's New\n\n- selector support\n"), 0o644); err != nil {
