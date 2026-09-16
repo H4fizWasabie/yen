@@ -781,9 +781,9 @@ login and live Codex acceptance remain manual and open.
 
 Codex model catalog read-back now has an explicit provider contract test:
 `TestOpenAICodexListsPaginatedCatalogWithAccountHeaders` verifies pagination,
-provider identity, bearer auth, and `chatgpt-account-id`. Generated static
-model metadata and WebSocket continuation caching remain open; do not invent
-catalog entries because the pinned oracle tree does not contain generated data.
+provider identity, bearer auth, and `chatgpt-account-id`. The approved current
+Theoses2 snapshot supplies static metadata, and WebSocket continuation caching
+is covered by `TestOpenAICodexReusesWebSocketConnection`.
 
 GitHub Copilot now preserves the default OpenAI Completions route and accepts
 explicit `YEN_COPILOT_API` values `openai-completions`, `openai-responses`, or
@@ -885,7 +885,7 @@ Native TUI-only extension components remain unsupported.
 
 Remote main read-back confirms Bedrock HTTP(S) image sources and response
 metadata are already closed by commits `11a3b4b` (#137) and `92d1d53` (#141).
-The remaining Bedrock gaps are static catalog metadata and live AWS acceptance;
+The remaining Bedrock gap is live AWS acceptance;
 interactive auth choices and stored credential resolution are now covered by
 `TestInteractiveBedrockLoginStoresSelectedCredential` and
 `TestBedrockUsesStoredCredentialEnvironment`. Do not duplicate the merged
