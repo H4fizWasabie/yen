@@ -99,6 +99,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		runner.ApplySettings(current)
 	}
 	var interactiveReader *bufio.Reader
+	rawInput := false
 	var screen *tui.Screen
 	agentDir, _ := os.UserConfigDir()
 	configured := []string(nil)
@@ -114,7 +115,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			if interactiveReader == nil {
 				return nil, errors.New("interactive extension UI is unavailable")
 			}
-			return tui.HandleExtensionUIWithScreen(ctx, request, interactiveReader, stdout, screen)
+			return tui.HandleExtensionUIWithScreenMode(ctx, request, interactiveReader, stdout, screen, rawInput)
 		})
 	}
 	runner.SessionToolFactory = func(workspace string, current *session.Session) []agent.Tool {
@@ -166,16 +167,17 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		interactiveReader = bufio.NewReader(stdin)
 		reader := interactiveReader
 		history := tui.NewLineHistory()
-		restoreTerminal, rawInput, err := tui.EnableRawInput(stdin)
+		restoreTerminal, enabled, err := tui.EnableRawInput(stdin)
 		if err != nil {
 			return reportError(stderr, err)
 		}
+		rawInput = enabled
 		defer func() { _ = restoreTerminal() }()
 		for {
 			var prompt string
 			var readErr error
 			if rawInput {
-				prompt, readErr = tui.ReadLineWithOutput(reader, stdout, "> ")
+				prompt, readErr = tui.ReadLineWithOutputAndHistory(reader, stdout, "> ", history)
 			} else {
 				prompt, readErr = tui.ReadLineWithHistory(reader, history)
 			}
@@ -193,9 +195,9 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				continue
 			}
 			var response strings.Builder
-			handled, err := handleInteractiveTree(prompt, reader, currentSession, &response)
+			handled, err := handleInteractiveTree(prompt, reader, rawInput, currentSession, &response)
 			if !handled && err == nil {
-				handled, err = handleInteractiveSelector(prompt, reader, currentSession, runner, link, &sessionPath, &response)
+				handled, err = handleInteractiveSelector(prompt, reader, rawInput, currentSession, runner, link, &sessionPath, &response)
 			}
 			if !handled && err == nil {
 				handled, err = handleInteractiveCommand(prompt, currentSession, runner, link, &sessionPath, &response)
@@ -304,11 +306,11 @@ func interactiveToolResult(event agent.Event) string {
 	return "Tool " + event.Name + ": " + result
 }
 
-func handleInteractiveTree(input string, reader *bufio.Reader, current *session.Session, stdout io.Writer) (bool, error) {
+func handleInteractiveTree(input string, reader *bufio.Reader, rawInput bool, current *session.Session, stdout io.Writer) (bool, error) {
 	if strings.TrimSpace(input) != "/tree" {
 		return false, nil
 	}
-	selected, err := tui.SelectTree(reader, stdout, "Select tree entry", current.Tree())
+	selected, err := tui.SelectTree(reader, stdout, "Select tree entry", current.Tree(), rawInput)
 	if err != nil || selected == "" {
 		return true, err
 	}
@@ -323,7 +325,7 @@ func handleInteractiveTree(input string, reader *bufio.Reader, current *session.
 	return true, err
 }
 
-func handleInteractiveSelector(input string, reader *bufio.Reader, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
+func handleInteractiveSelector(input string, reader *bufio.Reader, rawInput bool, current *session.Session, runner *runtime.Runner, link conversation.Link, sessionPath *string, stdout io.Writer) (bool, error) {
 	switch strings.TrimSpace(input) {
 	case "/model":
 		models, err := provider.AvailableModels(context.Background(), runner.Provider)
@@ -334,7 +336,11 @@ func handleInteractiveSelector(input string, reader *bufio.Reader, current *sess
 		for i, model := range models {
 			options[i] = model.Provider + "/" + model.ID
 		}
-		selected, err := tui.Select(reader, stdout, "Select model", options)
+		selectFn := tui.Select
+		if rawInput {
+			selectFn = tui.SelectRaw
+		}
+		selected, err := selectFn(reader, stdout, "Select model", options)
 		if err != nil || selected < 0 {
 			return true, err
 		}
@@ -362,7 +368,11 @@ func handleInteractiveSelector(input string, reader *bufio.Reader, current *sess
 		for i, path := range paths {
 			options[i] = filepath.Base(path)
 		}
-		selected, err := tui.Select(reader, stdout, "Select session", options)
+		selectFn := tui.Select
+		if rawInput {
+			selectFn = tui.SelectRaw
+		}
+		selected, err := selectFn(reader, stdout, "Select session", options)
 		if err != nil || selected < 0 {
 			return true, err
 		}

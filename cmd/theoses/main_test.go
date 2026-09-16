@@ -198,7 +198,22 @@ func TestInteractiveModelSelectorChangesProviderFromScriptedInput(t *testing.T) 
 	runner := &runtime.Runner{Provider: provider.OpenAICompletions{BaseURL: server.URL, Model: "one", ProviderName: "test"}}
 	var output bytes.Buffer
 	activePath := current.Path()
-	handled, err := handleInteractiveSelector("/model", bufio.NewReader(strings.NewReader("2\n")), current, runner, conversation.Link{}, &activePath, &output)
+	handled, err := handleInteractiveSelector("/model", bufio.NewReader(strings.NewReader("2\n")), false, current, runner, conversation.Link{}, &activePath, &output)
+	if err != nil || !handled || providerModel(runner.Provider) != "two" {
+		t.Fatalf("handled=%v err=%v model=%q output=%q", handled, err, providerModel(runner.Provider), output.String())
+	}
+}
+
+func TestInteractiveModelSelectorRawInputConfirmsHighlightedProvider(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"one"},{"id":"two"}]}`)
+	}))
+	defer server.Close()
+	current := session.New(filepath.Join(t.TempDir(), "session.jsonl"), session.Header{ID: "current"})
+	runner := &runtime.Runner{Provider: provider.OpenAICompletions{BaseURL: server.URL, Model: "one", ProviderName: "test"}}
+	var output bytes.Buffer
+	activePath := current.Path()
+	handled, err := handleInteractiveSelector("/model", bufio.NewReader(strings.NewReader("j\n")), true, current, runner, conversation.Link{}, &activePath, &output)
 	if err != nil || !handled || providerModel(runner.Provider) != "two" {
 		t.Fatalf("handled=%v err=%v model=%q output=%q", handled, err, providerModel(runner.Provider), output.String())
 	}
@@ -394,11 +409,30 @@ func TestInteractiveTreeSelectorBranchesFromChosenEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\n")), current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("1\n")), false, current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
 		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
 	}
 	if current.LeafID() == entryID {
 		t.Fatalf("tree selector did not create a branch")
+	}
+}
+
+func TestInteractiveTreeSelectorRawUsesRawByteNavigation(t *testing.T) {
+	dir := t.TempDir()
+	current := session.New(filepath.Join(dir, "session.jsonl"), session.Header{ID: "session-1"})
+	if _, err := current.Append(session.Message{Role: "user", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	entryID := current.LeafID()
+	if _, err := current.Append(session.Message{Role: "assistant", Content: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if handled, err := handleInteractiveTree("/tree", bufio.NewReader(strings.NewReader("\r")), true, current, &output); err != nil || !handled || !strings.Contains(output.String(), entryID) {
+		t.Fatalf("handled=%v err=%v output=%q", handled, err, output.String())
+	}
+	if current.LeafID() == entryID {
+		t.Fatalf("raw tree selector did not create a branch")
 	}
 }
 

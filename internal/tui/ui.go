@@ -13,12 +13,17 @@ const maxWidgetLines = 10
 // HandleExtensionUI adapts the shared extension_ui_request protocol to the
 // interactive CLI's line-driven screen.
 func HandleExtensionUI(_ context.Context, request map[string]any, reader *bufio.Reader, writer io.Writer) (map[string]any, error) {
-	return HandleExtensionUIWithScreen(nil, request, reader, writer, nil)
+	return HandleExtensionUIWithScreenMode(nil, request, reader, writer, nil, false)
 }
 
 // HandleExtensionUIWithScreen applies presentation requests to screen before
 // redrawing it. A nil screen preserves the line-oriented fallback behavior.
 func HandleExtensionUIWithScreen(_ context.Context, request map[string]any, reader *bufio.Reader, writer io.Writer, screen *Screen) (map[string]any, error) {
+	return HandleExtensionUIWithScreenMode(nil, request, reader, writer, screen, false)
+}
+
+// HandleExtensionUIWithScreenMode uses raw terminal selectors when rawInput is enabled.
+func HandleExtensionUIWithScreenMode(_ context.Context, request map[string]any, reader *bufio.Reader, writer io.Writer, screen *Screen, rawInput bool) (map[string]any, error) {
 	response := map[string]any{"id": request["id"]}
 	switch method := request["method"].(string); method {
 	case "select":
@@ -27,7 +32,11 @@ func HandleExtensionUIWithScreen(_ context.Context, request map[string]any, read
 		for i, option := range raw {
 			options[i] = fmt.Sprint(option)
 		}
-		selected, err := Select(reader, writer, fmt.Sprint(request["title"]), options)
+		selectFn := Select
+		if rawInput {
+			selectFn = SelectRaw
+		}
+		selected, err := selectFn(reader, writer, fmt.Sprint(request["title"]), options)
 		if err != nil {
 			return nil, err
 		}

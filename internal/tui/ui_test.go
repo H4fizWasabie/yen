@@ -19,6 +19,15 @@ func TestHandleExtensionUISelectReturnsProtocolResponse(t *testing.T) {
 	}
 }
 
+func TestHandleExtensionUIRawSelectConfirmsHighlightedOption(t *testing.T) {
+	response, err := HandleExtensionUIWithScreenMode(nil, map[string]any{
+		"id": "ui-raw-1", "method": "select", "title": "Pick", "options": []any{"first", "second"},
+	}, bufio.NewReader(strings.NewReader("j\n")), &strings.Builder{}, nil, true)
+	if err != nil || response["id"] != "ui-raw-1" || response["value"] != "second" {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+}
+
 func TestHandleExtensionUIUpdatesScreenPresentation(t *testing.T) {
 	screen := &Screen{Status: "Ready"}
 	var output strings.Builder
@@ -118,6 +127,20 @@ func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "> 2) second") {
 		t.Fatalf("highlighted option missing from output: %q", output.String())
+	}
+}
+
+func TestSelectRawJThenEnterReturnsHighlightedOption(t *testing.T) {
+	var output strings.Builder
+	selected, err := SelectRaw(bufio.NewReader(strings.NewReader("j\n")), &output, "Pick", []string{"first", "second"})
+	if err != nil || selected != 1 {
+		t.Fatalf("selected=%d err=%v", selected, err)
+	}
+	if !strings.Contains(output.String(), "> 2) second") {
+		t.Fatalf("highlighted option missing from output: %q", output.String())
+	}
+	if !strings.Contains(output.String(), "\x1b[2A") {
+		t.Fatalf("selector did not redraw in place: %q", output.String())
 	}
 }
 

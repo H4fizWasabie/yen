@@ -67,8 +67,10 @@ func RenderTree(entries []session.TreeEntry, activeID string) []string {
 
 // SelectTree presents the session tree as a navigable selector and returns
 // the selected entry ID. It keeps the static RenderTree output available for
-// callers that only need a report.
-func SelectTree(r *bufio.Reader, w io.Writer, title string, entries []session.TreeEntry) (string, error) {
+// callers that only need a report. When rawInput is true it reuses SelectRaw
+// so byte-at-a-time terminals get immediate j/k/arrow navigation; otherwise
+// it uses the line-buffered Select for scripted and piped callers.
+func SelectTree(r *bufio.Reader, w io.Writer, title string, entries []session.TreeEntry, rawInput bool) (string, error) {
 	if len(entries) == 0 {
 		return "", nil
 	}
@@ -91,7 +93,11 @@ func SelectTree(r *bufio.Reader, w io.Writer, title string, entries []session.Tr
 		}
 		options = append(options, strings.Repeat("  ", depth)+label)
 	}
-	selected, err := Select(r, w, title, options)
+	selectFn := Select
+	if rawInput {
+		selectFn = SelectRaw
+	}
+	selected, err := selectFn(r, w, title, options)
 	if err != nil || selected < 0 {
 		return "", err
 	}
