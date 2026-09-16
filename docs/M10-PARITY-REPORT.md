@@ -587,7 +587,7 @@ the oracle's bearer-token, AWS-profile, and credential-chain choices through
 covers the profile path. Static model metadata and live AWS acceptance remain
 open.
 
-The current verified code gate is 470 tests, race tests, vet, and diff checks.
+The current verified code gate is 472 tests, race tests, vet, and diff checks.
 The 2026-09-16 side-by-side VPS read-back places the active pilot release at
 `/opt/yen/releases/1ba4476`; `yen-telegram-pilot.service`,
 `yen-dashboard-pilot.service`, `theoses2-telegram.service`, and
@@ -612,6 +612,17 @@ The 2026-09-16 side-by-side VPS read-back places the active pilot release at
 This is a no-cutover parity decision, not a claim of total feature parity.
 The TypeScript runtime remains operational, Go remains a reversible pilot, and
 no decommission or irreversible cutover is authorized.
+
+## Goal 1 provider audit: 2026-09-16
+
+The pinned local oracle contains provider wrapper files and generated-model
+imports, but no tracked `packages/ai/src/providers/data/*.json` files. Yen now
+has tested protocol/auth parity for Anthropic OAuth, Copilot protocol variants,
+Codex browser OAuth and dynamic catalog read-back, Vertex ADC/service-account
+discovery and login choices, Bedrock credential-chain/login choices, and
+Cloudflare native protocol paths. Static model metadata remains open because
+the pinned source data is absent; real-account acceptance remains an explicit
+manual gate where credentials are required.
 
 Cloudflare Gateway native Responses and Anthropic routes now select the pinned
 oracle's `/openai` and `/anthropic` passthrough bases instead of incorrectly
