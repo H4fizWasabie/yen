@@ -11,12 +11,13 @@ import (
 
 // Screen is the small presentation model shared by the interactive CLI.
 type Screen struct {
-	Scrollback   []string
-	Status       string
-	Input        string
-	Title        string
-	WidgetsAbove map[string][]string
-	WidgetsBelow map[string][]string
+	Scrollback        []string
+	Status            string
+	ExtensionStatuses map[string]string
+	Input             string
+	Title             string
+	WidgetsAbove      map[string][]string
+	WidgetsBelow      map[string][]string
 }
 
 func (s Screen) Render(w io.Writer) error {
@@ -38,6 +39,20 @@ func (s Screen) Render(w io.Writer) error {
 	}
 	if _, err := fmt.Fprintf(w, "\nStatus: %s\n", s.Status); err != nil {
 		return err
+	}
+	if len(s.ExtensionStatuses) > 0 {
+		keys := make([]string, 0, len(s.ExtensionStatuses))
+		for key := range s.ExtensionStatuses {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		statuses := make([]string, 0, len(keys))
+		for _, key := range keys {
+			statuses = append(statuses, s.ExtensionStatuses[key])
+		}
+		if _, err := fmt.Fprintln(w, strings.Join(statuses, " ")); err != nil {
+			return err
+		}
 	}
 	if err := renderWidgets(w, s.WidgetsAbove); err != nil {
 		return err

@@ -113,6 +113,13 @@ Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
 `TestHandleExtensionUIUpdatesScreenPresentation`. Native component layout and
 interactive widget behavior remain open.
 
+Extension statuses now retain `statusKey`, render sorted by key, and delete a
+key when `statusText` is undefined. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:1954-1958`
+and `packages/coding-agent/src/modes/interactive/components/footer.ts:232-240`;
+Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
+`TestHandleExtensionUIKeepsExtensionStatusesByKey`.
+
 The interactive tool-progress increment is implemented: the CLI consumes
 runtime `agent.Event` callbacks, shows bounded `Running <tool>: <preview>`
 status during tool execution, and returns to streaming status after results.

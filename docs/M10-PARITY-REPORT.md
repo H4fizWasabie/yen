@@ -82,6 +82,13 @@ Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
 `TestHandleExtensionUIUpdatesScreenPresentation`. Native component layout and
 interactive widget behavior remain open.
 
+Extension statuses now retain their oracle `statusKey`, render in sorted key
+order, and remove a key when `statusText` is undefined. Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:1954-1958`
+and `packages/coding-agent/src/modes/interactive/components/footer.ts:232-240`.
+Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
+`TestHandleExtensionUIKeepsExtensionStatusesByKey`.
+
 Interactive tool execution now updates the status region through the existing
 runtime event stream, including a bounded argument preview, and resumes normal
 streaming status after the tool result. Oracle authority is
