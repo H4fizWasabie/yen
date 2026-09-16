@@ -14,6 +14,18 @@ Oracle authority is `packages/tui/src/tui-main-screen.ts:182-250` and
 interactive text editing, and live terminal acceptance remain open. The PR is
 open for Claude review and must not be merged by this agent.
 
+## Checkpoint: Goal 4 serialized Text component layout
+
+The extension bridge's serialized native `Text` components now retain their
+left/right and top/bottom padding when projected into interactive scrollback;
+unknown component shapes still use the JSON fallback. Oracle authority is
+`packages/tui/src/components/text.ts:7-10,18-23,63-95`. Go evidence is
+`internal/tui/render.go` and
+`TestRenderMessagePreservesSerializedTextComponentPadding`. Component-specific
+wrapping/backgrounds, interactive text editing, and live terminal acceptance
+remain open. The PR must remain open for Claude review and must not be merged by
+this agent.
+
 ## Checkpoint: Goal 6 built-in tool edges
 
 On `feat/goal-6-tool-edges`, convert_doc now includes markitdown stderr for

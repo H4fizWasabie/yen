@@ -27,6 +27,15 @@ scripted output keeps its previous unbounded behavior. Oracle authority is
 `TestScreenRenderAtKeepsViewportAndRegions`. Native component-specific layout,
 interactive text editing, and live terminal acceptance remain open.
 
+Serialized native `Text` message components now preserve their oracle
+left/right and top/bottom padding before entering terminal scrollback. Unknown
+component shapes continue to use the JSON fallback. Oracle authority is
+`packages/tui/src/components/text.ts:7-10,18-23,63-95`; Go evidence is
+`internal/tui/render.go` and
+`TestRenderMessagePreservesSerializedTextComponentPadding`. Component-specific
+wrapping/backgrounds, interactive text editing, and live terminal acceptance
+remain open.
+
 ## Checkpoint update: 2026-09-16
 
 The first interactive CLI TUI increment is now closed: interactive stdin is
