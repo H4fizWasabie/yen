@@ -25,6 +25,35 @@ func (provider) Next(_ context.Context, _ []agent.Message, _ []string) (agent.Re
 	return agent.Response{Text: "done", StopReason: "stop", Provider: "test-provider", Model: "test-model"}, nil
 }
 
+type sessionIDProvider struct{ seen string }
+
+func (p *sessionIDProvider) Next(ctx context.Context, _ []agent.Message, _ []string) (agent.Response, error) {
+	p.seen = providerpkg.SessionID(ctx)
+	return agent.Response{Text: "done", StopReason: "stop"}, nil
+}
+
+func TestRunnerPassesConversationIDToProviderForPromptCaching(t *testing.T) {
+	dir := t.TempDir()
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &sessionIDProvider{}
+	runner := New(queue, provider, nil)
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "telegram", AdapterKey: "chat:42", ConversationID: "conversation-123", WorkspaceID: dir}
+	turn, err := runner.Submit(link, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runner.RunSubmitted(context.Background(), turn); err != nil {
+		t.Fatal(err)
+	}
+	if provider.seen != link.ConversationID {
+		t.Fatalf("provider session ID=%q, want %q", provider.seen, link.ConversationID)
+	}
+}
+
 type closeTrackingTool struct{ closed *bool }
 
 func (t closeTrackingTool) Name() string { return "persistent" }

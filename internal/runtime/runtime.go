@@ -487,6 +487,7 @@ func (r *Runner) distillDroppedMemory(ctx context.Context, conversationID string
 }
 
 func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []string, queues *agent.MessageQueues, onUpdate func(string), onEvent agent.EventFunc) (agent.Result, error) {
+	ctx = providerpkg.WithSessionID(ctx, turn.ConversationID)
 	path := r.pathFor(turn)
 	expandedPrompt := codingagent.ExpandPrompt(turn.WorkspaceID, turn.Prompt)
 	current, err := openOrCreate(path, turn)

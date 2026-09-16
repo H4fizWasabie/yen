@@ -18,10 +18,11 @@ Required root environment files:
   `YEN_AUTO_COMPACT_KEEP_RECENT_TOKENS`,
   `YEN_AUTO_COMPACT_CONTEXT_WINDOW`, `YEN_AUTO_COMPACT_RESERVE_TOKENS`,
   `YEN_AUTO_COMPACT_ENABLED`,
-  `YEN_AUTO_COMPACT_OVERFLOW`, and optional
-  `YEN_AUTO_CONSOLIDATE`. Defaults to `/etc/yen/yen.env`.
+  `YEN_AUTO_COMPACT_OVERFLOW`, and optional `YEN_AUTO_CONSOLIDATE`. Defaults to
+  `/etc/yen/yen.env`.
 - `YEN_PROVIDER_ENV_FILE` — Yen-only provider credentials and optional
-  `YEN_MODEL`/`YEN_OPENAI_BASE_URL`. Defaults to `/etc/yen/yen-provider.env`.
+  `YEN_MODEL`/`YEN_OPENAI_BASE_URL`/`YEN_CACHE_RETENTION` (`short`, `long`, or
+  `none`). Defaults to `/etc/yen/yen-provider.env`.
 
 Example on a prepared host:
 
