@@ -86,6 +86,16 @@ Go evidence is `internal/extensions/loader.go`, `cmd/theoses/main.go`,
 `TestHandleExtensionUISelectReturnsProtocolResponse`. Native rich component
 rendering remains open.
 
+The rich-rendering increment is implemented: newly persisted messages from
+registered extension renderers are projected into interactive terminal
+scrollback as strings or JSON, while ordinary messages retain the existing
+path. Oracle authority is
+`packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`;
+Go evidence is `internal/tui/render.go`, `cmd/theoses/main.go`, and
+`TestRenderMessageUsesExtensionRenderer` plus the scripted CLI acceptance
+`TestInteractiveRunRendersExtensionMessage`. Full native component layout and
+interactive widgets remain open.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:
