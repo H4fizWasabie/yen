@@ -91,6 +91,19 @@ rune-safe insertion. Oracle authority is
 multiline editing, history, and live terminal acceptance remain open. The PR
 must remain open for Claude review and must not be merged by this agent.
 
+## Checkpoint: Goal 4 raw terminal input
+
+Interactive tty sessions now enter scoped character-at-a-time mode, suppress
+terminal echo, preserve kernel Ctrl-C/Ctrl-\\ signal generation, and redraw the
+prompt and cursor after each edit; scripted and piped readers remain on the
+existing line-oriented path. Oracle authority is
+`packages/tui/src/components/editor.ts:464-476,603-862`. Go evidence is
+`internal/tui/editor.go`, `internal/tui/terminal_raw_linux.go`,
+`cmd/theoses/main.go`, `TestReadLineWithOutputRedrawsCursor`, and
+`TestInteractiveRunAppliesLineEditing`. Multiline editing, history, and live
+terminal acceptance remain open. The PR must remain open for Claude review and
+must not be merged by this agent.
+
 ## Checkpoint: Goal 6 built-in tool edges
 
 On `feat/goal-6-tool-edges`, convert_doc now includes markitdown stderr for
