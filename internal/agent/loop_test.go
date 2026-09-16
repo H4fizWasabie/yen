@@ -25,6 +25,34 @@ type updatingProvider struct{}
 
 type eventStreamingProvider struct{}
 
+type definitionProvider struct{ definitions []ToolDefinition }
+
+func (p *definitionProvider) Next(context.Context, []Message, []string) (Response, error) {
+	return Response{Text: "legacy", StopReason: "stop"}, nil
+}
+func (p *definitionProvider) NextWithToolDefinitions(_ context.Context, _ []Message, definitions []ToolDefinition) (Response, error) {
+	p.definitions = definitions
+	return Response{Text: "defined", StopReason: "stop"}, nil
+}
+
+type definedTool struct{}
+
+func (definedTool) Name() string                                            { return "lookup" }
+func (definedTool) Execute(context.Context, map[string]any) (string, error) { return "", nil }
+func (definedTool) ToolDefinition() ToolDefinition {
+	return ToolDefinition{Name: "lookup", Description: "Look something up", Parameters: map[string]any{"type": "object"}, Label: "Lookup"}
+}
+
+func TestRunUsesCompleteToolDefinitionsWhenProviderSupportsThem(t *testing.T) {
+	p := &definitionProvider{}
+	if _, err := Run(context.Background(), p, []Tool{definedTool{}}, "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.definitions) != 1 || p.definitions[0].Description != "Look something up" || p.definitions[0].Label != "Lookup" {
+		t.Fatalf("definitions=%#v", p.definitions)
+	}
+}
+
 type continuationProvider struct{ calls int }
 
 func (p *continuationProvider) Next(_ context.Context, messages []Message, _ []string) (Response, error) {

@@ -27,6 +27,10 @@ type externalTool struct {
 
 func (t externalTool) Name() string { return t.name }
 
+func (t externalTool) ToolDefinition() agent.ToolDefinition {
+	return agent.ToolDefinition{Name: t.name, Description: t.description, Parameters: t.schema, Label: t.name}
+}
+
 func (t externalTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	return t.execute(ctx, args)
 }

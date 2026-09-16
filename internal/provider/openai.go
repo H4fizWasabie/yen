@@ -166,13 +166,21 @@ func (p OpenAICompletions) NextWithEvents(ctx context.Context, messages []agent.
 	return p.nextWithUpdates(ctx, messages, toolNames, nil, emit, false)
 }
 
+func (p OpenAICompletions) NextWithToolDefinitions(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolDefinitionNames(definitions), nil, nil, false, definitions)
+}
+
+func (p OpenAICompletions) NextWithToolDefinitionsAndEvents(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.nextWithUpdates(ctx, messages, toolDefinitionNames(definitions), nil, emit, false, definitions)
+}
+
 // NextJSON requests the provider's object-mode response format for structured
 // calls such as memory consolidation. Ordinary turns keep the existing wire shape.
 func (p OpenAICompletions) NextJSON(ctx context.Context, messages []agent.Message, toolNames []string) (agent.Response, error) {
 	return p.nextWithUpdates(ctx, messages, toolNames, nil, nil, true)
 }
 
-func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool) (agent.Response, error) {
+func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent.Message, toolNames []string, update func(string), emit func(agent.StreamEvent), jsonMode bool, definitionSets ...[]agent.ToolDefinition) (agent.Response, error) {
 	if p.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
@@ -240,10 +248,21 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 	if jsonMode {
 		payload.ResponseFormat = map[string]string{"type": "json_object"}
 	}
+	definitions := make([]agent.ToolDefinition, 0, len(toolNames))
+	if len(definitionSets) > 0 {
+		definitions = definitionSets[0]
+	}
 	for _, name := range toolNames {
+		definition := agent.ToolDefinition{Name: name, Description: name, Parameters: toolParameters(name)}
+		for _, candidate := range definitions {
+			if candidate.Name == name {
+				definition = candidate
+				break
+			}
+		}
 		payload.Tools = append(payload.Tools, map[string]any{
 			"type":     "function",
-			"function": map[string]any{"name": name, "parameters": toolParameters(name)},
+			"function": map[string]any{"name": name, "description": definition.Description, "parameters": definition.Parameters},
 		})
 	}
 	body, err := json.Marshal(payload)
@@ -522,6 +541,16 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		result.StopReason = "toolUse"
 	}
 	return result, nil
+}
+
+func toolDefinitionNames(definitions []agent.ToolDefinition) []string {
+	result := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		if definition.Name != "" {
+			result = append(result, definition.Name)
+		}
+	}
+	return result
 }
 
 func applyOpenAIUsage(result *agent.Response, usage *openAIUsage) {

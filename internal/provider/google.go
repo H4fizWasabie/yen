@@ -57,6 +57,14 @@ func (p GoogleGenerativeAI) NextWithEvents(ctx context.Context, messages []agent
 	return p.nextWithEvents(ctx, messages, toolNames, emit)
 }
 
+func (p GoogleGenerativeAI) NextWithToolDefinitions(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition) (agent.Response, error) {
+	return p.nextWithEvents(ctx, messages, toolDefinitionNames(definitions), nil, definitions)
+}
+
+func (p GoogleGenerativeAI) NextWithToolDefinitionsAndEvents(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.nextWithEvents(ctx, messages, toolDefinitionNames(definitions), emit, definitions)
+}
+
 func (p GoogleGenerativeAI) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	bearer, err := p.bearerToken(ctx)
 	if err != nil {
@@ -144,6 +152,7 @@ type googlePart struct {
 	InlineData       *googleInlineData `json:"inlineData,omitempty"`
 	FunctionCall     map[string]any    `json:"functionCall,omitempty"`
 	FunctionResponse map[string]any    `json:"functionResponse,omitempty"`
+	ThoughtSignature string            `json:"thoughtSignature,omitempty"`
 }
 
 type googleInlineData struct {
@@ -189,7 +198,7 @@ func (p GoogleGenerativeAI) next(ctx context.Context, messages []agent.Message, 
 	})
 }
 
-func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent), definitionSets ...[]agent.ToolDefinition) (agent.Response, error) {
 	if p.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
@@ -209,7 +218,7 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 	if system := googleSystemInstruction(messages); system != "" {
 		payload["systemInstruction"] = map[string]any{"parts": []map[string]string{{"text": system}}}
 	}
-	if declarations := googleTools(toolNames); len(declarations) > 0 {
+	if declarations := googleTools(toolNames, definitionSets...); len(declarations) > 0 {
 		payload["tools"] = []any{map[string]any{"functionDeclarations": declarations}}
 	}
 	if p.ThinkingLevel != "" && p.ThinkingLevel != "off" {
@@ -323,7 +332,7 @@ func (p GoogleGenerativeAI) nextWithEvents(ctx context.Context, messages []agent
 			if part.FunctionCall != nil {
 				name, _ := part.FunctionCall["name"].(string)
 				args, _ := part.FunctionCall["args"].(map[string]any)
-				call := agent.ToolCall{ID: name + "_google", Name: name, Args: args}
+				call := agent.ToolCall{ID: name + "_google", Name: name, Args: args, ThoughtSignature: part.ThoughtSig}
 				result.ToolCalls = append(result.ToolCalls, call)
 				partial.ToolCalls = append(partial.ToolCalls, call)
 				if emit != nil {
@@ -385,7 +394,7 @@ func googleContents(messages []agent.Message) []googleContent {
 			}
 		}
 		for _, call := range message.ToolCalls {
-			parts = append(parts, googlePart{FunctionCall: map[string]any{"name": call.Name, "args": call.Args}})
+			parts = append(parts, googlePart{FunctionCall: map[string]any{"name": call.Name, "args": call.Args}, ThoughtSignature: call.ThoughtSignature})
 		}
 		if message.Role == "tool" && message.Content != "" {
 			parts = []googlePart{{Text: message.Content}}
@@ -407,10 +416,19 @@ func googleSystemInstruction(messages []agent.Message) string {
 	return strings.Join(instructions, "\n\n")
 }
 
-func googleTools(names []string) []map[string]any {
+func googleTools(names []string, definitionSets ...[]agent.ToolDefinition) []map[string]any {
 	result := make([]map[string]any, 0, len(names))
 	for _, name := range names {
-		result = append(result, map[string]any{"name": name, "description": name, "parameters": toolParameters(name)})
+		definition := agent.ToolDefinition{Name: name, Description: name, Parameters: toolParameters(name)}
+		if len(definitionSets) > 0 {
+			for _, candidate := range definitionSets[0] {
+				if candidate.Name == name {
+					definition = candidate
+					break
+				}
+			}
+		}
+		result = append(result, map[string]any{"name": name, "description": definition.Description, "parameters": definition.Parameters})
 	}
 	return result
 }

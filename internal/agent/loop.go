@@ -8,29 +8,35 @@ import (
 )
 
 type Message struct {
-	Role              string
-	Content           string
-	TextSignature     string
-	Thinking          string
-	ThinkingSignature string
-	Images            []string
-	ToolCalls         []ToolCall
-	ToolCallID        string
-	ToolName          string
-	StopReason        string
-	ErrorMessage      string
-	ResponseID        string
-	ResponseModel     string
-	RawStopReason     string
-	Provider          string
-	Model             string
-	Usage             *Usage
+	Role                string
+	Content             string
+	TextSignature       string
+	Thinking            string
+	ThinkingSignature   string
+	Images              []string
+	ToolCalls           []ToolCall
+	ToolCallID          string
+	ToolName            string
+	StopReason          string
+	ErrorMessage        string
+	ResponseID          string
+	ResponseModel       string
+	RawStopReason       string
+	Provider            string
+	Model               string
+	Usage               *Usage
+	ToolResultDetails   any
+	ToolResultUsage     *Usage
+	AddedToolNames      []string
+	ToolResultTerminate bool
 }
 
 type ToolCall struct {
-	ID   string
-	Name string
-	Args map[string]any
+	ID               string
+	Name             string
+	Args             map[string]any
+	ThoughtSignature string
+	Namespace        string
 }
 
 type Response struct {
@@ -60,6 +66,22 @@ type Usage struct {
 
 type Provider interface {
 	Next(ctx context.Context, messages []Message, tools []string) (Response, error)
+}
+
+// ToolDefinitionProvider is an additive seam for providers that can transmit
+// the complete tool contract. The legacy Provider contract remains intact.
+type ToolDefinitionProvider interface {
+	NextWithToolDefinitions(context.Context, []Message, []ToolDefinition) (Response, error)
+}
+type ToolDefinitionStreamingProvider interface {
+	NextWithToolDefinitionsAndEvents(context.Context, []Message, []ToolDefinition, func(StreamEvent)) (Response, error)
+}
+
+type ToolDefinition struct {
+	Name        string
+	Description string
+	Parameters  map[string]any
+	Label       string
 }
 type ProviderIdentity interface{ ProviderID() string }
 
@@ -94,9 +116,15 @@ type Tool interface {
 }
 
 type ToolResult struct {
-	Text   string
-	Images []string
+	Text           string
+	Images         []string
+	Details        any
+	Usage          *Usage
+	AddedToolNames []string
+	Terminate      bool
 }
+
+type ToolDefiner interface{ ToolDefinition() ToolDefinition }
 
 // ToolHooks are the execution interception seam used by extensions. Hooks run
 // after tool lookup and before the corresponding tool result events.
@@ -195,6 +223,9 @@ type Event struct {
 	FinalError     string
 	ToolResults    []Message
 	Messages       []Message
+	Details        any
+	AddedToolNames []string
+	Terminate      bool
 }
 
 type EventFunc func(Event)
@@ -337,9 +368,18 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 
 	toolMap := make(map[string]Tool, len(tools))
 	toolNames := make([]string, 0, len(tools))
+	toolDefinitions := make([]ToolDefinition, 0, len(tools))
 	for _, tool := range tools {
 		toolMap[tool.Name()] = tool
 		toolNames = append(toolNames, tool.Name())
+		definition := ToolDefinition{Name: tool.Name()}
+		if definer, ok := tool.(ToolDefiner); ok {
+			definition = definer.ToolDefinition()
+			if definition.Name == "" {
+				definition.Name = tool.Name()
+			}
+		}
+		toolDefinitions = append(toolDefinitions, definition)
 	}
 
 	firstTurn := true
@@ -379,7 +419,16 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			}
 		}
 		if err == nil {
-			if streaming, ok := provider.(StreamingProviderWithEvents); ok {
+			if streaming, ok := provider.(ToolDefinitionStreamingProvider); ok {
+				response, err = streaming.NextWithToolDefinitionsAndEvents(providerContext, providerMessages, toolDefinitions, func(event StreamEvent) {
+					if event.Type == "text_delta" && event.Delta != "" && onUpdate != nil {
+						onUpdate(event.Delta)
+					}
+					if onEvent != nil {
+						onEvent(Event{Type: "message_update", AssistantEvent: event.Type, Delta: event.Delta, Message: &event.Partial})
+					}
+				})
+			} else if streaming, ok := provider.(StreamingProviderWithEvents); ok {
 				response, err = streaming.NextWithEvents(providerContext, providerMessages, toolNames, func(event StreamEvent) {
 					if event.Type == "text_delta" && event.Delta != "" {
 						result.Events = append(result.Events, "message_update")
@@ -400,6 +449,8 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 						}
 					}
 				})
+			} else if defined, ok := provider.(ToolDefinitionProvider); ok {
+				response, err = defined.NextWithToolDefinitions(providerContext, providerMessages, toolDefinitions)
 			} else {
 				response, err = provider.Next(providerContext, providerMessages, toolNames)
 			}
@@ -488,6 +539,12 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			}
 			result.Events = append(result.Events, "turn_end")
 			emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
+			if allToolResultsTerminate(toolResults) {
+				result.Events = append(result.Events, "agent_end", "agent_settled")
+				emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+				emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
+				return result, nil
+			}
 			if stopper, ok := provider.(TurnStopper); ok && stopper.StopAfterTurn(response, toolResults) {
 				result.Events = append(result.Events, "agent_end", "agent_settled")
 				emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
@@ -611,14 +668,20 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 			toolResults = append(toolResults, toolMessage)
 			emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
 			if onEvent != nil {
-				onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage})
-				onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage})
+				onEvent(Event{Type: "tool_execution_end", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage, Details: toolResult.Details, Usage: usageValue(toolResult.Usage), AddedToolNames: toolResult.AddedToolNames, Terminate: toolResult.Terminate})
+				onEvent(Event{Type: "tool_result", ID: call.ID, Name: call.Name, Result: content, IsError: err != nil, Message: &toolMessage, Details: toolResult.Details, Usage: usageValue(toolResult.Usage), AddedToolNames: toolResult.AddedToolNames, Terminate: toolResult.Terminate})
 			}
 			result.Events = append(result.Events, "message_end:toolResult")
 			emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})
 		}
 		result.Events = append(result.Events, "turn_end")
 		emitEvent(onEvent, Event{Type: "turn_end", Message: &assistant, ToolResults: toolResults})
+		if allToolResultsTerminate(toolResults) {
+			result.Events = append(result.Events, "agent_end", "agent_settled")
+			emitEvent(onEvent, Event{Type: "agent_end", Messages: append([]Message(nil), result.Messages...)})
+			emitEvent(onEvent, Event{Type: "agent_settled", Messages: append([]Message(nil), result.Messages...)})
+			return result, nil
+		}
 		if hooks != nil && hooks.PrepareNextTurn != nil {
 			if err := hooks.PrepareNextTurn(ctx, response, toolResults, result.Messages); err != nil {
 				return result, err
@@ -657,11 +720,15 @@ func cloneArgs(args map[string]any) map[string]any {
 }
 
 type parallelToolResult struct {
-	call    ToolCall
-	content string
-	images  []string
-	err     error
-	blocked bool
+	call           ToolCall
+	content        string
+	images         []string
+	details        any
+	usage          *Usage
+	addedToolNames []string
+	terminate      bool
+	err            error
+	blocked        bool
 }
 
 func executeTool(ctx context.Context, tool Tool, args map[string]any) (ToolResult, error) {
@@ -670,6 +737,25 @@ func executeTool(ctx context.Context, tool Tool, args map[string]any) (ToolResul
 	}
 	text, err := tool.Execute(ctx, args)
 	return ToolResult{Text: text}, err
+}
+
+func usageValue(usage *Usage) Usage {
+	if usage == nil {
+		return Usage{}
+	}
+	return *usage
+}
+
+func allToolResultsTerminate(messages []Message) bool {
+	if len(messages) == 0 {
+		return false
+	}
+	for _, message := range messages {
+		if !message.ToolResultTerminate {
+			return false
+		}
+	}
+	return true
 }
 
 func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall, toolMap map[string]Tool, onEvent EventFunc, hooks *ToolHooks) ([]Message, error) {
@@ -709,7 +795,7 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 				}
 			}
 			toolResult, err := executeTool(ctx, tool, call.Args)
-			outcomes[i].content, outcomes[i].images, outcomes[i].err = toolResult.Text, toolResult.Images, err
+			outcomes[i].content, outcomes[i].images, outcomes[i].details, outcomes[i].usage, outcomes[i].addedToolNames, outcomes[i].terminate, outcomes[i].err = toolResult.Text, toolResult.Images, toolResult.Details, toolResult.Usage, toolResult.AddedToolNames, toolResult.Terminate, err
 			if hooks != nil && hooks.After != nil {
 				updated, isError, hookErr := hooks.After(ctx, assistant, call, toolResult, err != nil)
 				if hookErr != nil {
@@ -717,6 +803,7 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 					return
 				}
 				outcomes[i].content, outcomes[i].images = updated.Text, updated.Images
+				outcomes[i].details, outcomes[i].usage, outcomes[i].addedToolNames, outcomes[i].terminate = updated.Details, updated.Usage, updated.AddedToolNames, updated.Terminate
 				if isError && outcomes[i].err == nil {
 					outcomes[i].err = errors.New("tool result overridden as error")
 				}
@@ -741,13 +828,13 @@ func runParallelToolCalls(ctx context.Context, result *Result, calls []ToolCall,
 			isError = true
 		}
 		result.Events = append(result.Events, "tool_execution_end:"+outcome.call.ID, "message_start:toolResult")
-		toolMessage := Message{Role: "tool", Content: content, Images: outcome.images, ToolCallID: outcome.call.ID, ToolName: outcome.call.Name}
+		toolMessage := Message{Role: "tool", Content: content, Images: outcome.images, ToolCallID: outcome.call.ID, ToolName: outcome.call.Name, ToolResultDetails: outcome.details, ToolResultUsage: outcome.usage, AddedToolNames: outcome.addedToolNames, ToolResultTerminate: outcome.terminate}
 		result.Messages = append(result.Messages, toolMessage)
 		toolMessages = append(toolMessages, toolMessage)
 		emitEvent(onEvent, Event{Type: "message_start", Message: &toolMessage})
 		if onEvent != nil {
-			onEvent(Event{Type: "tool_execution_end", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage})
-			onEvent(Event{Type: "tool_result", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage})
+			onEvent(Event{Type: "tool_execution_end", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage, Details: outcome.details, Usage: usageValue(outcome.usage), AddedToolNames: outcome.addedToolNames, Terminate: outcome.terminate})
+			onEvent(Event{Type: "tool_result", ID: outcome.call.ID, Name: outcome.call.Name, Result: content, IsError: isError, Message: &toolMessage, Details: outcome.details, Usage: usageValue(outcome.usage), AddedToolNames: outcome.addedToolNames, Terminate: outcome.terminate})
 		}
 		result.Events = append(result.Events, "message_end:toolResult")
 		emitEvent(onEvent, Event{Type: "message_end", Message: &toolMessage})

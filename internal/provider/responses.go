@@ -133,7 +133,15 @@ func (p OpenAIResponses) NextWithEvents(ctx context.Context, messages []agent.Me
 	return p.next(ctx, messages, toolNames, emit)
 }
 
-func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent)) (agent.Response, error) {
+func (p OpenAIResponses) NextWithToolDefinitions(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), nil, definitions)
+}
+
+func (p OpenAIResponses) NextWithToolDefinitionsAndEvents(ctx context.Context, messages []agent.Message, definitions []agent.ToolDefinition, emit func(agent.StreamEvent)) (agent.Response, error) {
+	return p.next(ctx, messages, toolDefinitionNames(definitions), emit, definitions)
+}
+
+func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, toolNames []string, emit func(agent.StreamEvent), definitionSets ...[]agent.ToolDefinition) (agent.Response, error) {
 	if p.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
@@ -164,7 +172,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 			payload["input"] = responsesInput(delta)
 		}
 	}
-	if tools := responsesTools(toolNames); len(tools) > 0 {
+	if tools := responsesTools(toolNames, definitionSets...); len(tools) > 0 {
 		payload["tools"] = tools
 	}
 	if p.ThinkingLevel != "" && p.ThinkingLevel != "off" {
@@ -310,6 +318,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 					Text string `json:"text"`
 				} `json:"content"`
 				EncryptedContent string `json:"encrypted_content"`
+				Namespace        string `json:"namespace"`
 			} `json:"item"`
 			OutputIndex int    `json:"output_index"`
 			CallID      string `json:"call_id"`
@@ -341,7 +350,7 @@ func (p OpenAIResponses) next(ctx context.Context, messages []agent.Message, too
 				if callID == "" {
 					callID = event.Item.ID
 				}
-				call := agent.ToolCall{ID: callID, Name: event.Item.Name, Args: map[string]any{}}
+				call := agent.ToolCall{ID: callID, Name: event.Item.Name, Namespace: event.Item.Namespace, Args: map[string]any{}}
 				toolCalls[callID] = call
 				if emit != nil {
 					emit(agent.StreamEvent{Type: "toolcall_start", ContentIndex: event.OutputIndex, ToolCall: &call, Partial: partial})
@@ -657,16 +666,32 @@ func responsesInput(messages []agent.Message) []map[string]any {
 		result = append(result, map[string]any{"role": role, "content": content})
 		for _, call := range message.ToolCalls {
 			args, _ := json.Marshal(call.Args)
-			result = append(result, map[string]any{"type": "function_call", "call_id": call.ID, "name": call.Name, "arguments": string(args)})
+			item := map[string]any{"type": "function_call", "call_id": call.ID, "name": call.Name, "arguments": string(args)}
+			if call.Namespace != "" {
+				item["namespace"] = call.Namespace
+			}
+			if call.ThoughtSignature != "" {
+				item["thought_signature"] = call.ThoughtSignature
+			}
+			result = append(result, item)
 		}
 	}
 	return result
 }
 
-func responsesTools(names []string) []map[string]any {
+func responsesTools(names []string, definitionSets ...[]agent.ToolDefinition) []map[string]any {
 	result := make([]map[string]any, 0, len(names))
 	for _, name := range names {
-		result = append(result, map[string]any{"type": "function", "name": name, "description": name, "parameters": toolParameters(name), "strict": false})
+		definition := agent.ToolDefinition{Name: name, Description: name, Parameters: toolParameters(name)}
+		if len(definitionSets) > 0 {
+			for _, candidate := range definitionSets[0] {
+				if candidate.Name == name {
+					definition = candidate
+					break
+				}
+			}
+		}
+		result = append(result, map[string]any{"type": "function", "name": name, "description": definition.Description, "parameters": definition.Parameters, "strict": false})
 	}
 	return result
 }
