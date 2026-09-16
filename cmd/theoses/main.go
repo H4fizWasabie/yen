@@ -386,6 +386,34 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err := fmt.Fprintln(stdout, "Logged in: amazon-bedrock")
 		return true, err
+	case text == "/login google-vertex" || strings.HasPrefix(text, "/login google-vertex "):
+		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+		if path == "" {
+			return true, fmt.Errorf("YEN_AUTH_FILE is required for /login")
+		}
+		parts := strings.Fields(strings.TrimSpace(strings.TrimPrefix(text, "/login google-vertex")))
+		credential := auth.Credential{Type: "api_key"}
+		switch {
+		case len(parts) == 2 && parts[0] == "api-key":
+			credential.Key = parts[1]
+		case len(parts) == 3 && parts[0] == "adc":
+			credential.Env = map[string]string{"GOOGLE_CLOUD_PROJECT": parts[1], "GOOGLE_CLOUD_LOCATION": parts[2]}
+		case len(parts) == 4 && parts[0] == "service-account":
+			credential.Env = map[string]string{
+				"GOOGLE_CLOUD_PROJECT":           parts[1],
+				"GOOGLE_CLOUD_LOCATION":          parts[2],
+				"GOOGLE_APPLICATION_CREDENTIALS": parts[3],
+			}
+		default:
+			return true, fmt.Errorf("usage: /login google-vertex api-key <key> | adc <project> <location> | service-account <project> <location> <credentials-path>")
+		}
+		if _, err := auth.Open(path).Modify("google-vertex", func(*auth.Credential) (*auth.Credential, error) {
+			return &credential, nil
+		}); err != nil {
+			return true, err
+		}
+		_, err := fmt.Fprintln(stdout, "Logged in: google-vertex")
+		return true, err
 	case text == "/login github-copilot" || strings.HasPrefix(text, "/login github-copilot "):
 		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
 		if path == "" {
