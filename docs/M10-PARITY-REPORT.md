@@ -61,6 +61,16 @@ Go evidence is `internal/extensions/loader.go`, `cmd/theoses/main.go`,
 `internal/tui/ui.go`, and `TestHandleExtensionUISelectReturnsProtocolResponse`.
 Native rich component rendering remains open.
 
+The rich-rendering increment is now closed for registered message renderers:
+interactive turns project newly persisted extension-rendered messages into
+terminal scrollback, preserving plain strings and JSON-encoding structured
+results. Oracle authority is
+`packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`.
+Go evidence is `internal/tui/render.go`, `cmd/theoses/main.go`, and
+`TestRenderMessageUsesExtensionRenderer` plus the scripted CLI acceptance
+`TestInteractiveRunRendersExtensionMessage`. Full native component layout and
+interactive widgets remain open.
+
 The agent loop now exposes pre-loop and per-provider context interception
 boundaries. Hooks receive cloned message context and may replace it; tool turns
 therefore apply the per-call hook independently to each LLM call without
@@ -584,7 +594,7 @@ implementations and committed tests:
 |---|---|---|
 | Cross-channel identity | `8629abf`, default `yen-primary` plus environment override | live VPS read-back on 2026-09-15: `conversations.jsonl` maps Telegram, CLI, and dashboard adapter records to the same conversation ID; authenticated dashboard `/api/sessions` deduplicates the shared record; dashboard SSE prompt returned `CROSS_CHANNEL_OK` and a subsequent session GET read it back from that same ID | accepted side-by-side pilot; final Telegram-incoming replay remains open |
 | Dashboard branches | `bb39d8b`, durable branch marker, tree API, branch UI, reopen test | browser-level acceptance and richer tree presentation |
-| CLI interactive increment | `packages/coding-agent/src/modes/interactive/interactive-mode.ts:2796-2928,4281-4305,4736-4770,5094-5135` | ANSI scrollback/status/input screen plus scripted `/resume` and `/model` selectors in `internal/tui/tui.go` and `cmd/theoses/main.go`, covered by `TestInteractiveRunRendersScrollbackStatusAndInput`, `TestInteractiveResumeSelectsSessionFromScriptedInput`, and `TestInteractiveModelSelectorChangesProviderFromScriptedInput`; streaming status/progress, extension UI components, and remaining slash commands remain open |
+| CLI interactive increment | `packages/coding-agent/src/modes/interactive/interactive-mode.ts:2796-2928,4281-4305,4736-4770,5094-5135` | ANSI scrollback/status/input screen plus scripted `/resume` and `/model` selectors in `internal/tui/tui.go` and `cmd/theoses/main.go`, covered by `TestInteractiveRunRendersScrollbackStatusAndInput`, `TestInteractiveResumeSelectsSessionFromScriptedInput`, and `TestInteractiveModelSelectorChangesProviderFromScriptedInput`; registered message renderers now project into scrollback; full native extension UI components remain open |
 | RPC | `12a739c`, `808ff64`, JSONL server/client, prompt/steer/follow-up/events/state/messages/abort with image payloads, bash, durable `bashExecution` records plus working-note logging, new-session/clone/export, branch/artifact/session-name/fork/import/switch/fork-message/stats/set-model/cycle-model/model-catalog/thinking-level/retry controls, queue-mode state/behavior and persistence, built-in command discovery, Unix socket, and `0451341` state fields for session file, compaction, and auto-compaction | complete pinned command matrix; real extension-registry discovery and correlated extension UI request/response protocol; native TUI-only extension components remain open |
 | CLI | `packages/coding-agent/src/modes/interactive/interactive-mode.ts:2796-2800`, `:2828-2831`, `:2843-2851`, `:2873-2887`, `:2899-2903`, `:2860-2870`, `:2889-2894`, `:5778-5865`, `:6206-6295`, `/settings`, `/reload`, `/name`, `/session`, `/working-note`, `/compact`, `/stats`, `/model`, `/scoped-models`, `/thinking`, `/retry`, `/trust`, `/copy`, `/logout`, `/tree`, `/artifacts`, `/export`, `/import`, `/clone`, `/new`, `/fork`, `/resume`, and `!`/`!!` bash behavior | `cmd/theoses/main.go`, shared `session.Stats`, provider control helpers, trust store, session tree/artifact read-back, direct bash output, durable `bashExecution` records, excluded-from-context flag, provider catalog JSON read-back, clipboard copy, Yen auth credential listing/deletion, `/login openai-codex` and `/login github-copilot [enterprise-domain]` device login, validated JSONL export/import with active reload, durable clone/fresh-session switching, argument-based `/fork <entry-id> [path]` and `/resume <path>` switching, settings read-back, session reload, and command tests; full TUI rendering, selectors, and remaining slash commands remain open |
 | External tools | `f238e3b`, `5a11297`, HTTP sidecar, MCP HTTP, untrusted-content boundary, deferred search/call, `6979a81` MCP stdio; current Tavily and Cloudflare integrations use Yen-prefixed credentials/endpoints; runtime now closes optional external-tool resources after each turn and failed stdio initialization closes its child | full resource lifecycle, cross-turn resource reuse, and provider-specific extension interception |

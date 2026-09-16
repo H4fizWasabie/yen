@@ -199,6 +199,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				continue
 			}
 			screen.Status = "Streaming"
+			messageCount := len(currentSession.Messages())
 			var renderErr error
 			result, err := runPrompt(prompt, &response, func(update string) {
 				screen.Status = "Streaming: " + strings.TrimSpace(update)
@@ -213,6 +214,20 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				return reportError(stderr, renderErr)
 			}
 			screen.Status = "Ready"
+			if runner.ExtensionRegistry != nil {
+				if err := currentSession.Reload(); err != nil {
+					return reportError(stderr, err)
+				}
+				messages := currentSession.Messages()
+				if messageCount > len(messages) {
+					messageCount = 0
+				}
+				for _, message := range messages[messageCount:] {
+					if rendered, ok := tui.RenderMessage(runner.ExtensionRegistry, message); ok {
+						screen.Scrollback = append(screen.Scrollback, rendered)
+					}
+				}
+			}
 			screen.Scrollback = append(screen.Scrollback, prompt, result)
 			screen.Input = ""
 			if err := screen.Render(stdout); err != nil {

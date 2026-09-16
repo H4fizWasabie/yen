@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"strings"
 	"testing"
+
+	"github.com/H4fizWasabie/yen/internal/extensions"
+	"github.com/H4fizWasabie/yen/internal/session"
 )
 
 func TestHandleExtensionUISelectReturnsProtocolResponse(t *testing.T) {
@@ -23,5 +26,18 @@ func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "> 2) second") {
 		t.Fatalf("highlighted option missing from output: %q", output.String())
+	}
+}
+
+func TestRenderMessageUsesExtensionRenderer(t *testing.T) {
+	registry := extensions.New()
+	if err := registry.RegisterMessageRenderer("custom", func(value any, _ extensions.RenderOptions) (any, bool) {
+		return "rendered: " + value.(string), true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rendered, ok := RenderMessage(registry, session.Message{Role: "custom", Content: "payload"})
+	if !ok || rendered != "rendered: payload" {
+		t.Fatalf("rendered=%q ok=%v", rendered, ok)
 	}
 }

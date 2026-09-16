@@ -64,6 +64,31 @@ func TestInteractiveRunRendersProviderStatusUpdates(t *testing.T) {
 	}
 }
 
+func TestInteractiveRunRendersExtensionMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"hello"},"finish_reason":"stop"}]}`)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	extension := filepath.Join(dir, "renderer.js")
+	if err := os.WriteFile(extension, []byte(`module.exports = api => { api.registerMessageRenderer("assistant", value => "rendered:" + value); };`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_SESSION_FILE", filepath.Join(dir, "session.jsonl"))
+	t.Setenv("YEN_DATA_DIR", dir)
+	t.Setenv("YEN_OPENAI_BASE_URL", server.URL)
+	t.Setenv("YEN_EXTENSIONS", extension)
+	var stdout, stderr bytes.Buffer
+	if code := runWithInput([]string{"-i"}, strings.NewReader("hello\n/quit\n"), &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "rendered:hello") {
+		t.Fatalf("extension rendering missing: %q", stdout.String())
+	}
+}
+
 func TestInteractiveResumeSelectsSessionFromScriptedInput(t *testing.T) {
 	dir := t.TempDir()
 	currentPath := filepath.Join(dir, "session.jsonl")
