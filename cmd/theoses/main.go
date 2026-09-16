@@ -242,12 +242,20 @@ func handleInteractiveCommand(input string, current *session.Session, runner *ru
 		}
 		_, err = fmt.Fprintln(stdout, "Logged in: openai-codex")
 		return true, err
-	case text == "/login github-copilot":
+	case text == "/login github-copilot" || strings.HasPrefix(text, "/login github-copilot "):
 		path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
 		if path == "" {
 			return true, fmt.Errorf("YEN_AUTH_FILE is required for /login")
 		}
-		credential, err := auth.LoginGitHubCopilot(context.Background(), func(message string) {
+		domain := strings.TrimSpace(strings.TrimPrefix(text, "/login github-copilot"))
+		if domain == "" {
+			domain = "github.com"
+		}
+		enterpriseURL := ""
+		if domain != "github.com" {
+			enterpriseURL = domain
+		}
+		credential, err := auth.LoginGitHubCopilotForDomain(context.Background(), domain, enterpriseURL, func(message string) {
 			_, _ = fmt.Fprintln(stdout, message)
 		})
 		if err != nil {

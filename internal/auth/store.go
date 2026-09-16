@@ -11,12 +11,14 @@ import (
 )
 
 type Credential struct {
-	Type    string            `json:"type"`
-	Key     string            `json:"key,omitempty"`
-	Access  string            `json:"access,omitempty"`
-	Refresh string            `json:"refresh,omitempty"`
-	Expires int64             `json:"expires,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	Type              string            `json:"type"`
+	Key               string            `json:"key,omitempty"`
+	Access            string            `json:"access,omitempty"`
+	Refresh           string            `json:"refresh,omitempty"`
+	Expires           int64             `json:"expires,omitempty"`
+	Env               map[string]string `json:"env,omitempty"`
+	EnterpriseURL     string            `json:"enterpriseUrl,omitempty"`
+	AvailableModelIDs []string          `json:"availableModelIds,omitempty"`
 }
 
 type Info struct {

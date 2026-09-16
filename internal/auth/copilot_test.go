@@ -27,6 +27,8 @@ func TestLoginGitHubCopilot(t *testing.T) {
 				t.Fatalf("authorization=%q integration=%q", r.Header.Get("Authorization"), r.Header.Get("Copilot-Integration-Id"))
 			}
 			_, _ = w.Write([]byte(`{"token":"copilot-token","expires_at":4102444800}`))
+		case "/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"picker-model","model_picker_enabled":true},{"id":"no-tools","capabilities":{"supports":{"tool_calls":false}}},{"id":"disabled","model_picker_enabled":true,"policy":{"state":"disabled"}}]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -34,11 +36,22 @@ func TestLoginGitHubCopilot(t *testing.T) {
 	defer server.Close()
 
 	var message string
-	credential, err := loginGitHubCopilot(context.Background(), server.Client(), func(value string) { message = value }, server.URL+"/device", server.URL+"/access", server.URL+"/copilot")
+	credential, err := loginGitHubCopilot(context.Background(), server.Client(), func(value string) { message = value }, server.URL+"/device", server.URL+"/access", server.URL+"/copilot", server.URL, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if credential.Type != "oauth" || credential.Access != "copilot-token" || credential.Refresh != "github-access" || credential.Expires <= 0 || !strings.Contains(message, "ABCD-EFGH") {
+	if credential.Type != "oauth" || credential.Access != "copilot-token" || credential.Refresh != "github-access" || credential.Expires <= 0 || len(credential.AvailableModelIDs) != 1 || credential.AvailableModelIDs[0] != "picker-model" || !strings.Contains(message, "ABCD-EFGH") {
 		t.Fatalf("credential=%#v message=%q", credential, message)
+	}
+}
+
+func TestNormalizeGitHubCopilotDomain(t *testing.T) {
+	for _, value := range []string{"github.example.com", "https://github.example.com/"} {
+		if domain, err := NormalizeGitHubCopilotDomain(value); err != nil || domain != "github.example.com" {
+			t.Fatalf("value=%q domain=%q err=%v", value, domain, err)
+		}
+	}
+	if _, err := NormalizeGitHubCopilotDomain("https://github.example.com/path"); err == nil {
+		t.Fatal("accepted enterprise path")
 	}
 }

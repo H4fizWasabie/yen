@@ -269,6 +269,67 @@ func storedCodexAccessToken() string {
 	return credential.Access
 }
 
+func copilotConfigured(model string) OpenAICompletions {
+	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("YEN_COPILOT_BASE_URL")), "/")
+	key := strings.TrimSpace(os.Getenv("YEN_COPILOT_GITHUB_TOKEN"))
+	if key == "" {
+		credential := storedCopilotCredential()
+		key = credential.Access
+		if key == "" {
+			key = credential.Key
+		}
+		if baseURL == "" {
+			baseURL = copilotBaseURL(credential)
+		}
+	}
+	if baseURL == "" {
+		baseURL = providerDefaults["github-copilot"]
+	}
+	client := NewOpenAICompletions(baseURL, key, model)
+	client.ProviderName = "github-copilot"
+	client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
+	return client
+}
+
+func storedCopilotCredential() auth.Credential {
+	path := strings.TrimSpace(os.Getenv("YEN_AUTH_FILE"))
+	if path == "" {
+		return auth.Credential{}
+	}
+	store := auth.Open(path)
+	credential, ok, err := store.Read("github-copilot")
+	if err != nil || !ok {
+		return auth.Credential{}
+	}
+	if credential.Type == "oauth" && credential.Expires > 0 && credential.Expires <= time.Now().UnixMilli() && credential.Refresh != "" {
+		if refreshed, refreshErr := auth.RefreshGitHubCopilotForDomain(context.Background(), credential.Refresh, credential.EnterpriseURL, credential.EnterpriseURL); refreshErr == nil {
+			credential = refreshed
+			_, _ = store.Modify("github-copilot", func(*auth.Credential) (*auth.Credential, error) { return &credential, nil })
+		}
+	}
+	return credential
+}
+
+func copilotBaseURL(credential auth.Credential) string {
+	if credential.Access != "" {
+		if start := strings.Index(credential.Access, "proxy-ep="); start >= 0 {
+			value := credential.Access[start+len("proxy-ep="):]
+			if end := strings.IndexByte(value, ';'); end >= 0 {
+				value = value[:end]
+			}
+			if value != "" {
+				return "https://" + strings.TrimPrefix(value, "proxy.")
+			}
+		}
+	}
+	if credential.EnterpriseURL != "" {
+		if domain, err := auth.NormalizeGitHubCopilotDomain(credential.EnterpriseURL); err == nil {
+			return "https://copilot-api." + domain
+		}
+	}
+	return providerDefaults["github-copilot"]
+}
+
 func nativeResponsesConfigured(providerID, model string) OpenAIResponses {
 	baseURL := os.Getenv("YEN_RESPONSES_BASE_URL")
 	if providerID == "xai" {
@@ -450,18 +511,7 @@ func ConfiguredFromEnv() agent.Provider {
 		if model == "" {
 			model = "gpt-4o"
 		}
-		baseURL := os.Getenv("YEN_COPILOT_BASE_URL")
-		if baseURL == "" {
-			baseURL = providerDefaults[providerID]
-		}
-		key := os.Getenv("YEN_COPILOT_GITHUB_TOKEN")
-		if key == "" {
-			key = storedCredentialKey(providerID)
-		}
-		client := NewOpenAICompletions(baseURL, key, model)
-		client.ProviderName = providerID
-		client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
-		return client
+		return copilotConfigured(model)
 	}
 	if providerID == "minimax" || providerID == "minimax-cn" || providerID == "vercel-ai-gateway" {
 		baseURL := providerDefaults[providerID]
@@ -560,18 +610,7 @@ func NewConfigured(providerID, model string) (agent.Provider, error) {
 		if model == "" {
 			model = "gpt-4o"
 		}
-		baseURL := os.Getenv("YEN_COPILOT_BASE_URL")
-		if baseURL == "" {
-			baseURL = providerDefaults[providerID]
-		}
-		key := os.Getenv("YEN_COPILOT_GITHUB_TOKEN")
-		if key == "" {
-			key = storedCredentialKey(providerID)
-		}
-		client := NewOpenAICompletions(baseURL, key, model)
-		client.ProviderName = providerID
-		client.ReasoningEffort = os.Getenv("YEN_REASONING_EFFORT")
-		return client, nil
+		return copilotConfigured(model), nil
 	}
 	if providerID == "openai-responses" || providerID == "azure-openai-responses" {
 		if model == "" {
