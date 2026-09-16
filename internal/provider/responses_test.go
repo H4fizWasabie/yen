@@ -213,6 +213,32 @@ func TestOpenAIResponsesListsAllCatalogPages(t *testing.T) {
 	}
 }
 
+func TestOpenAICodexListsPaginatedCatalogWithAccountHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer codex-token" || r.Header.Get("chatgpt-account-id") != "acct-1" {
+			t.Fatalf("authorization=%q account=%q", r.Header.Get("Authorization"), r.Header.Get("chatgpt-account-id"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("after") == "" {
+			_, _ = io.WriteString(w, `{"data":[{"id":"gpt-5"}],"has_more":true,"last_id":"gpt-5"}`)
+			return
+		}
+		if r.URL.Query().Get("after") != "gpt-5" {
+			t.Fatalf("after=%q", r.URL.Query().Get("after"))
+		}
+		_, _ = io.WriteString(w, `{"data":[{"id":"gpt-5-mini"}],"has_more":false}`)
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "codex-token", "gpt-5")
+	provider.ProviderName = "openai-codex"
+	provider.Headers = map[string]string{"chatgpt-account-id": "acct-1"}
+	models, err := provider.ListModels(context.Background())
+	if err != nil || len(models) != 2 || models[0].ID != "gpt-5" || models[1].ID != "gpt-5-mini" || models[0].Provider != "openai-codex" {
+		t.Fatalf("models=%#v err=%v", models, err)
+	}
+}
+
 func TestOpenAIResponsesPersistsReasoningItemSignature(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
