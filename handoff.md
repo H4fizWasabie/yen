@@ -735,6 +735,10 @@ service-account discovery/login choices, Bedrock credential-chain/login choices,
 and Cloudflare native protocol paths. Real-account acceptance remains an
 explicit manual gate.
 
+The provider audit entries above supersede older checkpoint wording: Vertex and
+Bedrock auth UI are implemented, and Cloudflare native protocol paths are
+implemented. Static catalog metadata and live provider acceptance remain open.
+
 ## Latest operations evidence
 
 ## Checkpoint: RPC command matrix and extension UI
