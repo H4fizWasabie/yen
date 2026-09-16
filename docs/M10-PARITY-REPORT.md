@@ -33,6 +33,37 @@ and live terminal acceptance remain open and are not claimed here.
 
 ## Checkpoint update: 2026-09-16
 
+A new `internal/tui.RenderDiff` reproduces the oracle's diff line rendering:
+consecutive removed/added lines are grouped, and when a group is exactly
+one removed line followed by one added line, a word-level intra-line diff
+highlights only the changed spans (in inverse video), leaving indentation
+unhighlighted. Oracle authority is
+`packages/coding-agent/src/modes/interactive/components/diff.ts:8-147`.
+This slice implements only the structural line grouping and intra-line
+highlighting; the oracle's additional per-line-kind foreground color theme
+(`toolDiffAdded`/`toolDiffRemoved`/`toolDiffContext`, loaded from
+`packages/coding-agent/src/modes/interactive/theme/*.json`) is not
+implemented, since this Go TUI has no color/theme subsystem at all yet —
+that is a separate, larger gap. `RenderDiff` is also not yet wired into any
+tool-result rendering path: this Go rewrite has no file-edit/patch tool
+that produces diff-formatted output at all (`internal/codingagent` has
+read/explore/bash/convert_doc/generate_image/web_search/working_note but no
+edit tool), so there is currently no data source to feed it in production;
+adding such a tool is itself a separate, larger gap outside this slice's
+scope. Go evidence is `internal/tui/diff.go`,
+`TestRenderDiffAppliesIntraLineHighlightForSingleLineModification`,
+`TestRenderDiffShowsMultiLineBlocksAsIsWithoutIntraLineHighlight`,
+`TestRenderDiffPreservesContextLinesVerbatim`,
+`TestRenderDiffReplacesTabsWithSpaces`, and
+`TestRenderDiffPassesThroughUnparsableLines`. Full repository gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass. Color/theme support, an edit/patch tool to
+produce real diff output, Mermaid rendering, dynamic borders,
+status-indicator spinner behavior, ctrl/alt modifier-key parsing, and live
+terminal acceptance remain open and are not claimed here.
+
+## Checkpoint update: 2026-09-16
+
 The interactive tree selector now windows its display around the
 highlighted row and supports PageUp/PageDown paging, matching the oracle's
 viewport calculation and page-key handling. Oracle authority is

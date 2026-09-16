@@ -29,12 +29,49 @@ not attempted here; the Go code only records the chosen mode in the status
 line ("... (summary requested; generation not yet implemented)"). It also
 does not preserve the previously highlighted tree entry when re-showing the
 selector after a cancelled summary choice (the oracle's
-`initialSelectedId`). This increment is opened as a PR against `main` and
-must not be merged by this agent. Actual branch summary generation, native
-diff rendering, Mermaid rendering, dynamic borders, status-indicator
-spinner behavior, ctrl/alt modifier-key parsing, and live terminal
-acceptance remain open Goal 4 slices, each requiring its own failing seam
-test and PR.
+`initialSelectedId`). This increment was merged as PR #197. Actual branch
+summary generation, native diff rendering, Mermaid rendering, dynamic
+borders, status-indicator spinner behavior, ctrl/alt modifier-key parsing,
+and live terminal acceptance remain open Goal 4 slices, each requiring its
+own failing seam test and PR.
+
+## Checkpoint: Goal 4 native diff rendering
+
+On `feat/goal-4-native-diff-rendering` (branched from `origin/main`), a new
+`internal/tui.RenderDiff` reproduces the oracle's diff-line grouping and
+intra-line word-level highlighting (inverse video on changed spans only,
+leaving indentation unhighlighted, for the specific case of exactly one
+removed line followed by one added line). Oracle authority is
+`packages/coding-agent/src/modes/interactive/components/diff.ts:8-147`. Go
+evidence is `internal/tui/diff.go`,
+`TestRenderDiffAppliesIntraLineHighlightForSingleLineModification`,
+`TestRenderDiffShowsMultiLineBlocksAsIsWithoutIntraLineHighlight`,
+`TestRenderDiffPreservesContextLinesVerbatim`,
+`TestRenderDiffReplacesTabsWithSpaces`, and
+`TestRenderDiffPassesThroughUnparsableLines`. All required gates
+(`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`) pass locally.
+
+Documented scope narrowing: this is a standalone, tested rendering
+primitive, not an end-to-end feature. Two gaps are explicit and separate
+from this slice:
+1. No color/theme subsystem exists in this Go TUI at all, so the oracle's
+   per-line-kind foreground colors (`toolDiffAdded`/`toolDiffRemoved`/
+   `toolDiffContext`) are not reproduced — only the structural grouping and
+   inverse-video intra-line highlighting are.
+2. This Go rewrite has no file-edit/patch tool that produces diff-formatted
+   output yet (`internal/codingagent` has read/explore/bash/convert_doc/
+   generate_image/web_search/working_note, but no edit tool), so
+   `RenderDiff` has no production call site to wire into today. Adding such
+   a tool is a separate, larger piece of work.
+
+This increment is opened as a PR against `main`. Per the user's explicit
+standing instruction from this point in Goal 4 onward, the agent checks CI
+and self-merges once checks are green rather than waiting on external
+review. Color/theme support, an edit/patch tool, Mermaid rendering, dynamic
+borders, status-indicator spinner behavior, ctrl/alt modifier-key parsing,
+and live terminal acceptance remain open Goal 4 slices, each requiring its
+own failing seam test and PR.
 
 ## Checkpoint: Goal 4 tree viewport/page panning
 
