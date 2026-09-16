@@ -96,6 +96,16 @@ Go evidence is `internal/tui/render.go`, `cmd/theoses/main.go`, and
 `TestInteractiveRunRendersExtensionMessage`. Full native component layout and
 interactive widgets remain open.
 
+The extension presentation-state increment is implemented: `setStatus`,
+`setTitle`, `setWidget`, `notify`, and `set_editor_text` update the shared
+interactive screen model and trigger a redraw; the line-oriented fallback is
+preserved for headless callers. Oracle authority is
+`packages/coding-agent/src/modes/rpc/rpc-types.ts:229-283` and
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:2022-2069`;
+Go evidence is `internal/tui/tui.go`, `internal/tui/ui.go`, and
+`TestHandleExtensionUIUpdatesScreenPresentation`. Native component layout and
+interactive widget behavior remain open.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:

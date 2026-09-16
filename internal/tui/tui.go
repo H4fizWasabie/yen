@@ -4,15 +4,19 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 // Screen is the small presentation model shared by the interactive CLI.
 type Screen struct {
-	Scrollback []string
-	Status     string
-	Input      string
+	Scrollback   []string
+	Status       string
+	Input        string
+	Title        string
+	WidgetsAbove map[string][]string
+	WidgetsBelow map[string][]string
 }
 
 func (s Screen) Render(w io.Writer) error {
@@ -27,11 +31,41 @@ func (s Screen) Render(w io.Writer) error {
 			return err
 		}
 	}
-	if _, err := fmt.Fprintf(w, "\nStatus: %s\nInput\n> %s", s.Status, strings.ReplaceAll(s.Input, "\n", " ")); err != nil {
+	if s.Title != "" {
+		if _, err := fmt.Fprintf(w, "\n%s", s.Title); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "\nStatus: %s\n", s.Status); err != nil {
+		return err
+	}
+	if err := renderWidgets(w, s.WidgetsAbove); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Input\n> %s", strings.ReplaceAll(s.Input, "\n", " ")); err != nil {
+		return err
+	}
+	if err := renderWidgets(w, s.WidgetsBelow); err != nil {
 		return err
 	}
 	_, err := fmt.Fprintln(w)
 	return err
+}
+
+func renderWidgets(w io.Writer, widgets map[string][]string) error {
+	keys := make([]string, 0, len(widgets))
+	for key := range widgets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		for _, line := range widgets[key] {
+			if _, err := fmt.Fprintln(w, line); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Select presents numbered options and accepts a number, j/k, or arrow keys.

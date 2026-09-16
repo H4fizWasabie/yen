@@ -18,6 +18,23 @@ func TestHandleExtensionUISelectReturnsProtocolResponse(t *testing.T) {
 	}
 }
 
+func TestHandleExtensionUIUpdatesScreenPresentation(t *testing.T) {
+	screen := &Screen{Status: "Ready"}
+	var output strings.Builder
+	for _, request := range []map[string]any{
+		{"id": "status", "method": "setStatus", "statusText": "Working"},
+		{"id": "widget", "method": "setWidget", "widgetKey": "hint", "widgetLines": []any{"waiting"}, "widgetPlacement": "aboveEditor"},
+		{"id": "title", "method": "setTitle", "title": "Yen"},
+	} {
+		if _, err := HandleExtensionUIWithScreen(nil, request, bufio.NewReader(strings.NewReader("")), &output, screen); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if screen.Status != "Working" || screen.Title != "Yen" || len(screen.WidgetsAbove["hint"]) != 1 || screen.WidgetsAbove["hint"][0] != "waiting" {
+		t.Fatalf("screen=%#v", screen)
+	}
+}
+
 func TestSelectJThenEnterReturnsHighlightedOption(t *testing.T) {
 	var output strings.Builder
 	selected, err := Select(bufio.NewReader(strings.NewReader("j\n\n")), &output, "Pick", []string{"first", "second"})
