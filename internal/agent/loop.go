@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync"
 )
 
@@ -102,6 +103,9 @@ type ToolHooks struct {
 	Before func(context.Context, Message, ToolCall) (block bool, reason string, err error)
 	After  func(context.Context, Message, ToolCall, ToolResult, bool) (ToolResult, bool, error)
 
+	// Context runs before every provider call and may replace the context
+	// messages, matching the extension context event boundary.
+	Context func(context.Context, []Message) ([]Message, error)
 	// ProviderBefore can replace the messages and tool names sent to a provider.
 	ProviderBefore func(context.Context, []Message, []string) ([]Message, error)
 	// ProviderAfter runs after a provider response is received.
@@ -282,8 +286,13 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		var response Response
 		var err error
 		providerMessages := result.Messages
+		if hooks != nil && hooks.Context != nil {
+			providerMessages, err = hooks.Context(ctx, cloneMessages(providerMessages))
+		}
 		if hooks != nil && hooks.ProviderBefore != nil {
-			providerMessages, err = hooks.ProviderBefore(ctx, providerMessages, toolNames)
+			if err == nil {
+				providerMessages, err = hooks.ProviderBefore(ctx, providerMessages, toolNames)
+			}
 		}
 		if err == nil {
 			if streaming, ok := provider.(StreamingProviderWithEvents); ok {
@@ -530,6 +539,25 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		}
 		result.Events = append(result.Events, "turn_start")
 	}
+}
+
+func cloneMessages(messages []Message) []Message {
+	result := append([]Message(nil), messages...)
+	for i := range result {
+		result[i].Images = append([]string(nil), result[i].Images...)
+		result[i].ToolCalls = append([]ToolCall(nil), result[i].ToolCalls...)
+		for j := range result[i].ToolCalls {
+			result[i].ToolCalls[j].Args = cloneArgs(result[i].ToolCalls[j].Args)
+		}
+	}
+	return result
+}
+
+func cloneArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	return maps.Clone(args)
 }
 
 type parallelToolResult struct {

@@ -12,6 +12,7 @@ import (
 
 type scriptedProvider struct {
 	responses []Response
+	seen      [][]Message
 }
 
 type failingProvider struct{ err error }
@@ -90,10 +91,46 @@ func TestRunSupportsIndependentConversationsConcurrently(t *testing.T) {
 	}
 }
 
-func (p *scriptedProvider) Next(context.Context, []Message, []string) (Response, error) {
+func (p *scriptedProvider) Next(_ context.Context, messages []Message, _ []string) (Response, error) {
+	p.seen = append(p.seen, append([]Message(nil), messages...))
 	response := p.responses[0]
 	p.responses = p.responses[1:]
 	return response, nil
+}
+
+func TestRunAppliesContextHookBeforeEveryProviderCall(t *testing.T) {
+	provider := &scriptedProvider{responses: []Response{
+		{ToolCalls: []ToolCall{{ID: "read-1", Name: "read"}}, StopReason: "toolUse"},
+		{Text: "done", StopReason: "stop"},
+	}}
+	calls := 0
+	var result Result
+	var err error
+	result, err = RunFromWithQueuesAndEventsAndImagesAndHooks(
+		context.Background(), provider, []Tool{readTool{}}, nil, "hello", nil, nil, nil, nil,
+		&ToolHooks{Context: func(_ context.Context, messages []Message) ([]Message, error) {
+			calls++
+			messages[0].Content = "changed only for provider"
+			return append(append([]Message(nil), messages...), Message{Role: "system", Content: "context-hook"}), nil
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || len(provider.seen) != 2 {
+		t.Fatalf("context hook calls=%d provider calls=%d", calls, len(provider.seen))
+	}
+	for i, messages := range provider.seen {
+		if messages[0].Content == "hello" {
+			t.Fatalf("provider call %d did not receive context hook mutation", i)
+		}
+		if messages[len(messages)-1].Content != "context-hook" {
+			t.Fatalf("provider call %d messages=%#v", i, messages)
+		}
+	}
+	if result.Messages[0].Content != "hello" {
+		t.Fatalf("hook mutated agent result history: %#v", result.Messages[0])
+	}
 }
 
 type readTool struct{}
