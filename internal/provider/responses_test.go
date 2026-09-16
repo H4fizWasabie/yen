@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
@@ -192,6 +193,56 @@ func TestOpenAICodexWebSocketStreamsResponseCreate(t *testing.T) {
 	}
 	if result.Text != "hello" || result.ResponseID != "ws-1" {
 		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestOpenAICodexReusesWebSocketConnection(t *testing.T) {
+	var connections atomic.Int32
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connections.Add(1)
+		connection, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "done")
+		for i := 1; i <= 2; i++ {
+			typ, body, err := connection.Read(r.Context())
+			if err != nil || typ != websocket.MessageText {
+				t.Fatalf("read type=%v err=%v", typ, err)
+			}
+			var request map[string]any
+			if err := json.Unmarshal(body, &request); err != nil {
+				t.Fatal(err)
+			}
+			if i == 2 && request["previous_response_id"] != "resp-1" {
+				t.Fatalf("continuation request=%#v", request)
+			}
+			requests.Add(1)
+			message := fmt.Sprintf(`{"type":"response.completed","response":{"id":"resp-%d","status":"completed"}}`, i)
+			if err := connection.Write(r.Context(), websocket.MessageText, []byte(message)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIResponses(server.URL, "codex-token", "gpt-5")
+	provider.ProviderName = "openai-codex"
+	provider.Transport = "websocket"
+	first, err := provider.Next(context.Background(), []agent.Message{{Role: "user", Content: "first"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Next(context.Background(), []agent.Message{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "answer", ResponseID: first.ResponseID},
+		{Role: "user", Content: "second"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if connections.Load() != 1 || requests.Load() != 2 {
+		t.Fatalf("connections=%d requests=%d", connections.Load(), requests.Load())
 	}
 }
 

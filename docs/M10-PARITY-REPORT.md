@@ -700,6 +700,17 @@ The 2026-09-16 side-by-side VPS read-back places the active pilot release at
   the side-by-side systemd layout, backup, health, journald, and rollback
   procedure are verified on the pilot VPS.
 
+## Goal 1 Codex WebSocket checkpoint: 2026-09-16
+
+Codex WebSocket Responses now reuses an idle connection per endpoint/account,
+serializes requests, and retains the connection after each terminal response;
+`TestOpenAICodexReusesWebSocketConnection` verifies two requests on one socket
+and preserves `previous_response_id`. This follows the oracle's
+connection-scoped continuation state and acquire/release lifecycle at
+`packages/ai/src/api/openai-codex-responses.ts:809-834,1077-1170,1384-1503`.
+The idle cache is transport-only and does not alter session or runtime
+lifecycle. Live Codex acceptance remains pending without credentials.
+
 This is a no-cutover parity decision, not a claim of total feature parity.
 The TypeScript runtime remains operational, Go remains a reversible pilot, and
 no decommission or irreversible cutover is authorized.
