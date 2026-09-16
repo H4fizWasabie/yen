@@ -27,6 +27,17 @@ Go evidence is `internal/agent/loop.go`,
 425-test suite, race, vet, build, and diff checks pass. Prompt/image/system-
 prompt fields on the richer TypeScript event remain open.
 
+The hook slice also exposes provider response metadata: status and copied
+headers are delivered after each HTTP response and before body consumption.
+This matches `after_provider_response` in the pinned TypeScript adapter at
+`packages/coding-agent/src/core/sdk.ts:426-435` and its event shape at
+`packages/coding-agent/src/core/extensions/types.ts:709-714`.
+Go evidence is `internal/agent/loop.go`, `internal/provider/hooks.go`, the
+OpenAI-compatible, Anthropic, Gemini, Responses, and Radius request paths,
+and `TestApplyProviderResponseHookCopiesStatusAndHeaders`; the focused and
+full 430-test gates, race, vet, build, and diff checks pass. Bedrock SDK
+response metadata remains open.
+
 ## Evidence ledger
 
 | Area | TypeScript authority | Go evidence | Status |

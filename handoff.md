@@ -295,6 +295,13 @@ context-hooks worktree. This is hook plumbing only; a dynamic TypeScript
 extension loader, richer prompt/image event fields, and extension
 command/renderer registries remain open.
 
+The hook slice also carries `ToolHooks.ProviderResponse` through the provider
+context. HTTP providers call it after receiving each response and before
+consuming the body, with status and copied headers. Oracle evidence is
+`packages/coding-agent/src/core/sdk.ts:426-435` and
+`packages/coding-agent/src/core/extensions/types.ts:709-714`; the focused
+helper test and full gates pass. Bedrock SDK response metadata remains open.
+
 The provider, read, CLI error-boundary, fixed-capacity, canonical identity, and
 queue slices are now implemented and locally verified. Work in this order:
 

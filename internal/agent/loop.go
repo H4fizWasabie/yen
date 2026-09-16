@@ -114,6 +114,8 @@ type ToolHooks struct {
 	ProviderAfter func(context.Context, Response) error
 	// ProviderHeaders lets an extension mutate request headers before transport.
 	ProviderHeaders ProviderHeaderHook
+	// ProviderResponse runs after each HTTP provider response is received.
+	ProviderResponse ProviderResponseHook
 }
 
 type ProviderHeaderHook func(context.Context, map[string][]string)
@@ -126,6 +128,19 @@ func WithProviderHeaderHook(ctx context.Context, hook ProviderHeaderHook) contex
 
 func ProviderHeaderHookFromContext(ctx context.Context) ProviderHeaderHook {
 	hook, _ := ctx.Value(providerHeaderHookKey{}).(ProviderHeaderHook)
+	return hook
+}
+
+type ProviderResponseHook func(context.Context, int, map[string][]string)
+
+type providerResponseHookKey struct{}
+
+func WithProviderResponseHook(ctx context.Context, hook ProviderResponseHook) context.Context {
+	return context.WithValue(ctx, providerResponseHookKey{}, hook)
+}
+
+func ProviderResponseHookFromContext(ctx context.Context) ProviderResponseHook {
+	hook, _ := ctx.Value(providerResponseHookKey{}).(ProviderResponseHook)
 	return hook
 }
 
@@ -312,6 +327,9 @@ func runFromWithQueuesAndImages(ctx context.Context, provider Provider, tools []
 		providerContext := ctx
 		if hooks != nil && hooks.ProviderHeaders != nil {
 			providerContext = WithProviderHeaderHook(providerContext, hooks.ProviderHeaders)
+		}
+		if hooks != nil && hooks.ProviderResponse != nil {
+			providerContext = WithProviderResponseHook(providerContext, hooks.ProviderResponse)
 		}
 		providerMessages := result.Messages
 		if hooks != nil && hooks.Context != nil {

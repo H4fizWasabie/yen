@@ -121,6 +121,7 @@ func (p TheosesMessages) next(ctx context.Context, messages []agent.Message, too
 	if err != nil {
 		return agent.Response{}, err
 	}
+	applyProviderResponseHook(ctx, response)
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
