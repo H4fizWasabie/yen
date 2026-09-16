@@ -34,6 +34,7 @@ jobs:
             git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.sha }}"
           else
             git diff --check HEAD^...HEAD
+          fi
 
   cross-build:
     runs-on: ubuntu-latest
@@ -48,4 +49,3 @@ jobs:
           cache: true
       - name: Build ${{ matrix.goos }}
         run: GOOS=${{ matrix.goos }} GOARCH=amd64 go build ./...
-          fi
