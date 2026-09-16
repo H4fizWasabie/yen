@@ -26,6 +26,17 @@ wrapping/backgrounds, interactive text editing, and live terminal acceptance
 remain open. The PR must remain open for Claude review and must not be merged by
 this agent.
 
+## Checkpoint: Goal 4 line-editor semantics
+
+Interactive CLI input now applies basic cursor editing before submission,
+including ANSI left/right/home/end, backspace/delete, Ctrl-A/E/B/F, and
+rune-safe insertion. Oracle authority is
+`packages/tui/src/components/editor.ts:464-476,603-862`. Go evidence is
+`internal/tui/editor.go`, `cmd/theoses/main.go`, and
+`TestInteractiveRunAppliesLineEditing`. Raw terminal echo/cursor placement,
+multiline editing, history, and live terminal acceptance remain open. The PR
+must remain open for Claude review and must not be merged by this agent.
+
 ## Checkpoint: Goal 6 built-in tool edges
 
 On `feat/goal-6-tool-edges`, convert_doc now includes markitdown stderr for

@@ -36,6 +36,14 @@ component shapes continue to use the JSON fallback. Oracle authority is
 wrapping/backgrounds, interactive text editing, and live terminal acceptance
 remain open.
 
+Interactive input now applies the editor's basic cursor-editing contract before
+submission: left/right, home/end, backspace, delete, Ctrl-A/E/B/F, and UTF-8
+rune-safe insertion. Oracle authority is
+`packages/tui/src/components/editor.ts:464-476,603-862`. Go evidence is
+`internal/tui/editor.go`, `cmd/theoses/main.go`, and
+`TestInteractiveRunAppliesLineEditing`. Raw terminal echo/cursor placement,
+multiline editing, history, and live terminal acceptance remain open.
+
 ## Checkpoint update: 2026-09-16
 
 The first interactive CLI TUI increment is now closed: interactive stdin is

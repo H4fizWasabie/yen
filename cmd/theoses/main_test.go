@@ -64,6 +64,26 @@ func TestInteractiveRunRendersProviderStatusUpdates(t *testing.T) {
 	}
 }
 
+func TestInteractiveRunAppliesLineEditing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"reply"},"finish_reason":"stop"}]}`)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	t.Setenv("YEN_SESSION_FILE", filepath.Join(dir, "session.jsonl"))
+	t.Setenv("YEN_DATA_DIR", dir)
+	t.Setenv("YEN_OPENAI_BASE_URL", server.URL)
+	var stdout, stderr bytes.Buffer
+	if code := runWithInput([]string{"-i"}, strings.NewReader("hellp\x1b[D\x1b[3~o\n/quit\n"), &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "hello") {
+		t.Fatalf("edited prompt missing: %q", stdout.String())
+	}
+}
+
 func TestInteractiveToolStatusIncludesBoundedCallPreview(t *testing.T) {
 	status := interactiveToolStatus(agent.Event{Type: "tool_execution_start", Name: "read", Args: map[string]any{"path": "/tmp/example.txt"}})
 	if status != "Running read: /tmp/example.txt" {
