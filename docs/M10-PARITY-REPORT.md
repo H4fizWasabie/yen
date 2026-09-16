@@ -37,6 +37,13 @@ Go evidence is `internal/tui/tui.go`, `cmd/theoses/main.go`, and
 component rendering, streaming status/progress, and remaining slash commands
 remain open.
 
+Selectors now cancel safely when the candidate list is empty, preventing an
+invalid index from reaching the `/resume` or `/model` callers. Oracle authority
+for these selector entry points is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:4281-4305,4736-4770`.
+Go evidence is `internal/tui/tui.go` and
+`TestSelectWithNoOptionsCancels`.
+
 The status-rendering increment is now closed: streamed provider text redraws
 the TUI status region through the existing runtime update callback and returns
 to `Ready` after completion. Oracle authority is

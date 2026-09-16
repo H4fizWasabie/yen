@@ -61,6 +61,11 @@ Go evidence is `internal/tui/tui.go`, `cmd/theoses/main.go`, and
 extension UI component rendering, streaming status/progress, and the oracle's
 remaining slash commands.
 
+The selector now returns cancellation for an empty candidate list, so callers
+cannot index an absent `/resume` or `/model` option. Oracle selector entry
+points are `packages/coding-agent/src/modes/interactive/interactive-mode.ts:4281-4305,4736-4770`;
+Go evidence is `internal/tui/tui.go` and `TestSelectWithNoOptionsCancels`.
+
 The status-rendering increment is now implemented: streamed provider text is
 shown in the TUI status region via `RunSubmittedWithUpdates`, with render
 errors propagated and the status returning to `Ready` after completion.
