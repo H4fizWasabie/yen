@@ -125,12 +125,12 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	runPrompt := func(prompt string, out io.Writer) (string, error) {
+	runPrompt := func(prompt string, out io.Writer, onUpdate func(string)) (string, error) {
 		turn, err := runner.Submit(link, prompt)
 		if err != nil {
 			return "", err
 		}
-		_, result, err := runner.RunSubmitted(context.Background(), turn)
+		_, result, err := runner.RunSubmittedWithUpdates(context.Background(), turn, onUpdate)
 		if err != nil {
 			return "", err
 		}
@@ -177,10 +177,21 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 				}
 				continue
 			}
-			result, err := runPrompt(prompt, &response)
+			screen.Status = "Streaming"
+			var renderErr error
+			result, err := runPrompt(prompt, &response, func(update string) {
+				screen.Status = "Streaming: " + strings.TrimSpace(update)
+				if renderErr == nil {
+					renderErr = screen.Render(stdout)
+				}
+			})
 			if err != nil {
 				return reportError(stderr, err)
 			}
+			if renderErr != nil {
+				return reportError(stderr, renderErr)
+			}
+			screen.Status = "Ready"
 			screen.Scrollback = append(screen.Scrollback, prompt, result)
 			screen.Input = ""
 			if err := screen.Render(stdout); err != nil {
@@ -189,7 +200,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		}
 		return 0
 	}
-	if _, err := runPrompt(*prompt, stdout); err != nil {
+	if _, err := runPrompt(*prompt, stdout, nil); err != nil {
 		return reportError(stderr, err)
 	}
 	return 0

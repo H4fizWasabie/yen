@@ -26,6 +26,15 @@ Go evidence is `internal/tui/tui.go`, `cmd/theoses/main.go`, and
 extension UI component rendering, streaming status/progress, and the oracle's
 remaining slash commands.
 
+The status-rendering increment is now implemented: streamed provider text is
+shown in the TUI status region via `RunSubmittedWithUpdates`, with render
+errors propagated and the status returning to `Ready` after completion.
+Oracle authority is
+`packages/coding-agent/src/modes/interactive/interactive-mode.ts:6206-6295`;
+Go evidence is `cmd/theoses/main.go` and
+`TestInteractiveRunRendersProviderStatusUpdates`. Tool-specific progress,
+extension UI component rendering, and remaining slash commands remain open.
+
 ## Current state
 
 The first Go vertical slice is implemented and locally accepted:
