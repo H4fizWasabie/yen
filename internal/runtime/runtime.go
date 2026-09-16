@@ -566,8 +566,8 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		}
 		currentSettings, _ := settings.Load(turn.WorkspaceID)
 		configured := append([]string(nil), currentSettings.Extensions...)
-		configured = append(configured, strings.FieldsFunc(os.Getenv("YEN_EXTENSIONS"), func(r rune) bool { return r == os.PathListSeparator || r == ',' })...)
-		loaded, _ := extensions.DiscoverAndLoad(turn.WorkspaceID, agentDir, configured)
+		operatorConfigured := strings.FieldsFunc(os.Getenv("YEN_EXTENSIONS"), func(r rune) bool { return r == os.PathListSeparator || r == ',' })
+		loaded, _ := extensions.DiscoverAndLoadWithOperatorPaths(turn.WorkspaceID, agentDir, configured, operatorConfigured)
 		if loaded != nil {
 			registry = loaded.Registry
 			defer loaded.Close()

@@ -38,6 +38,14 @@ func (r *LoadResult) Close() error {
 }
 
 func DiscoverAndLoad(workspace, agentDir string, configured []string) (*LoadResult, error) {
+	return discoverAndLoad(workspace, agentDir, configured, nil)
+}
+
+func DiscoverAndLoadWithOperatorPaths(workspace, agentDir string, configured, operatorConfigured []string) (*LoadResult, error) {
+	return discoverAndLoad(workspace, agentDir, configured, operatorConfigured)
+}
+
+func discoverAndLoad(workspace, agentDir string, configured, operatorConfigured []string) (*LoadResult, error) {
 	if workspace == "" {
 		return nil, errors.New("workspace is required")
 	}
@@ -45,8 +53,8 @@ func DiscoverAndLoad(workspace, agentDir string, configured []string) (*LoadResu
 	paths := discover(filepath.Join(workspace, ".theoses", "extensions"))
 	paths = append(paths, discover(filepath.Join(agentDir, "extensions"))...)
 	disabled := map[string]bool{}
-	explicit := map[string]bool{}
-	for _, raw := range configured {
+	operator := map[string]bool{}
+	addConfigured := func(raw string, isOperator bool) {
 		enabled := !strings.HasPrefix(raw, "!") && !strings.HasPrefix(raw, "-")
 		raw = strings.TrimLeft(raw, "!-")
 		if !filepath.IsAbs(raw) {
@@ -55,17 +63,27 @@ func DiscoverAndLoad(workspace, agentDir string, configured []string) (*LoadResu
 		raw, _ = filepath.Abs(raw)
 		if !enabled {
 			disabled[raw] = true
-			continue
+			return
 		}
 		if info, err := os.Stat(raw); err == nil && info.IsDir() {
 			for _, path := range extensionEntries(raw) {
 				paths = append(paths, path)
-				explicit[path] = true
+				if isOperator {
+					operator[path] = true
+				}
 			}
 		} else {
 			paths = append(paths, raw)
-			explicit[raw] = true
+			if isOperator {
+				operator[raw] = true
+			}
 		}
+	}
+	for _, raw := range configured {
+		addConfigured(raw, false)
+	}
+	for _, raw := range operatorConfigured {
+		addConfigured(raw, true)
 	}
 	trusted := settings.IsTrusted(workspace)
 	result := &LoadResult{Registry: New()}
@@ -76,7 +94,7 @@ func DiscoverAndLoad(workspace, agentDir string, configured []string) (*LoadResu
 			continue
 		}
 		seen[path] = true
-		if !trusted && !explicit[path] && isUnder(path, filepath.Join(workspace, ".theoses", "extensions")) {
+		if !trusted && !operator[path] && isUnder(path, workspace) {
 			continue
 		}
 		b, err := startBridge(path)

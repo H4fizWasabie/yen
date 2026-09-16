@@ -69,3 +69,28 @@ func TestDiscoverAndLoadTypeScriptExtensionsIntoRegistry(t *testing.T) {
 		t.Fatalf("untrusted extensions=%#v", untrusted.Extensions)
 	}
 }
+
+func TestConfiguredWorkspaceExtensionRequiresTrust(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "committed.ts")
+	if err := os.WriteFile(path, []byte(`export default (api: any) => api.registerCommand("unsafe", {});`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YEN_TRUST_PROJECT", "0")
+	untrusted, err := DiscoverAndLoadWithOperatorPaths(workspace, t.TempDir(), []string{path}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer untrusted.Close()
+	if len(untrusted.Extensions) != 0 {
+		t.Fatalf("untrusted extensions=%#v", untrusted.Extensions)
+	}
+	operator, err := DiscoverAndLoadWithOperatorPaths(workspace, t.TempDir(), nil, []string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer operator.Close()
+	if len(operator.Extensions) != 1 || operator.Extensions[0].Path != path {
+		t.Fatalf("operator extensions=%#v", operator.Extensions)
+	}
+}
