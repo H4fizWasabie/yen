@@ -71,10 +71,15 @@ func (t BashTool) ExecuteResult(ctx context.Context, args map[string]any) (BashR
 		command = t.commandPrefix + "\n" + command
 	}
 	capture := newBashCapture()
-	cmd := exec.CommandContext(ctx, shell, flag, command)
+	// Start explicitly so the cancellation watcher only reads Process after the
+	// process has been created; Command.Run would race that read under -race.
+	cmd := exec.Command(shell, flag, command)
 	prepareCommand(cmd)
 	cmd.Dir = t.cwd
 	cmd.Stdout, cmd.Stderr = capture, capture
+	if err := cmd.Start(); err != nil {
+		return BashResult{}, err
+	}
 	stopped := make(chan struct{})
 	go func() {
 		select {
@@ -83,7 +88,7 @@ func (t BashTool) ExecuteResult(ctx context.Context, args map[string]any) (BashR
 		case <-stopped:
 		}
 	}()
-	err := cmd.Run()
+	err := cmd.Wait()
 	close(stopped)
 	result := capture.result()
 	if ctx.Err() != nil {
