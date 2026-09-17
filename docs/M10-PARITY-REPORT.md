@@ -2,6 +2,39 @@
 
 Date: 2026-09-17
 
+## Checkpoint update: 2026-09-17 (auto-compaction trigger independence)
+
+`Runner.runTurn`'s three auto-compaction triggers
+(`AutoCompactTurns`, `AutoCompactContextWindow`, `AutoCompactMaxHistoryTurns`)
+were wired as a mutually exclusive `if/else-if` chain, and
+`compactConversation` silently switched *any* trigger's cut strategy to a
+hardcoded 20,000-token budget whenever `AutoCompactContextWindow` was
+configured anywhere, regardless of which trigger actually called it. The
+oracle's `_checkCompaction` (`agent-session.ts:2195-2298`) instead pulls one
+`CompactionSettings` object per check and evaluates `shouldCompact`
+(context-window threshold) and `shouldCompactByTurns` (turn-count
+threshold) independently every turn — either can fire on its own, off the
+same settings, with no cross-trigger coupling. Configuring a Yen turns
+trigger alongside a context-window safety net meant only the turns branch
+ever ran, so the safety net could silently never fire.
+
+Fixed: `compactConversation` no longer infers a token budget from
+`AutoCompactContextWindow`; it only honors the explicitly configured
+`AutoCompactKeepRecentTokens`. `runTurn`'s context-window threshold check is
+now an independent `if`, evaluated before (and no longer gated behind) the
+turn-based triggers, falling back to a 2-turn keep window (the existing
+convention already used by the overflow-retry path) when no explicit token
+budget is configured. `AutoCompactTurns`/`AutoCompactMaxHistoryTurns` remain
+mutually exclusive with each other — that pairing is a Go-only extra knob
+with no TS equivalent (TS has one turn-count setting,
+`maxHistoryTurns`), not a parity divergence. Go evidence:
+`internal/runtime/runtime.go` and
+`TestRunnerContextThresholdTriggersIndependentlyOfTurnsTrigger`, confirmed
+red (compaction did not fire) before the fix and green after. Full
+repository gates (`go test ./...` — 560 passed, `go test -race
+./internal/runtime/...`, `go vet ./...`, `go build ./...`) pass. Not yet
+released or deployed.
+
 ## Checkpoint update: 2026-09-17
 
 Live Telegram image and document acceptance are now verified on the pilot
@@ -591,7 +624,7 @@ provider registration, and UI renderer execution remain deferred.
 | Area | TypeScript authority | Go evidence | Status |
 |---|---|---|---|
 | Session identity | `packages/coding-agent/src/core/session-manager.ts:709-717`, `:1973-1993` | `ResolveShared`; dashboard lookup fallback through an existing Telegram link; 74 Go tests; live Telegram, CLI, and dashboard use one conversation ID | accepted product extension |
-| Agent/tool loop | `packages/agent/src/agent-loop.ts:155-371`, `:399-426`, `:445-530`, `packages/agent/src/types.ts:17-28`, `packages/ai/src/types.ts:442-449`, `packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`, `packages/coding-agent/src/core/extensions/loader.ts:687-803` | event-order, settled-lifecycle, tool, error, abort, steering-priority, parallel independent tool execution, usage/provider/model/thinking-signature and response-metadata persistence, usage-backed context estimation with error/aborted exclusion, persisted thinking/message and assistant error-message context conversion, image-aware context estimation, automatic-compaction enabled toggle, opt-in max-history-turns compaction, agent/turn/message/tool lifecycle callbacks, provider stream events for text/thinking/tool-call start-delta-end with partial assistant messages, tool-status and tool-execution lifecycle callbacks, length-limited tool-call safety, recoverable length-stop compaction/retry, provider-backed compaction, token-budget compaction cut points, opt-in context-window plus reserve-token threshold (defaults 16,384 reserve and 20,000 recent tokens), bounded overflow retry, live provider tests, and disk-loaded TypeScript extension tool-call/tool-result plus provider request/response interception | partial; provider-specific stream metadata and remaining compaction settings parity open |
+| Agent/tool loop | `packages/agent/src/agent-loop.ts:155-371`, `:399-426`, `:445-530`, `packages/agent/src/types.ts:17-28`, `packages/ai/src/types.ts:442-449`, `packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`, `packages/coding-agent/src/core/extensions/loader.ts:687-803` | event-order, settled-lifecycle, tool, error, abort, steering-priority, parallel independent tool execution, usage/provider/model/thinking-signature and response-metadata persistence, usage-backed context estimation with error/aborted exclusion, persisted thinking/message and assistant error-message context conversion, image-aware context estimation, automatic-compaction enabled toggle, opt-in max-history-turns compaction, agent/turn/message/tool lifecycle callbacks, provider stream events for text/thinking/tool-call start-delta-end with partial assistant messages, tool-status and tool-execution lifecycle callbacks, length-limited tool-call safety, recoverable length-stop compaction/retry, provider-backed compaction, token-budget compaction cut points, opt-in context-window plus reserve-token threshold (defaults 16,384 reserve and 20,000 recent tokens) now checked **independently of, not mutually exclusive with, the turn-count trigger** (2026-09-17), bounded overflow retry, live provider tests, and disk-loaded TypeScript extension tool-call/tool-result plus provider request/response interception | partial; provider-specific stream metadata parity open |
 | Provider | `packages/ai/src/api/openai-completions.ts:699-717`, `:830-930`, `:362-465`, `:523-551`, `:632-647`, `:1260-1370`, `:1553-1575`, `packages/ai/src/api/mistral-conversations.ts:287-372`, `packages/ai/src/api/google-generative-ai.ts:80-260`, `packages/ai/src/api/openai-responses-shared.ts:597-750`, `packages/ai/src/api/theoses-messages.ts:345-470`, `packages/ai/src/utils/overflow.ts:39-171` | deterministic SSE including explicit-null finish reasons, response-body overflow classification, transient exclusion, Mistral native `reasoning_effort`, Mistral thinking-array deltas, and nine-character tool-call ID normalization, reasoning-field and ordered `reasoning_details` replay with session persistence, OpenAI and Anthropic response ID/model and raw finish-reason preservation, native Gemini REST streaming for text/thinking/function calls/usage/images, native OpenAI Responses streaming for text/function-call arguments/terminal usage/status, image input, and reasoning-item summary/signature replay, and a Radius/theoses-messages adapter with Yen-owned credentials, SSE text/thinking/tool-call events, usage/stop metadata, and gateway model catalog; live `z-ai/glm-5.3-flash` OpenRouter reply remains the only live provider result | partial; remaining provider protocols, native multimodal edge cases, and OAuth open |
 | Telegram | `packages/telegram/src/index.ts:27-33`, `:90-120`, `:193-270`, `:290-316`, `:430-470`, `:536-542`, `:550-560,575-585`, `:560-700`, `packages/telegram/src/format.ts` | dedicated unit, bounded Telegram attachment download with Yen artifact storage/read-tool note, photo-to-OpenAI image content, persisted opt-in `/on tool call(s)` and `/off tool call(s)` detail toggle with bounded previews, tool-status message plus in-place final edit, concurrent poll-batch dispatch with FIFO runtime serialization, escaped classic HTML fallback for headings/lists/code/links/emphasis, text/caption fallback for messages and quoted replies, case-insensitive `stop`/`halt`/`/stop`/`/cancel` controls (plus Yen `/abort`), bounded `sendRichMessage` attempt with classic fallback, standalone-section splitting and threaded replies, TypeScript 4,000-character Unicode chunking, reply-context/target tests, cancellable typing-action loop, valid token, live reply, owner guard; **live image and document acceptance verified on the pilot VPS 2026-09-17** (real photo read via vision, real PDF parsed via `convert_doc` after the `v0.1.3` WorkspaceID/PATH fixes, GH-219) | partial; rich/long-reply/reply acceptance deferred |
 | Dashboard | `packages/dashboard/src/index.ts:235-251`, `:289-292`, `:320-400`, `:530-550`, `packages/dashboard/src/public/app.js:1-220`, `:417-458` | Go auth unit tests plus VPS acceptance: health 200, unauthenticated API 401, login 200, cookie 200, Bearer 200; same-origin browser shell for login, recent-first session list/history with first-user-message titles, real message count and last-entry metadata, new session, send with bounded reply context, stop, and SSE delta/tool progress; dashboard can read/send a conversation with only a Telegram registry link; TypeScript-shaped session list/read-back for shared dashboard/Telegram links; persisted assistant thinking and durable bash-execution segments survive API projection and embedded rendering; SSE delta/tool_call/tool_result/usage/done/error protocol tests; live request routed to canonical conversation; Chromium DOM acceptance covers login, session load, branch rendering, and branch switching | partial; full visual/browser parity remains open |

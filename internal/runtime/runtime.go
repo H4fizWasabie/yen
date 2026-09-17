@@ -433,9 +433,6 @@ func (r *Runner) compactConversation(ctx context.Context, conversationID string,
 	}
 	var plan session.CompactionPlan
 	keepRecentTokens := r.AutoCompactKeepRecentTokens
-	if keepRecentTokens < 1 && r.AutoCompactContextWindow > 0 {
-		keepRecentTokens = 20000
-	}
 	if keepRecentTokens > 0 {
 		plan, err = current.PrepareCompactionByTokens(keepRecentTokens)
 	} else {
@@ -554,6 +551,28 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 	if err != nil {
 		return agent.Result{}, err
 	}
+	// The context-window threshold and the turn-count trigger are checked
+	// independently, matching the oracle's _checkCompaction (agent-session.ts),
+	// which evaluates shouldCompact and shouldCompactByTurns off one settings
+	// object rather than treating them as mutually exclusive. Configuring
+	// both a turns trigger and a context-window safety net must not let one
+	// silently suppress the other.
+	if !r.AutoCompactDisabled && r.AutoCompactContextWindow > 0 {
+		threshold := r.AutoCompactContextWindow - r.AutoCompactReserveTokens
+		if session.EstimateContextTokens(current.ContextMessages()) > threshold {
+			keepRecentTurns := 0
+			if r.AutoCompactKeepRecentTokens < 1 {
+				keepRecentTurns = 2
+			}
+			if err := r.compactConversation(ctx, turn.ConversationID, keepRecentTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
+				return agent.Result{}, err
+			}
+			current, err = openOrCreate(path, turn)
+			if err != nil {
+				return agent.Result{}, err
+			}
+		}
+	}
 	if !r.AutoCompactDisabled && r.AutoCompactTurns > 0 {
 		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
 			return agent.Result{}, err
@@ -561,17 +580,6 @@ func (r *Runner) runTurn(ctx context.Context, turn conversation.Turn, images []s
 		current, err = openOrCreate(path, turn)
 		if err != nil {
 			return agent.Result{}, err
-		}
-	} else if !r.AutoCompactDisabled && r.AutoCompactContextWindow > 0 {
-		threshold := r.AutoCompactContextWindow - r.AutoCompactReserveTokens
-		if session.EstimateContextTokens(current.ContextMessages()) > threshold {
-			if err := r.compactConversation(ctx, turn.ConversationID, 0); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {
-				return agent.Result{}, err
-			}
-			current, err = openOrCreate(path, turn)
-			if err != nil {
-				return agent.Result{}, err
-			}
 		}
 	} else if !r.AutoCompactDisabled && r.AutoCompactMaxHistoryTurns > 0 {
 		if err := r.compactConversation(ctx, turn.ConversationID, r.AutoCompactMaxHistoryTurns); err != nil && !errors.Is(err, session.ErrNothingToCompact) && !errors.Is(err, session.ErrAlreadyCompacted) {

@@ -961,6 +961,51 @@ func TestRunnerAutoCompactsBeforePromptAtContextThreshold(t *testing.T) {
 	}
 }
 
+// TestRunnerContextThresholdTriggersIndependentlyOfTurnsTrigger matches the
+// oracle's agent-session.ts _checkCompaction, which checks the context-window
+// threshold and the turn-count threshold independently off one settings
+// object — either can fire on its own, and configuring both must not let one
+// silently suppress the other.
+func TestRunnerContextThresholdTriggersIndependentlyOfTurnsTrigger(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conv-auto-both.jsonl")
+	saved := session.New(path, session.Header{ID: "conv-auto-both", ConversationID: "conv-auto-both", CWD: dir, Channel: "cli"})
+	for _, content := range []string{"one", "one reply", "two", "two reply", "three", "three reply"} {
+		role := "user"
+		if strings.HasSuffix(content, "reply") {
+			role = "assistant"
+		}
+		if _, err := saved.Append(session.Message{Role: role, Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue, err := conversation.OpenQueue(filepath.Join(dir, "queue.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &autoCompactionProvider{}
+	runner := New(queue, provider, nil)
+	// A turns trigger too high to ever fire on its own (only 3 turns exist),
+	// alongside a context threshold configured low enough to fire on its
+	// own. AutoCompactKeepRecentTokens is deliberately left unset so the
+	// context-threshold branch must supply its own keep budget rather than
+	// relying on a global field another trigger also happens to read.
+	runner.AutoCompactTurns = 50
+	runner.AutoCompactContextWindow = 20
+	runner.AutoCompactReserveTokens = 10
+	runner.SessionPath = func(turn conversation.Turn) string { return filepath.Join(dir, turn.ConversationID+".jsonl") }
+	link := conversation.Link{Adapter: "cli", AdapterKey: dir, ConversationID: "conv-auto-both", WorkspaceID: dir}
+	if _, err := runner.Submit(link, "four"); err != nil {
+		t.Fatal(err)
+	}
+	if _, result, err := runner.RunNext(context.Background(), link.ConversationID); err != nil || result.FinalText != "continued" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if provider.calls != 2 || len(provider.seen[1]) == 0 || provider.seen[1][0].Content == "one" {
+		t.Fatalf("context threshold did not fire alongside a configured turns trigger: calls=%d messages=%#v", provider.calls, provider.seen)
+	}
+}
+
 func TestRunnerCanDisableAutomaticCompaction(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conv-no-auto.jsonl")
