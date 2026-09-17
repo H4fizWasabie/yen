@@ -238,12 +238,14 @@ func TestOpenAICompletionsSendsProviderRouting(t *testing.T) {
 
 func TestOpenAICompletionsSendsPromptCacheSettings(t *testing.T) {
 	var payloads []map[string]any
+	var headers []http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
 		payloads = append(payloads, payload)
+		headers = append(headers, r.Header.Clone())
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
 	}))
@@ -258,6 +260,9 @@ func TestOpenAICompletionsSendsPromptCacheSettings(t *testing.T) {
 	if payloads[0]["prompt_cache_key"] != "conversation-123" || payloads[0]["prompt_cache_retention"] != nil {
 		t.Fatalf("short cache payload=%#v", payloads[0])
 	}
+	if headers[0].Get("x-session-id") != "conversation-123" {
+		t.Fatalf("short cache request missing x-session-id header=%#v", headers[0])
+	}
 
 	t.Setenv("YEN_CACHE_RETENTION", "long")
 	if _, err := client.Next(ctx, nil, nil); err != nil {
@@ -265,6 +270,9 @@ func TestOpenAICompletionsSendsPromptCacheSettings(t *testing.T) {
 	}
 	if payloads[1]["prompt_cache_key"] != "conversation-123" || payloads[1]["prompt_cache_retention"] != "24h" {
 		t.Fatalf("long cache payload=%#v", payloads[1])
+	}
+	if headers[1].Get("x-session-id") != "conversation-123" {
+		t.Fatalf("long cache request missing x-session-id header=%#v", headers[1])
 	}
 
 	t.Setenv("YEN_CACHE_RETENTION", "none")
@@ -276,6 +284,43 @@ func TestOpenAICompletionsSendsPromptCacheSettings(t *testing.T) {
 	}
 	if _, ok := payloads[2]["prompt_cache_retention"]; ok {
 		t.Fatalf("none cache payload has retention=%#v", payloads[2])
+	}
+	if headers[2].Get("x-session-id") != "" {
+		t.Fatalf("none cache request has x-session-id header=%#v", headers[2])
+	}
+}
+
+// TestOpenAICompletionsSendsSessionAffinityHeaderOnlyForOpenRouter matches
+// the oracle's compat.sessionAffinityFormat "openrouter" case
+// (openai-completions.ts:739-741): the x-session-id header is OpenRouter's
+// documented primary sticky-routing mechanism, sent only to OpenRouter, not
+// to other OpenAI-compatible backends that share the prompt-cache-key code
+// path (those instead use their own session-affinity header formats, not
+// covered here).
+func TestOpenAICompletionsSendsSessionAffinityHeaderOnlyForOpenRouter(t *testing.T) {
+	var payload map[string]any
+	var header http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		header = r.Header.Clone()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	client := NewOpenAICompletions(server.URL, "key", "model")
+	client.ProviderName = "openai"
+	ctx := WithSessionID(context.Background(), "conversation-123")
+	if _, err := client.Next(ctx, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if payload["prompt_cache_key"] != "conversation-123" {
+		t.Fatalf("openai payload missing prompt_cache_key=%#v", payload)
+	}
+	if header.Get("x-session-id") != "" {
+		t.Fatalf("openai request should not carry OpenRouter-specific x-session-id header=%#v", header)
 	}
 }
 
