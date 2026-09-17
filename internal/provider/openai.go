@@ -210,8 +210,10 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		PromptCacheRetention string            `json:"prompt_cache_retention,omitempty"`
 		MaxCompletionTokens  int               `json:"max_completion_tokens,omitempty"`
 	}{Model: p.Model, Messages: converted, Stream: true}
+	var sessionAffinityKey string
 	if supportsPromptCaching(p.ProviderName, p.BaseURL) {
 		payload.PromptCacheKey, payload.PromptCacheRetention = promptCacheSettings(ctx)
+		sessionAffinityKey = payload.PromptCacheKey
 	}
 	payload.ProviderRouting = p.ProviderRouting
 	payload.MaxCompletionTokens = p.MaxTokens
@@ -288,6 +290,13 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 		}
 		for name, value := range p.Headers {
 			request.Header.Set(name, value)
+		}
+		// OpenRouter's documented primary sticky-routing mechanism is the
+		// x-session-id header (matching the oracle's compat.sessionAffinityFormat
+		// "openrouter" case in openai-completions.ts:739-741); prompt_cache_key
+		// in the body is only its fallback, with weaker stickiness guarantees.
+		if p.ProviderName == "openrouter" && sessionAffinityKey != "" {
+			request.Header.Set("x-session-id", sessionAffinityKey)
 		}
 		applyProviderHeaderHook(ctx, request.Header)
 		response, err = client.Do(request)
