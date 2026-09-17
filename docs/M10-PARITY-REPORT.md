@@ -1,6 +1,56 @@
 # M10 parity report
 
-Date: 2026-09-16
+Date: 2026-09-17
+
+## Checkpoint update: 2026-09-17
+
+Live Telegram image and document acceptance are now verified on the pilot
+VPS, closing the deferred item tracked in
+[GH-219](https://github.com/H4fizWasabie/yen/issues/219). TypeScript
+authority: `packages/telegram/src/index.ts:430-470` (photo-to-image-content
+conversion) and `:536-542,550-560,575-585` (document artifact storage and
+`convert_doc` guidance note).
+
+**Photo path**: a real Telegram photo (a medication box) was sent to the
+live bot on 2026-09-17T07:06:04Z. The Go adapter converted it to
+`"images":["data:image/jpeg;base64,..."]` content on the user message, and
+the model correctly read the label text (product name, dosage, batch,
+expiry, registration number) from the image — confirmed in session
+`conv-5955b65fd7cbaf4f869df7af7f6c1fb6`.
+
+**Document path**: a real Telegram PDF (a Lalamove delivery receipt) was
+sent at 2026-09-17T07:14:26Z and stored via the `"telegram document"`
+artifact path. This surfaced two real environment/ops bugs rather than an
+application-code gap (full root cause and fix in GH-219/PR #220,
+`v0.1.3`):
+
+1. `convert_doc` failed with `Tool error: markitdown is not installed`
+   even though `markitdown` was present on the host at
+   `/usr/local/bin/markitdown` — the `run-telegram`/`run-dashboard`
+   systemd wrapper scripts in `deploy/install-side-by-side.sh` stripped
+   `PATH` down to `/usr/bin:/bin`, hiding it.
+2. The bash tool failed with a dead-directory error because
+   `internal/conversation.Registry.Resolve`/`ResolveShared` froze a
+   conversation's `WorkspaceID` at first-link-creation time and never
+   refreshed it on redeploy, even though callers always pass the current,
+   correct workspace on every call
+   (`internal/runtime/runtime.go:895`, `cmd/theoses-telegram/main.go:21`).
+   Once the conversation's original release directory was cleaned up by
+   release rotation, tool execution broke permanently for that
+   conversation, independent of the live process's own health.
+
+Both were fixed in `v0.1.3` (`internal/conversation/conversation.go`:
+`Resolve`/`ResolveShared` now refresh and persist a changed `WorkspaceID`;
+`deploy/install-side-by-side.sh`: wrapper `PATH` now includes
+`/usr/local/bin`), covered by
+`TestRegistryResolveRefreshesStaleWorkspaceID` and
+`TestRegistryResolveSharedRefreshesStaleWorkspaceID`. Re-verified live at
+2026-09-17T07:31:21Z: the same conversation's `convert_doc` call
+successfully extracted the full receipt text (order ID, price, pickup/
+drop-off addresses) from the same PDF, with no manual data migration —
+the existing link's `WorkspaceID` self-healed on the next resolve. Full
+repository gates (`go test ./...` — 559 passed, `go test -race
+./internal/conversation/...`, `go vet ./...`, `go build ./...`) pass.
 
 ## Checkpoint update: 2026-09-16
 
@@ -543,7 +593,7 @@ provider registration, and UI renderer execution remain deferred.
 | Session identity | `packages/coding-agent/src/core/session-manager.ts:709-717`, `:1973-1993` | `ResolveShared`; dashboard lookup fallback through an existing Telegram link; 74 Go tests; live Telegram, CLI, and dashboard use one conversation ID | accepted product extension |
 | Agent/tool loop | `packages/agent/src/agent-loop.ts:155-371`, `:399-426`, `:445-530`, `packages/agent/src/types.ts:17-28`, `packages/ai/src/types.ts:442-449`, `packages/coding-agent/src/core/extensions/types.ts:1067-1129,1209-1336`, `packages/coding-agent/src/core/extensions/loader.ts:687-803` | event-order, settled-lifecycle, tool, error, abort, steering-priority, parallel independent tool execution, usage/provider/model/thinking-signature and response-metadata persistence, usage-backed context estimation with error/aborted exclusion, persisted thinking/message and assistant error-message context conversion, image-aware context estimation, automatic-compaction enabled toggle, opt-in max-history-turns compaction, agent/turn/message/tool lifecycle callbacks, provider stream events for text/thinking/tool-call start-delta-end with partial assistant messages, tool-status and tool-execution lifecycle callbacks, length-limited tool-call safety, recoverable length-stop compaction/retry, provider-backed compaction, token-budget compaction cut points, opt-in context-window plus reserve-token threshold (defaults 16,384 reserve and 20,000 recent tokens), bounded overflow retry, live provider tests, and disk-loaded TypeScript extension tool-call/tool-result plus provider request/response interception | partial; provider-specific stream metadata and remaining compaction settings parity open |
 | Provider | `packages/ai/src/api/openai-completions.ts:699-717`, `:830-930`, `:362-465`, `:523-551`, `:632-647`, `:1260-1370`, `:1553-1575`, `packages/ai/src/api/mistral-conversations.ts:287-372`, `packages/ai/src/api/google-generative-ai.ts:80-260`, `packages/ai/src/api/openai-responses-shared.ts:597-750`, `packages/ai/src/api/theoses-messages.ts:345-470`, `packages/ai/src/utils/overflow.ts:39-171` | deterministic SSE including explicit-null finish reasons, response-body overflow classification, transient exclusion, Mistral native `reasoning_effort`, Mistral thinking-array deltas, and nine-character tool-call ID normalization, reasoning-field and ordered `reasoning_details` replay with session persistence, OpenAI and Anthropic response ID/model and raw finish-reason preservation, native Gemini REST streaming for text/thinking/function calls/usage/images, native OpenAI Responses streaming for text/function-call arguments/terminal usage/status, image input, and reasoning-item summary/signature replay, and a Radius/theoses-messages adapter with Yen-owned credentials, SSE text/thinking/tool-call events, usage/stop metadata, and gateway model catalog; live `z-ai/glm-5.3-flash` OpenRouter reply remains the only live provider result | partial; remaining provider protocols, native multimodal edge cases, and OAuth open |
-| Telegram | `packages/telegram/src/index.ts:27-33`, `:90-120`, `:193-270`, `:290-316`, `:430-470`, `:560-700`, `packages/telegram/src/format.ts` | dedicated unit, bounded Telegram attachment download with Yen artifact storage/read-tool note, photo-to-OpenAI image content, persisted opt-in `/on tool call(s)` and `/off tool call(s)` detail toggle with bounded previews, tool-status message plus in-place final edit, concurrent poll-batch dispatch with FIFO runtime serialization, escaped classic HTML fallback for headings/lists/code/links/emphasis, text/caption fallback for messages and quoted replies, case-insensitive `stop`/`halt`/`/stop`/`/cancel` controls (plus Yen `/abort`), bounded `sendRichMessage` attempt with classic fallback, standalone-section splitting and threaded replies, TypeScript 4,000-character Unicode chunking, reply-context/target tests, cancellable typing-action loop, valid token, live reply, owner guard | partial; live image/document acceptance and rich/long-reply/reply acceptance deferred |
+| Telegram | `packages/telegram/src/index.ts:27-33`, `:90-120`, `:193-270`, `:290-316`, `:430-470`, `:536-542`, `:550-560,575-585`, `:560-700`, `packages/telegram/src/format.ts` | dedicated unit, bounded Telegram attachment download with Yen artifact storage/read-tool note, photo-to-OpenAI image content, persisted opt-in `/on tool call(s)` and `/off tool call(s)` detail toggle with bounded previews, tool-status message plus in-place final edit, concurrent poll-batch dispatch with FIFO runtime serialization, escaped classic HTML fallback for headings/lists/code/links/emphasis, text/caption fallback for messages and quoted replies, case-insensitive `stop`/`halt`/`/stop`/`/cancel` controls (plus Yen `/abort`), bounded `sendRichMessage` attempt with classic fallback, standalone-section splitting and threaded replies, TypeScript 4,000-character Unicode chunking, reply-context/target tests, cancellable typing-action loop, valid token, live reply, owner guard; **live image and document acceptance verified on the pilot VPS 2026-09-17** (real photo read via vision, real PDF parsed via `convert_doc` after the `v0.1.3` WorkspaceID/PATH fixes, GH-219) | partial; rich/long-reply/reply acceptance deferred |
 | Dashboard | `packages/dashboard/src/index.ts:235-251`, `:289-292`, `:320-400`, `:530-550`, `packages/dashboard/src/public/app.js:1-220`, `:417-458` | Go auth unit tests plus VPS acceptance: health 200, unauthenticated API 401, login 200, cookie 200, Bearer 200; same-origin browser shell for login, recent-first session list/history with first-user-message titles, real message count and last-entry metadata, new session, send with bounded reply context, stop, and SSE delta/tool progress; dashboard can read/send a conversation with only a Telegram registry link; TypeScript-shaped session list/read-back for shared dashboard/Telegram links; persisted assistant thinking and durable bash-execution segments survive API projection and embedded rendering; SSE delta/tool_call/tool_result/usage/done/error protocol tests; live request routed to canonical conversation; Chromium DOM acceptance covers login, session load, branch rendering, and branch switching | partial; full visual/browser parity remains open |
 | Semantic memory | `packages/coding-agent/src/core/tools/memory.ts:18-59`, `packages/coding-agent/src/core/memory-store.ts:9-19`, `packages/coding-agent/src/core/memory-consolidation.ts:28-70`, `:257-330`, `:401-406`, `:443-464`, `:500-525`, `packages/coding-agent/src/core/compaction/compaction.ts:816-874` | conversation-scoped `save_note`/`remember`; live favorite-color and probe read-back; non-overlapping consolidation provider passes; active-branch timestamped, bounded tool-call/result (including failed-result status), bash-execution, and summary transcript entries; consolidation applies only the pinned closed edge vocabulary; opt-in trigger, 70-message ceiling, 100,000-character tail cap, separate state, failure cooldown, scoped provider retry, episode-object requirement with runtime timestamp defaults, optional JSON-object request mode; tolerant per-member fact/edge/related-id filtering; string-aware trailing-comma, raw-control, and invalid-escape repair; distillation parser/provider seam with confidence filtering and array/object response support, integrated as non-blocking dropped-memory extraction during compaction; and live trigger/checkpoint/episode read-back with the separate Yen provider key | partial; broader structured-output and extraction parity remain open |
 | Session read-back/migration | `packages/coding-agent/src/core/session-manager.ts:31-104`, `:284-355`, `:357-370`, `:397-430`, `:986-1022`, `:1431-1451`, `:1708-`, `packages/coding-agent/src/core/agent-session-runtime.ts:357-` | Go fixtures migrate v1/v2 JSONL to v3, skip malformed lines before/after the header, read bounded 4 MiB JSONL entries, preserve image metadata and v2 tree links/extension/message payloads, assign v1 IDs/parents, convert `hookMessage`, preserve session-info names, create durable fork copies, validate/copy imported sessions, switch the active RPC session with a path override, project the active parent-linked branch, and read flat v3 compaction entries; 135 Go tests | partial; non-RPC channel session switching and malformed/truncated-stream behavior beyond the explicit bound remain open |
