@@ -1,11 +1,13 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -755,6 +757,103 @@ func TestOpenAICompletionsCombinesToolCallDeltas(t *testing.T) {
 	}
 	if len(result.ToolCalls) != 1 || result.StopReason != "toolUse" || result.ToolCalls[0].ID != "read-1" || result.ToolCalls[0].Name != "read" || result.ToolCalls[0].Args["path"] != "README.md" {
 		t.Fatalf("tool calls = %#v", result.ToolCalls)
+	}
+}
+
+// TestOpenAICompletionsInterleavesManyParallelToolCallDeltas reproduces the
+// live incident in GH-223: a single response emitting many tool calls,
+// where roughly half arrived with empty arguments. This proves whether
+// Go's index-keyed delta accumulation correctly reconstructs each tool
+// call's arguments when many tool calls' deltas interleave across a single
+// stream, rather than arriving fully sequentially (index 0 complete, then
+// index 1 complete, ...) the way the existing single-tool-call test does.
+func TestOpenAICompletionsInterleavesManyParallelToolCallDeltas(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Three tool calls, each with id+name announced up front (as real
+		// backends typically do), then their argument fragments interleaved
+		// out of order across indices, mirroring a real multi-tool-call SSE
+		// stream rather than one clean call finishing before the next starts.
+		lines := []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-0","function":{"name":"bash","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call-1","function":{"name":"read","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":2,"id":"call-2","function":{"name":"bash","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"comm"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":2,"function":{"arguments":"{\"comm"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"pat"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"and\": \"ls\"}"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"h\": \"a.txt\"}"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":2,"function":{"arguments":"and\": \"pwd\"}"}}]},"finish_reason":"tool_calls"}]}`,
+		}
+		for _, line := range lines {
+			fmt.Fprintln(w, "data: "+line)
+		}
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	result, err := NewOpenAICompletions(server.URL, "", "test-model").Next(context.Background(), nil, []string{"bash", "read"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ToolCalls) != 3 {
+		t.Fatalf("expected 3 tool calls, got %#v", result.ToolCalls)
+	}
+	want := map[string]map[string]any{
+		"call-0": {"command": "ls"},
+		"call-1": {"path": "a.txt"},
+		"call-2": {"command": "pwd"},
+	}
+	for _, call := range result.ToolCalls {
+		expected, ok := want[call.ID]
+		if !ok {
+			t.Fatalf("unexpected tool call ID %q: %#v", call.ID, result.ToolCalls)
+		}
+		if len(call.Args) == 0 {
+			t.Fatalf("tool call %q (%s) has empty args, want %#v: full result=%#v", call.ID, call.Name, expected, result.ToolCalls)
+		}
+		for key, value := range expected {
+			if call.Args[key] != value {
+				t.Fatalf("tool call %q args = %#v, want %#v", call.ID, call.Args, expected)
+			}
+		}
+	}
+}
+
+// TestOpenAICompletionsLogsToolCallWithNoArgumentDeltas covers GH-223: when
+// a named tool call finalizes with no accumulated argument deltas at all
+// (as opposed to a JSON parse failure on a non-empty string), that's a
+// silent failure mode users only discover via a generic "X is required"
+// tool error. This proves the existing nil-Args behavior is unchanged and
+// that the occurrence is now logged with enough detail to diagnose which
+// provider/model produced it.
+func TestOpenAICompletionsLogsToolCallWithNoArgumentDeltas(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-0","function":{"name":"bash","arguments":""}}]},"finish_reason":"tool_calls"}]}`)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	client := NewOpenAICompletions(server.URL, "", "test-model")
+	client.ProviderName = "openrouter"
+	result, err := client.Next(context.Background(), nil, []string{"bash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ToolCalls) != 1 || result.ToolCalls[0].Args != nil {
+		t.Fatalf("tool calls = %#v, want one call with nil Args (unchanged behavior)", result.ToolCalls)
+	}
+	logged := logs.String()
+	for _, want := range []string{"call-0", "bash", "openrouter", "test-model"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("log output = %q, want it to contain %q", logged, want)
+		}
 	}
 }
 
