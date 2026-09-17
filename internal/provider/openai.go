@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -529,10 +530,19 @@ func (p OpenAICompletions) nextWithUpdates(ctx context.Context, messages []agent
 			toolCalls[index].ID = normalizeMistralToolID("toolcall:" + fmt.Sprint(index))
 		}
 		var args map[string]any
-		if raw := arguments[fmt.Sprint(index)]; raw != "" {
+		raw := arguments[fmt.Sprint(index)]
+		if raw != "" {
 			if err := json.Unmarshal([]byte(raw), &args); err != nil {
 				return agent.Response{}, fmt.Errorf("tool arguments: %w", err)
 			}
+		} else if toolCalls[index].Name != "" {
+			// GH-223: a named tool call finalized with no accumulated argument
+			// deltas at all (not a JSON parse failure — the stream never sent
+			// any). Root cause not yet confirmed (model-side malformed
+			// generation vs. an upstream backend dropping deltas under a long
+			// multi-tool-call turn); logging turns a silent empty-args tool
+			// error into a diagnosable event tied to a specific provider/model.
+			log.Printf("openai completions: tool call %q (%s) index %d finalized with no argument deltas (provider=%s model=%s)", toolCalls[index].ID, toolCalls[index].Name, index, p.ProviderName, p.Model)
 		}
 		toolCalls[index].Args = args
 		if emit != nil {
