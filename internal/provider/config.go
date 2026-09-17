@@ -1135,6 +1135,23 @@ func SetRetryMax(p agent.Provider, retries int) (agent.Provider, error) {
 	}
 }
 
+// SetMaxTokens bounds a provider's output token budget for a single
+// narrow-purpose call, matching the oracle's per-call model.maxTokens cap
+// (e.g. distillMemory in compaction.ts:816-874). Providers without an output
+// token cap return an error so the caller can proceed uncapped instead.
+func SetMaxTokens(p agent.Provider, maxTokens int) (agent.Provider, error) {
+	if maxTokens < 1 {
+		return nil, errors.New("max tokens must be positive")
+	}
+	switch client := p.(type) {
+	case OpenAICompletions:
+		client.MaxTokens = maxTokens
+		return client, nil
+	default:
+		return nil, errors.New("provider does not support max-tokens control")
+	}
+}
+
 func SetProviderRetrySettings(p agent.Provider, timeoutMs, retries, maxDelayMs int) (agent.Provider, error) {
 	if timeoutMs < -1 || retries < -1 || maxDelayMs < -1 {
 		return nil, errors.New("provider retry settings cannot be negative")
