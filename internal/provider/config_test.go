@@ -712,6 +712,22 @@ func TestNewConfiguredReadsOnlyExplicitYenAuthFile(t *testing.T) {
 	}
 }
 
+func TestSetMaxTokensShapesOpenAICompletions(t *testing.T) {
+	openai := NewOpenAICompletions("http://fixture", "key", "model")
+	configured, err := SetMaxTokens(openai, 4096)
+	client, ok := configured.(OpenAICompletions)
+	if err != nil || !ok || client.MaxTokens != 4096 {
+		t.Fatalf("provider=%#v err=%v", configured, err)
+	}
+}
+
+func TestSetMaxTokensRejectsUnsupportedProvider(t *testing.T) {
+	anthropic := NewAnthropicMessages("http://fixture", "key", "model")
+	if _, err := SetMaxTokens(anthropic, 4096); err == nil {
+		t.Fatal("expected an error for a provider without max-tokens control")
+	}
+}
+
 func TestSetThinkingLevelShapesProviderState(t *testing.T) {
 	openai := NewOpenAICompletions("http://fixture", "key", "model")
 	configured, err := SetThinkingLevel(openai, "high")

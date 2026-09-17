@@ -530,7 +530,7 @@ func formatCompactionFileOps(ops session.CompactionFileOps) string {
 }
 
 func (r *Runner) distillDroppedMemory(ctx context.Context, conversationID string, turns []memory.ConsolidationTurn) {
-	result, err := memory.DistillMemory(ctx, r.Provider, turns)
+	result, err := memory.DistillMemory(ctx, r.Provider, turns, r.AutoCompactReserveTokens)
 	if err != nil || r.Memory == nil {
 		return
 	}

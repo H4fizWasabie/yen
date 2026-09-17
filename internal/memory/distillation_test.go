@@ -2,10 +2,15 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/H4fizWasabie/yen/internal/agent"
+	providerpkg "github.com/H4fizWasabie/yen/internal/provider"
 )
 
 type distillationProvider struct{ text string }
@@ -29,9 +34,65 @@ func TestDistillMemoryRetriesTransientProviderFailure(t *testing.T) {
 	distillationRetryDelay = 0
 	t.Cleanup(func() { distillationRetryDelay = previous })
 	provider := &retryDistillationProvider{}
-	result, err := DistillMemory(context.Background(), provider, []ConsolidationTurn{{Role: "user", Content: "I prefer Go"}})
+	result, err := DistillMemory(context.Background(), provider, []ConsolidationTurn{{Role: "user", Content: "I prefer Go"}}, 0)
 	if err != nil || provider.calls != 2 || len(result.Facts) != 1 {
 		t.Fatalf("calls=%d result=%#v err=%v", provider.calls, result, err)
+	}
+}
+
+// TestDistillMemoryBoundsOutputTokensForSupportedProviders matches the
+// oracle's distillMemory (compaction.ts:816-848), which bounds the
+// distillation call's output tokens to 80% of reserveTokens. A provider
+// that supports max-tokens control (OpenAICompletions) must receive that
+// bound before the call.
+func TestDistillMemoryBoundsOutputTokensForSupportedProviders(t *testing.T) {
+	var seenMaxTokens int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			MaxTokens int `json:"max_completion_tokens"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		seenMaxTokens = payload.MaxTokens
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":`+`"[{\"fact\":\"prefers Go\",\"confidence\":0.9}]"`+`},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := providerpkg.NewOpenAICompletions(server.URL, "", "test-model")
+	if _, err := DistillMemory(context.Background(), client, []ConsolidationTurn{{Role: "user", Content: "I prefer Go"}}, 16384); err != nil {
+		t.Fatal(err)
+	}
+	if seenMaxTokens != 13107 {
+		t.Fatalf("seenMaxTokens = %d, want floor(0.8 * 16384) = 13107", seenMaxTokens)
+	}
+}
+
+// TestDistillMemoryLeavesProviderUnboundedWhenReserveTokensIsUnset preserves
+// existing behavior for deployments that never configure a compaction
+// context-window budget (AutoCompactReserveTokens stays at its Go zero
+// value): distillation must still work, uncapped.
+func TestDistillMemoryLeavesProviderUnboundedWhenReserveTokensIsUnset(t *testing.T) {
+	var seenMaxTokens int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			MaxTokens int `json:"max_completion_tokens"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		seenMaxTokens = payload.MaxTokens
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":`+`"[{\"fact\":\"prefers Go\",\"confidence\":0.9}]"`+`},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	client := providerpkg.NewOpenAICompletions(server.URL, "", "test-model")
+	result, err := DistillMemory(context.Background(), client, []ConsolidationTurn{{Role: "user", Content: "I prefer Go"}}, 0)
+	if err != nil || len(result.Facts) != 1 {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if seenMaxTokens != 0 {
+		t.Fatalf("seenMaxTokens = %d, want 0 (uncapped)", seenMaxTokens)
 	}
 }
 
@@ -50,7 +111,7 @@ func TestParseDistillationResponseAcceptsObjectFactsAndRepairsJSON(t *testing.T)
 }
 
 func TestDistillMemoryUsesProvider(t *testing.T) {
-	result, err := DistillMemory(context.Background(), distillationProvider{text: `[{"fact":"prefers Telegram","confidence":0.95}]`}, []ConsolidationTurn{{Role: "user", Content: "I prefer Telegram"}})
+	result, err := DistillMemory(context.Background(), distillationProvider{text: `[{"fact":"prefers Telegram","confidence":0.95}]`}, []ConsolidationTurn{{Role: "user", Content: "I prefer Telegram"}}, 0)
 	if err != nil || len(result.Facts) != 1 {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
