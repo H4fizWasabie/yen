@@ -51,7 +51,7 @@ set -eu
 set -a
 . "$provider_env"
 set +a
-exec env -i PATH=/usr/bin:/bin HOME=/root \\
+exec env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/root \\
 	  YEN_PROVIDER="\${YEN_PROVIDER:-}" \\
 	  YEN_MODEL="\${YEN_MODEL:-z-ai/glm-5.3-flash}" \\
 	  YEN_AUTH_FILE="\${YEN_AUTH_FILE:-}" \\
@@ -139,7 +139,7 @@ set -eu
 set -a
 . "$provider_env"
 set +a
-exec env -i PATH=/usr/bin:/bin HOME=/root \\
+exec env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/root \\
 	  YEN_PROVIDER="\${YEN_PROVIDER:-}" \\
 	  YEN_MODEL="\${YEN_MODEL:-z-ai/glm-5.3-flash}" \\
 	  YEN_AUTH_FILE="\${YEN_AUTH_FILE:-}" \\

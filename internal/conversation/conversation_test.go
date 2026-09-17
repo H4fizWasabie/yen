@@ -61,6 +61,65 @@ func TestRegistryResolvesSharedConversationAcrossAdapters(t *testing.T) {
 	}
 }
 
+func TestRegistryResolveRefreshesStaleWorkspaceID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "links.jsonl")
+	registry, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := registry.Resolve("telegram", "chat:42", "/opt/yen/releases/old-release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceID != "/opt/yen/releases/old-release" {
+		t.Fatalf("first.WorkspaceID = %q", first.WorkspaceID)
+	}
+	refreshed, err := registry.Resolve("telegram", "chat:42", "/opt/yen/releases/new-release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.ConversationID != first.ConversationID {
+		t.Fatalf("refreshed.ConversationID = %q, want %q", refreshed.ConversationID, first.ConversationID)
+	}
+	if refreshed.WorkspaceID != "/opt/yen/releases/new-release" {
+		t.Fatalf("refreshed.WorkspaceID = %q, want new release path", refreshed.WorkspaceID)
+	}
+
+	reopened, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.Get("telegram", "chat:42")
+	if !ok || persisted.WorkspaceID != "/opt/yen/releases/new-release" {
+		t.Fatalf("persisted link = %#v ok=%v, want refreshed workspace to survive reload", persisted, ok)
+	}
+}
+
+func TestRegistryResolveSharedRefreshesStaleWorkspaceID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "links.jsonl")
+	registry, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := registry.ResolveShared("telegram", "chat:42", "/opt/yen/releases/old-release", "conv-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceID != "/opt/yen/releases/old-release" {
+		t.Fatalf("first.WorkspaceID = %q", first.WorkspaceID)
+	}
+	refreshed, err := registry.ResolveShared("telegram", "chat:42", "/opt/yen/releases/new-release", "conv-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.ConversationID != "conv-owner" {
+		t.Fatalf("refreshed.ConversationID = %q", refreshed.ConversationID)
+	}
+	if refreshed.WorkspaceID != "/opt/yen/releases/new-release" {
+		t.Fatalf("refreshed.WorkspaceID = %q, want new release path", refreshed.WorkspaceID)
+	}
+}
+
 func TestRegistryReloadsAcrossProcessesBeforeResolving(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "links.jsonl")
 	first, err := OpenRegistry(path)

@@ -63,6 +63,14 @@ func (r *Registry) Resolve(adapter, adapterKey, workspaceID string) (Link, error
 		}
 		if link, ok := r.links[linkKey(adapter, adapterKey)]; ok {
 			result = link
+			if workspaceID != "" && link.WorkspaceID != workspaceID {
+				link.WorkspaceID = workspaceID
+				if err := r.append(link); err != nil {
+					return err
+				}
+				r.links[linkKey(adapter, adapterKey)] = link
+				result = link
+			}
 			return nil
 		}
 		result = Link{Adapter: adapter, AdapterKey: adapterKey, ConversationID: newID("conv"), WorkspaceID: workspaceID, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
@@ -90,6 +98,14 @@ func (r *Registry) ResolveShared(adapter, adapterKey, workspaceID, conversationI
 		}
 		if link, ok := r.links[linkKey(adapter, adapterKey)]; ok && link.ConversationID == conversationID {
 			result = link
+			if workspaceID != "" && link.WorkspaceID != workspaceID {
+				link.WorkspaceID = workspaceID
+				if err := r.append(link); err != nil {
+					return err
+				}
+				r.links[linkKey(adapter, adapterKey)] = link
+				result = link
+			}
 			return nil
 		}
 		result = Link{Adapter: adapter, AdapterKey: adapterKey, ConversationID: conversationID, WorkspaceID: workspaceID, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
